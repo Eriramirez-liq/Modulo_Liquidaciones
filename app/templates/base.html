@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}BIA — Conciliación SDL{% endblock %}</title>
+  <meta name="description" content="Sistema de conciliación de energía eléctrica por frontera" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/globals.css') }}" />
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+<div class="bia-app-shell">
+
+  {# ── Sidebar ──────────────────────────────────────────────────────────────── #}
+  <aside class="bia-sidebar">
+
+    {# Logo #}
+    <div class="bia-sidebar-logo">
+      <div class="bia-sidebar-logo-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+             fill="none" stroke="#050f0d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        </svg>
+      </div>
+      <div class="bia-sidebar-logo-text">
+        <strong>BIA Energy</strong>
+        <span>Conciliación SDL</span>
+      </div>
+    </div>
+
+    {# Navegación principal #}
+    <nav class="bia-sidebar-nav">
+      <ul>
+        {% set nav_items = [
+          ('/', 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6', 'Inicio'),
+          ('/cargas', 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12', 'Cargas'),
+          ('/conciliaciones', 'M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z', 'Conciliaciones'),
+          ('/gestiones', 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4', 'Gestiones'),
+          ('/operadores', 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4', 'Operadores'),
+          ('/fronteras', 'M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064', 'Fronteras'),
+          ('/reportes', 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', 'Reportes'),
+        ] %}
+
+        {% for href, icon_path, label in nav_items %}
+        <li>
+          <a href="{{ href }}"
+             class="bia-nav-link {% if (href == '/' and request.path == '/') or (href != '/' and request.path.startswith(href)) %}active{% endif %}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="{{ icon_path }}"/>
+            </svg>
+            {{ label }}
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+
+      {# Sección Administración — solo ADMINISTRADOR #}
+      {% if current_user.rol.value == 'ADMINISTRADOR' %}
+      <div class="bia-sidebar-section-label">Sistema</div>
+      <ul>
+        <li>
+          <a href="/administracion"
+             class="bia-nav-link {% if request.path.startswith('/administracion') %}active{% endif %}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            Administración
+          </a>
+        </li>
+      </ul>
+      {% endif %}
+    </nav>
+
+    <hr class="bia-sidebar-separator" />
+
+    {# Usuario actual #}
+    <div class="bia-sidebar-user">
+      <div class="bia-user-avatar">
+        {{ current_user.nombre.split()[0][0] | upper }}{{ current_user.nombre.split()[-1][0] | upper if current_user.nombre.split()|length > 1 else '' }}
+      </div>
+      <div class="bia-user-info">
+        <div class="bia-user-name">{{ current_user.nombre }}</div>
+        <div class="bia-user-role">
+          {{ 'Administrador' if current_user.rol.value == 'ADMINISTRADOR' else 'Analista' }}
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+  {# ── Contenido principal ──────────────────────────────────────────────────── #}
+  <div class="bia-main-content">
+
+    {# TopBar #}
+    <header class="bia-topbar">
+      <span class="bia-topbar-title">{% block page_title %}Dashboard{% endblock %}</span>
+      <div class="bia-topbar-actions">
+        <span style="font-size:0.8rem; color:var(--bia-text-muted);">{{ current_user.nombre }}</span>
+        <a href="{{ url_for('auth.logout') }}" class="bia-logout-link">Cerrar sesión</a>
+      </div>
+    </header>
+
+    {# Página #}
+    <main class="bia-page-content">
+
+      {# Flash messages #}
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="bia-flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+
+    </main>
+  </div>
+
+</div>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Iniciar sesión — BIA Energy</title>
+  <meta name="description" content="Sistema de conciliación de energía eléctrica por frontera" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/globals.css') }}" />
+</head>
+<body>
+
+<div class="bia-login-page">
+  <div class="bia-login-card">
+
+    {# Logo #}
+    <div class="bia-login-logo">
+      <div class="bia-login-logo-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+             fill="none" stroke="#050f0d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        </svg>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:1rem;color:var(--bia-text-primary);letter-spacing:-0.02em;">
+          BIA Energy
+        </div>
+        <div style="font-size:0.75rem;color:var(--bia-text-muted);">
+          Conciliación SDL
+        </div>
+      </div>
+    </div>
+
+    {# Título #}
+    <h1 style="font-size:1.3rem;font-weight:700;color:var(--bia-text-primary);margin-bottom:6px;letter-spacing:-0.02em;">
+      Iniciar sesión
+    </h1>
+    <p style="font-size:0.875rem;color:var(--bia-text-muted);margin-bottom:28px;">
+      Sistema de conciliación de energía eléctrica por frontera
+    </p>
+
+    {# Flash messages #}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="bia-flash {{ category }}" style="margin-bottom:16px;">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    {# Formulario #}
+    <form method="POST" action="{{ url_for('auth.login') }}" class="bia-stack bia-stack-16" id="login-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}" />
+
+      <div class="bia-input-group" style="margin-bottom:0;">
+        <label for="email">Correo electrónico</label>
+        <input
+          type="email"
+          id="email"
+          name="email"
+          class="bia-input"
+          placeholder="usuario@empresa.com"
+          required
+          autocomplete="email"
+        />
+      </div>
+
+      <div class="bia-input-group" style="margin-bottom:0;">
+        <label for="password">Contraseña</label>
+        <input
+          type="password"
+          id="password"
+          name="password"
+          class="bia-input"
+          placeholder="••••••••"
+          required
+          autocomplete="current-password"
+          minlength="6"
+        />
+      </div>
+
+      <button
+        type="submit"
+        class="bia-btn-primary"
+        style="width:100%;justify-content:center;margin-top:8px;"
+        id="btn-login"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/>
+          <polyline points="10 17 15 12 10 7"/>
+          <line x1="15" y1="12" x2="3" y2="12"/>
+        </svg>
+        Ingresar al sistema
+      </button>
+    </form>
+
+    <p style="margin-top:24px;font-size:0.78rem;color:var(--bia-text-muted);text-align:center;">
+      Contacta al administrador si no tienes acceso.
+    </p>
+
+  </div>
+</div>
+
+<script>
+  document.getElementById("login-form").addEventListener("submit", function() {
+    const btn = document.getElementById("btn-login");
+    btn.disabled = true;
+    btn.textContent = "Ingresando…";
+  });
+</script>
+</body>
+</html>

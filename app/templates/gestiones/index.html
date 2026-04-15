@@ -1,0 +1,731 @@
+{% extends "base.html" %}
+{% block title %}Gestiones — BIA Energy{% endblock %}
+{% block page_title %}Provisiones, Contingencias y Disputas{% endblock %}
+
+{% block content %}
+<div class="bia-stack bia-stack-24">
+
+  {# ── Cabecera ────────────────────────────────────────────────────────────── #}
+  <div class="bia-row-between">
+    <div>
+      <h1 style="font-size:1.3rem;font-weight:700;color:var(--bia-text-primary);letter-spacing:-0.02em;margin-bottom:4px;">
+        Gestión M3
+      </h1>
+      <p style="font-size:0.875rem;color:var(--bia-text-muted);">
+        Provisiones, contingencias y disputas generadas por el motor de conciliación.
+      </p>
+    </div>
+  </div>
+
+  {# ── Panel de saldos ─────────────────────────────────────────────────────── #}
+  <div class="bia-panel" id="panel-saldos" style="display:none;">
+    <h2 style="font-size:0.9rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--bia-text-muted);margin-bottom:16px;">
+      Saldos globales
+    </h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;" id="saldos-grid">
+    </div>
+  </div>
+
+  {# ── Filtros globales ─────────────────────────────────────────────────────── #}
+  <div class="bia-panel">
+    <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;">
+      <div class="bia-input-group" style="margin:0;min-width:180px;">
+        <label>Período</label>
+        <select id="filtro-periodo" class="bia-select">
+          <option value="">Todos los períodos</option>
+          {% for p in periodos %}
+          <option value="{{ p.id }}">{{ p.anio }}-{{ "%02d"|format(p.mes) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="bia-input-group" style="margin:0;min-width:160px;">
+        <label>Operador de Red</label>
+        <select id="filtro-or" class="bia-select">
+          <option value="">Todos</option>
+          {% for op in operadores %}
+          <option value="{{ op.id }}">{{ op.codigo }} — {{ op.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="bia-btn-primary" onclick="cargarTodo()">Filtrar</button>
+    </div>
+  </div>
+
+  {# ── Tabs ─────────────────────────────────────────────────────────────────── #}
+  <div class="bia-panel" style="padding:0;">
+
+    <div style="display:flex;border-bottom:1px solid var(--bia-border);">
+      {% for tab_id, label, badge_id in [
+          ('tab-provisiones',  'Provisiones',   'badge-prov'),
+          ('tab-contingencias','Contingencias', 'badge-cont'),
+          ('tab-disputas',     'Disputas',      'badge-disp'),
+      ] %}
+      <button
+        id="{{ tab_id }}-btn"
+        onclick="activarTab('{{ tab_id }}')"
+        style="padding:14px 24px;border:none;background:none;font-size:0.875rem;font-weight:600;
+               color:var(--bia-text-muted);cursor:pointer;border-bottom:2px solid transparent;
+               display:flex;align-items:center;gap:8px;"
+        data-tab="{{ tab_id }}"
+      >
+        {{ label }}
+        <span id="{{ badge_id }}" style="display:none;
+          background:var(--bia-error);color:#fff;border-radius:999px;
+          font-size:0.7rem;font-weight:700;padding:1px 7px;"></span>
+      </button>
+      {% endfor %}
+    </div>
+
+    {# ── Tab Provisiones ──────────────────────────────────────────────────── #}
+    <div id="tab-provisiones" class="tab-panel" style="padding:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="display:flex;gap:12px;align-items:center;">
+          <select id="filtro-estado-prov" class="bia-select" style="width:180px;" onchange="cargarProvisiones()">
+            <option value="">Todos los estados</option>
+            <option value="PENDIENTE">Pendiente</option>
+            <option value="CRUZADO_PARCIAL">Cruzado parcial</option>
+            <option value="CRUZADO_TOTAL">Cruzado total</option>
+          </select>
+        </div>
+        <span id="total-provisiones" style="font-size:0.8rem;color:var(--bia-text-muted);"></span>
+      </div>
+
+      <div class="bia-table-wrap">
+        <table class="bia-table" id="tabla-provisiones" style="table-layout:fixed;width:100%;">
+          <colgroup>
+            <col style="width:120px;">
+            <col style="width:160px;">
+            <col style="width:80px;">
+            <col style="width:110px;">
+            <col style="width:110px;">
+            <col style="width:160px;">
+            <col style="width:110px;">
+            <col style="width:60px;">
+            <col style="width:120px;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Frontera</th>
+              <th>Operador de Red</th>
+              <th>Período</th>
+              <th>Tipo</th>
+              <th style="text-align:right;">Energía (kWh)</th>
+              <th style="text-align:right;">Provisionado (COP)</th>
+              <th>Estado</th>
+              <th style="text-align:center;">Días</th>
+              <th style="text-align:center;">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-provisiones">
+            <tr><td colspan="9" style="text-align:center;color:var(--bia-text-muted);padding:32px;">
+              Selecciona un período y pulsa Filtrar.
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="pag-provisiones" style="display:flex;gap:6px;margin-top:14px;justify-content:center;flex-wrap:wrap;"></div>
+    </div>
+
+    {# ── Tab Contingencias ────────────────────────────────────────────────── #}
+    <div id="tab-contingencias" class="tab-panel" style="display:none;padding:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="display:flex;gap:12px;align-items:center;">
+          <select id="filtro-estado-cont" class="bia-select" style="width:180px;" onchange="cargarContingencias()">
+            <option value="">Todos los estados</option>
+            <option value="PENDIENTE">Pendiente</option>
+            <option value="COBRADO">Cobrado</option>
+            <option value="CERRADO">Cerrado</option>
+          </select>
+        </div>
+        <span id="total-contingencias" style="font-size:0.8rem;color:var(--bia-text-muted);"></span>
+      </div>
+
+      <div class="bia-table-wrap">
+        <table class="bia-table" id="tabla-contingencias" style="table-layout:fixed;width:100%;">
+          <colgroup>
+            <col style="width:120px;">
+            <col style="width:150px;">
+            <col style="width:80px;">
+            <col style="width:110px;">
+            <col style="width:140px;">
+            <col style="width:130px;">
+            <col style="width:110px;">
+            <col style="width:110px;">
+            <col style="width:55px;">
+            <col style="width:130px;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Frontera</th>
+              <th>Operador de Red</th>
+              <th>Período</th>
+              <th style="text-align:right;">Energía (kWh)</th>
+              <th style="text-align:right;">Costo calc. (COP)</th>
+              <th style="text-align:right;">Refacturación (COP)</th>
+              <th>Estado</th>
+              <th>Resultado</th>
+              <th style="text-align:center;">Días</th>
+              <th style="text-align:center;">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-contingencias">
+            <tr><td colspan="10" style="text-align:center;color:var(--bia-text-muted);padding:32px;">
+              Selecciona un período y pulsa Filtrar.
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="pag-contingencias" style="display:flex;gap:6px;margin-top:14px;justify-content:center;flex-wrap:wrap;"></div>
+    </div>
+
+    {# ── Tab Disputas ─────────────────────────────────────────────────────── #}
+    <div id="tab-disputas" class="tab-panel" style="display:none;padding:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="display:flex;gap:12px;align-items:center;">
+          <select id="filtro-estado-disp" class="bia-select" style="width:180px;" onchange="cargarDisputas()">
+            <option value="">Todos los estados</option>
+            <option value="ABIERTA">Abierta</option>
+            <option value="EN_GESTION">En gestión</option>
+            <option value="RESUELTA">Resuelta</option>
+            <option value="CERRADA_SIN_AJUSTE">Cerrada sin ajuste</option>
+          </select>
+        </div>
+        <span id="total-disputas" style="font-size:0.8rem;color:var(--bia-text-muted);"></span>
+      </div>
+
+      <div class="bia-table-wrap">
+        <table class="bia-table" id="tabla-disputas" style="table-layout:fixed;width:100%;">
+          <colgroup>
+            <col style="width:120px;">
+            <col style="width:150px;">
+            <col style="width:80px;">
+            <col style="width:110px;">
+            <col style="width:140px;">
+            <col style="width:115px;">
+            <col style="width:55px;">
+            <col>
+            <col style="width:120px;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Frontera</th>
+              <th>Operador de Red</th>
+              <th>Período</th>
+              <th style="text-align:right;">Exceso (kWh)</th>
+              <th style="text-align:right;">Valor estimado (COP)</th>
+              <th>Estado</th>
+              <th style="text-align:center;">Días</th>
+              <th>Descripción</th>
+              <th style="text-align:center;">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-disputas">
+            <tr><td colspan="9" style="text-align:center;color:var(--bia-text-muted);padding:32px;">
+              Selecciona un período y pulsa Filtrar.
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="pag-disputas" style="display:flex;gap:6px;margin-top:14px;justify-content:center;flex-wrap:wrap;"></div>
+    </div>
+
+  </div>{# /panel tabs #}
+</div>
+
+{# ── Modal Cruzar Balance ────────────────────────────────────────────────────── #}
+<div id="modal-cruce" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;align-items:center;justify-content:center;">
+  <div class="bia-panel" style="width:480px;max-width:95vw;">
+    <h3 style="font-size:1rem;font-weight:700;margin-bottom:4px;">Cruzar con Balance</h3>
+    <p style="font-size:0.8rem;color:var(--bia-error);margin-bottom:20px;">
+      ⚠ Esta operación es <strong>definitiva e irreversible</strong>.
+    </p>
+
+    <input type="hidden" id="cruce-provision-id">
+
+    <div class="bia-input-group">
+      <label>ID del Registro de Balance</label>
+      <input type="text" id="cruce-balance-id" class="bia-input" placeholder="ID del balance recibido del OR">
+    </div>
+    <div class="bia-input-group">
+      <label>Observaciones (opcional)</label>
+      <textarea id="cruce-observaciones" class="bia-input" rows="2" style="resize:vertical;"></textarea>
+    </div>
+
+    <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:8px;">
+      <button class="bia-btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="bia-btn-primary" style="background:var(--bia-error);border-color:var(--bia-error);"
+              onclick="confirmarCruce()">Confirmar cruce definitivo</button>
+    </div>
+  </div>
+</div>
+
+{# ── Modal Contingencia ──────────────────────────────────────────────────────── #}
+<div id="modal-contingencia" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;align-items:center;justify-content:center;">
+  <div class="bia-panel" style="width:460px;max-width:95vw;">
+    <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;" id="modal-cont-titulo">Registrar cobro</h3>
+    <input type="hidden" id="cont-id">
+    <input type="hidden" id="cont-accion">
+
+    <div id="cont-cobro-fields">
+      <div class="bia-input-group">
+        <label>ID del Registro de Balance del OR</label>
+        <input type="text" id="cont-balance-id" class="bia-input" placeholder="ID del balance">
+      </div>
+    </div>
+
+    <div id="cont-refac-fields" style="display:none;">
+      <div class="bia-input-group">
+        <label>Monto refacturado al cliente (COP)</label>
+        <input type="number" id="cont-monto-cop" class="bia-input" min="0" step="0.01">
+      </div>
+    </div>
+
+    <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:8px;">
+      <button class="bia-btn-secondary" onclick="cerrarModalCont()">Cancelar</button>
+      <button class="bia-btn-primary" onclick="confirmarAccionCont()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+{# ── Modal Disputa ────────────────────────────────────────────────────────────── #}
+<div id="modal-disputa" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;align-items:center;justify-content:center;">
+  <div class="bia-panel" style="width:460px;max-width:95vw;">
+    <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;" id="modal-disp-titulo">Actualizar disputa</h3>
+    <input type="hidden" id="disp-id">
+    <input type="hidden" id="disp-accion">
+
+    <div id="disp-obs-fields">
+      <div class="bia-input-group">
+        <label>Observaciones</label>
+        <textarea id="disp-observaciones" class="bia-input" rows="3" style="resize:vertical;"></textarea>
+      </div>
+    </div>
+
+    <div id="disp-gestionar-fields" style="display:none;">
+      <div class="bia-input-group">
+        <label>Nuevo estado</label>
+        <select id="disp-nuevo-estado" class="bia-select">
+          <option value="EN_GESTION">En gestión</option>
+          <option value="CERRADA_SIN_AJUSTE">Cerrada sin ajuste</option>
+        </select>
+      </div>
+      <div class="bia-input-group">
+        <label>Resolución (opcional)</label>
+        <textarea id="disp-resolucion" class="bia-input" rows="2" style="resize:vertical;"></textarea>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:8px;">
+      <button class="bia-btn-secondary" onclick="cerrarModalDisp()">Cancelar</button>
+      <button class="bia-btn-primary" onclick="confirmarAccionDisp()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ── Estado ────────────────────────────────────────────────────────────────────
+let tabActivo = 'tab-provisiones';
+let _pagProv = 1, _pagCont = 1, _pagDisp = 1;
+const PAGE_LIMIT = 100;
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function activarTab(tabId) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+  document.querySelectorAll('[data-tab]').forEach(b => {
+    b.style.borderBottomColor = 'transparent';
+    b.style.color = 'var(--bia-text-muted)';
+  });
+  document.getElementById(tabId).style.display = 'block';
+  const btn = document.querySelector(`[data-tab="${tabId}"]`);
+  if (btn) {
+    btn.style.borderBottomColor = 'var(--bia-accent)';
+    btn.style.color = 'var(--bia-text-primary)';
+  }
+  tabActivo = tabId;
+}
+
+// ── Utilidades ────────────────────────────────────────────────────────────────
+const fmtCOP = n => n == null ? '—' : new Intl.NumberFormat('es-CO', {style:'currency', currency:'COP', maximumFractionDigits:0}).format(n);
+const fmtKWh = n => n == null ? '—' : new Intl.NumberFormat('es-CO', {maximumFractionDigits:3}).format(n) + ' kWh';
+
+function params() {
+  const p = document.getElementById('filtro-periodo').value;
+  const o = document.getElementById('filtro-or').value;
+  const qs = new URLSearchParams();
+  if (p) qs.set('periodo_id', p);
+  if (o) qs.set('or_id', o);
+  return qs;
+}
+
+function badgeAlerta(dias, umbral) {
+  if (dias > umbral) return `<span style="background:var(--bia-error);color:#fff;border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:700;">${dias}d</span>`;
+  return `<span style="color:var(--bia-text-muted);font-size:0.8rem;">${dias}d</span>`;
+}
+
+function estadoBadge(estado) {
+  const colores = {
+    PENDIENTE:'#f59e0b', CRUZADO_TOTAL:'#16a34a', CRUZADO_PARCIAL:'#3b82f6',
+    COBRADO:'#3b82f6', CERRADO:'#16a34a',
+    ABIERTA:'#ef4444', EN_GESTION:'#f59e0b', RESUELTA:'#16a34a', CERRADA_SIN_AJUSTE:'#94a3b8',
+    PERDIDA_REPORTE:'#ef4444', GANANCIA_REAL:'#16a34a', PERDIDA_REAL:'#ef4444',
+  };
+  const color = colores[estado] || '#94a3b8';
+  return `<span style="background:${color}1a;color:${color};border-radius:4px;padding:2px 8px;font-size:0.75rem;font-weight:600;">${estado}</span>`;
+}
+
+// ── Paginación ────────────────────────────────────────────────────────────────
+function renderPaginacion(containerId, totalPages, currentPage, fn) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+
+  const MAX_BTNS = 7;
+  let pages = [];
+  if (totalPages <= MAX_BTNS) {
+    pages = Array.from({length: totalPages}, (_, i) => i + 1);
+  } else {
+    pages = [1];
+    let start = Math.max(2, currentPage - 2);
+    let end   = Math.min(totalPages - 1, currentPage + 2);
+    if (start > 2) pages.push('…');
+    for (let i = start; i <= end; i++) pages.push(i);
+    if (end < totalPages - 1) pages.push('…');
+    pages.push(totalPages);
+  }
+
+  el.innerHTML = pages.map(p => {
+    if (p === '…') return `<span style="padding:4px 6px;color:var(--bia-text-muted);">…</span>`;
+    const active = p === currentPage
+      ? 'background:var(--bia-accent);color:#fff;border-color:var(--bia-accent);'
+      : '';
+    return `<button class="bia-btn-secondary" style="padding:4px 10px;min-width:32px;${active}"
+      onclick="${fn.name}(${p})">${p}</button>`;
+  }).join('');
+}
+
+// ── Saldos ────────────────────────────────────────────────────────────────────
+async function cargarSaldos() {
+  const r = await fetch('/gestiones/api/provisiones/saldos');
+  const data = await r.json();
+  if (!data.ok) return;
+
+  const grid = document.getElementById('saldos-grid');
+  const total_cop = data.saldos_por_or.reduce((a,b) => a + b.total_cop, 0);
+  grid.innerHTML = `
+    <div class="bia-stat-card">
+      <span style="font-size:0.72rem;font-weight:600;color:var(--bia-text-muted);text-transform:uppercase;">Provisionado pendiente</span>
+      <span style="font-size:1.3rem;font-weight:700;color:var(--bia-warning);">${fmtCOP(total_cop)}</span>
+    </div>
+    <div class="bia-stat-card">
+      <span style="font-size:0.72rem;font-weight:600;color:var(--bia-text-muted);text-transform:uppercase;">Contingencias abiertas</span>
+      <span style="font-size:1.3rem;font-weight:700;color:var(--bia-error);">${data.contingencias_pendientes}</span>
+    </div>
+    <div class="bia-stat-card">
+      <span style="font-size:0.72rem;font-weight:600;color:var(--bia-text-muted);text-transform:uppercase;">Valor en disputa</span>
+      <span style="font-size:1.3rem;font-weight:700;color:var(--bia-accent);">${fmtCOP(data.disputas_valor_cop)}</span>
+    </div>
+    <div class="bia-stat-card">
+      <span style="font-size:0.72rem;font-weight:600;color:var(--bia-text-muted);text-transform:uppercase;">Prov. &gt;90 días</span>
+      <span style="font-size:1.3rem;font-weight:700;color:${data.por_antiguedad.mas_90 > 0 ? 'var(--bia-error)' : 'var(--bia-text-primary)'};">${data.por_antiguedad.mas_90}</span>
+    </div>
+  `;
+  document.getElementById('panel-saldos').style.display = 'block';
+}
+
+// ── Provisiones ───────────────────────────────────────────────────────────────
+async function cargarProvisiones(pagina = 1) {
+  _pagProv = pagina;
+  const qs = params();
+  const estado = document.getElementById('filtro-estado-prov').value;
+  if (estado) qs.set('estado', estado);
+  qs.set('page', pagina);
+  qs.set('limit', PAGE_LIMIT);
+
+  const r = await fetch('/gestiones/api/provisiones?' + qs);
+  const data = await r.json();
+  if (!data.ok) return;
+
+  const badge = document.getElementById('badge-prov');
+  const alertas = data.items.filter(i => i.alerta_vencimiento).length;
+  if (alertas > 0) { badge.textContent = alertas; badge.style.display = 'inline'; }
+  else badge.style.display = 'none';
+
+  document.getElementById('total-provisiones').textContent = `${data.total} provisiones`;
+
+  const tbody = document.getElementById('tbody-provisiones');
+  if (!data.items.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--bia-text-muted);padding:24px;">Sin resultados.</td></tr>';
+    return;
+  }
+  renderPaginacion('pag-provisiones', data.pages, pagina, cargarProvisiones);
+  const trunc = (s, n=22) => s && s.length > n ? s.slice(0, n) + '…' : (s || '—');
+  tbody.innerHTML = data.items.map(p => `
+    <tr>
+      <td style="font-family:monospace;font-size:0.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${p.codigo_frontera}">${p.codigo_frontera}</td>
+      <td style="font-size:0.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${p.or_nombre || ''}">${trunc(p.or_nombre || p.or_id)}</td>
+      <td style="font-size:0.78rem;white-space:nowrap;">${p.periodo_label || p.periodo_id}</td>
+      <td>${estadoBadge(p.tipo)}</td>
+      <td style="text-align:right;font-size:0.82rem;">${fmtKWh(p.energia_kwh)}</td>
+      <td style="text-align:right;font-weight:600;font-size:0.82rem;">${fmtCOP(p.valor_provisionado_cop)}</td>
+      <td>${estadoBadge(p.estado)}</td>
+      <td style="text-align:center;">${badgeAlerta(p.dias_abierta, 90)}</td>
+      <td style="text-align:center;">
+        ${p.estado === 'PENDIENTE' ? `<button class="bia-btn-secondary" style="font-size:0.72rem;padding:3px 10px;"
+          onclick="abrirModalCruce('${p.id}')">Cruzar balance</button>` : '<span style="color:var(--bia-text-muted);font-size:0.78rem;">—</span>'}
+      </td>
+    </tr>
+  `).join('');
+}
+
+// ── Contingencias ─────────────────────────────────────────────────────────────
+async function cargarContingencias(pagina = 1) {
+  _pagCont = pagina;
+  const qs = params();
+  const estado = document.getElementById('filtro-estado-cont').value;
+  if (estado) qs.set('estado', estado);
+  qs.set('page', pagina);
+  qs.set('limit', PAGE_LIMIT);
+
+  const r = await fetch('/gestiones/api/contingencias?' + qs);
+  const data = await r.json();
+  if (!data.ok) return;
+
+  const badge = document.getElementById('badge-cont');
+  const alertas = data.items.filter(i => i.alerta_vencimiento).length;
+  if (alertas > 0) { badge.textContent = alertas; badge.style.display = 'inline'; }
+  else badge.style.display = 'none';
+
+  document.getElementById('total-contingencias').textContent = `${data.total} contingencias`;
+
+  const tbody = document.getElementById('tbody-contingencias');
+  if (!data.items.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--bia-text-muted);padding:24px;">Sin resultados.</td></tr>';
+    return;
+  }
+  renderPaginacion('pag-contingencias', data.pages, pagina, cargarContingencias);
+  const truncC = (s, n=22) => s && s.length > n ? s.slice(0, n) + '…' : (s || '—');
+  tbody.innerHTML = data.items.map(c => `
+    <tr>
+      <td style="font-family:monospace;font-size:0.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.codigo_frontera}">${c.codigo_frontera}</td>
+      <td style="font-size:0.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.or_nombre || ''}">${truncC(c.or_nombre)}</td>
+      <td style="font-size:0.78rem;white-space:nowrap;">${c.periodo_label || c.periodo_id}</td>
+      <td style="text-align:right;font-size:0.82rem;">${fmtKWh(c.energia_kwh)}</td>
+      <td style="text-align:right;font-size:0.82rem;">${c.costo_calculado_cop != null ? fmtCOP(c.costo_calculado_cop) : '—'}</td>
+      <td style="text-align:right;font-size:0.82rem;">${c.refacturacion_cliente_cop != null ? fmtCOP(c.refacturacion_cliente_cop) : '—'}</td>
+      <td>${estadoBadge(c.estado)}</td>
+      <td>${estadoBadge(c.resultado_tipo)}</td>
+      <td style="text-align:center;">${badgeAlerta(c.dias_abierta, 90)}</td>
+      <td style="text-align:center;">
+        <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center;">
+        ${c.estado === 'PENDIENTE' ? `
+          <button class="bia-btn-secondary" style="font-size:0.72rem;padding:3px 8px;"
+            onclick="abrirModalCont('${c.id}','cobro')">Cobro OR</button>
+          <button class="bia-btn-secondary" style="font-size:0.72rem;padding:3px 8px;"
+            onclick="cerrarSinRefac('${c.id}')">Sin refac.</button>
+        ` : ''}
+        ${c.estado === 'COBRADO' ? `
+          <button class="bia-btn-secondary" style="font-size:0.72rem;padding:3px 8px;"
+            onclick="abrirModalCont('${c.id}','refac')">Refacturar</button>
+          <button class="bia-btn-secondary" style="font-size:0.72rem;padding:3px 8px;"
+            onclick="cerrarSinRefac('${c.id}')">Sin refac.</button>
+        ` : ''}
+        ${c.estado === 'CERRADO' ? '<span style="color:var(--bia-text-muted);font-size:0.78rem;">—</span>' : ''}
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+// ── Disputas ──────────────────────────────────────────────────────────────────
+async function cargarDisputas(pagina = 1) {
+  _pagDisp = pagina;
+  const qs = params();
+  const estado = document.getElementById('filtro-estado-disp').value;
+  if (estado) qs.set('estado', estado);
+  qs.set('page', pagina);
+  qs.set('limit', PAGE_LIMIT);
+
+  const r = await fetch('/gestiones/api/disputas?' + qs);
+  const data = await r.json();
+  if (!data.ok) return;
+
+  const badge = document.getElementById('badge-disp');
+  const alertas = data.items.filter(i => i.alerta_vencimiento).length;
+  if (alertas > 0) { badge.textContent = alertas; badge.style.display = 'inline'; }
+  else badge.style.display = 'none';
+
+  document.getElementById('total-disputas').textContent = `${data.total} disputas`;
+
+  const tbody = document.getElementById('tbody-disputas');
+  if (!data.items.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--bia-text-muted);padding:24px;">Sin resultados.</td></tr>';
+    return;
+  }
+  renderPaginacion('pag-disputas', data.pages, pagina, cargarDisputas);
+  const truncD = (s, n=22) => s && s.length > n ? s.slice(0, n) + '…' : (s || '—');
+  tbody.innerHTML = data.items.map(d => `
+    <tr>
+      <td style="font-family:monospace;font-size:0.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${d.codigo_frontera}">${d.codigo_frontera}</td>
+      <td style="font-size:0.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${d.or_nombre || ''}">${truncD(d.or_nombre)}</td>
+      <td style="font-size:0.78rem;white-space:nowrap;">${d.periodo_label || d.periodo_id}</td>
+      <td style="text-align:right;font-size:0.82rem;">${fmtKWh(d.energia_exceso_kwh)}</td>
+      <td style="text-align:right;font-weight:600;font-size:0.82rem;">${fmtCOP(d.valor_disputa_cop)}</td>
+      <td>${estadoBadge(d.estado)}</td>
+      <td style="text-align:center;">${badgeAlerta(d.dias_abierta, 30)}</td>
+      <td style="font-size:0.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+          title="${d.descripcion || ''}">${d.descripcion || '—'}</td>
+      <td style="text-align:center;">
+        <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center;">
+          <button class="bia-btn-secondary" style="font-size:0.72rem;padding:3px 8px;"
+            onclick="abrirModalDisp('${d.id}','obs','${(d.descripcion||'').replace(/'/g,'&#39;')}')">
+            Notas
+          </button>
+          ${d.estado !== 'CERRADA_SIN_AJUSTE' && d.estado !== 'RESUELTA' ? `
+            <button class="bia-btn-secondary" style="font-size:0.72rem;padding:3px 8px;"
+              onclick="abrirModalDisp('${d.id}','gestionar','')">
+              Gestionar
+            </button>
+          ` : ''}
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+// ── Cargar todo ───────────────────────────────────────────────────────────────
+async function cargarTodo() {
+  _pagProv = 1; _pagCont = 1; _pagDisp = 1;
+  await Promise.all([cargarProvisiones(1), cargarContingencias(1), cargarDisputas(1), cargarSaldos()]);
+}
+
+// ── Modal Cruce de Balance ────────────────────────────────────────────────────
+function abrirModalCruce(provisionId) {
+  document.getElementById('cruce-provision-id').value = provisionId;
+  document.getElementById('cruce-balance-id').value = '';
+  document.getElementById('cruce-observaciones').value = '';
+  document.getElementById('modal-cruce').style.display = 'flex';
+}
+function cerrarModal() {
+  document.getElementById('modal-cruce').style.display = 'none';
+}
+async function confirmarCruce() {
+  const provId = document.getElementById('cruce-provision-id').value;
+  const balId  = document.getElementById('cruce-balance-id').value.trim();
+  const obs    = document.getElementById('cruce-observaciones').value.trim();
+  if (!balId) { alert('Ingresa el ID del balance.'); return; }
+
+  const r = await fetch(`/gestiones/api/provisiones/${provId}/cruzar-balance`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({balance_id: balId, observaciones: obs}),
+  });
+  const data = await r.json();
+  if (data.ok) {
+    cerrarModal();
+    alert(`Cruce registrado. Resultado neto: ${fmtCOP(data.resultado_neto_cop)} (${data.tipo_resultado})`);
+    cargarTodo();
+  } else {
+    alert('Error: ' + data.error);
+  }
+}
+
+// ── Modal Contingencia ────────────────────────────────────────────────────────
+function abrirModalCont(contId, accion) {
+  document.getElementById('cont-id').value = contId;
+  document.getElementById('cont-accion').value = accion;
+  document.getElementById('cont-cobro-fields').style.display = accion === 'cobro' ? 'block' : 'none';
+  document.getElementById('cont-refac-fields').style.display = accion === 'refac' ? 'block' : 'none';
+  document.getElementById('modal-cont-titulo').textContent =
+    accion === 'cobro' ? 'Registrar cobro del OR' : 'Registrar refacturación al cliente';
+  document.getElementById('modal-contingencia').style.display = 'flex';
+}
+function cerrarModalCont() {
+  document.getElementById('modal-contingencia').style.display = 'none';
+}
+async function confirmarAccionCont() {
+  const contId = document.getElementById('cont-id').value;
+  const accion = document.getElementById('cont-accion').value;
+
+  let url, body;
+  if (accion === 'cobro') {
+    const balId = document.getElementById('cont-balance-id').value.trim();
+    if (!balId) { alert('Ingresa el ID del balance.'); return; }
+    url  = `/gestiones/api/contingencias/${contId}/registrar-cobro`;
+    body = {balance_id: balId};
+  } else {
+    const monto = parseFloat(document.getElementById('cont-monto-cop').value);
+    if (isNaN(monto) || monto < 0) { alert('Ingresa un monto válido.'); return; }
+    url  = `/gestiones/api/contingencias/${contId}/registrar-refacturacion`;
+    body = {monto_cop: monto};
+  }
+
+  const r = await fetch(url, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+  });
+  const data = await r.json();
+  if (data.ok) {
+    cerrarModalCont();
+    cargarTodo();
+  } else {
+    alert('Error: ' + data.error);
+  }
+}
+async function cerrarSinRefac(contId) {
+  if (!confirm('¿Cerrar esta contingencia como Pérdida por Diferencia de Reporte?')) return;
+  const r = await fetch(`/gestiones/api/contingencias/${contId}/cerrar-sin-refacturacion`, {method:'POST'});
+  const data = await r.json();
+  if (data.ok) cargarTodo();
+  else alert('Error: ' + data.error);
+}
+
+// ── Modal Disputa ─────────────────────────────────────────────────────────────
+function abrirModalDisp(dispId, accion, obsActual) {
+  document.getElementById('disp-id').value = dispId;
+  document.getElementById('disp-accion').value = accion;
+  document.getElementById('disp-obs-fields').style.display    = accion === 'obs'      ? 'block' : 'none';
+  document.getElementById('disp-gestionar-fields').style.display = accion === 'gestionar' ? 'block' : 'none';
+  document.getElementById('modal-disp-titulo').textContent =
+    accion === 'obs' ? 'Actualizar observaciones' : 'Gestionar disputa';
+  if (accion === 'obs') document.getElementById('disp-observaciones').value = obsActual;
+  document.getElementById('modal-disputa').style.display = 'flex';
+}
+function cerrarModalDisp() {
+  document.getElementById('modal-disputa').style.display = 'none';
+}
+async function confirmarAccionDisp() {
+  const dispId = document.getElementById('disp-id').value;
+  const accion = document.getElementById('disp-accion').value;
+
+  let url, body;
+  if (accion === 'obs') {
+    const obs = document.getElementById('disp-observaciones').value.trim();
+    if (!obs) { alert('Escribe una observación.'); return; }
+    url  = `/gestiones/api/disputas/${dispId}/observaciones`;
+    body = {observaciones: obs};
+    const r = await fetch(url, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const d = await r.json();
+    if (d.ok) { cerrarModalDisp(); cargarDisputas(); }
+    else alert('Error: ' + d.error);
+    return;
+  }
+
+  // gestionar
+  const estado    = document.getElementById('disp-nuevo-estado').value;
+  const resolucion = document.getElementById('disp-resolucion').value.trim();
+  url  = `/gestiones/api/disputas/${dispId}/gestionar`;
+  body = {estado, resolucion};
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const d = await r.json();
+  if (d.ok) { cerrarModalDisp(); cargarDisputas(); }
+  else alert('Error: ' + d.error);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  activarTab('tab-provisiones');
+});
+</script>
+{% endblock %}

@@ -1,0 +1,9 @@
+archivos_ejemplo/
+_referencia/
+.coverage
+.pytest_cache/
+.next/
+prisma.config.ts
+*.pyc
+__pycache__/
+.env

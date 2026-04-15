@@ -1,0 +1,751 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — BIA Energy{% endblock %}
+{% block page_title %}Dashboard de Seguimiento{% endblock %}
+
+{% block extra_css %}
+<style>
+  .dash-section-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--bia-text-muted);
+    margin-bottom: 14px;
+  }
+  .kpi-card {
+    background: var(--bia-bg-surface);
+    border: 1px solid var(--bia-border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .kpi-card__label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--bia-text-muted);
+  }
+  .kpi-card__value {
+    font-size: 1.45rem;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+  .kpi-card__sub {
+    font-size: 0.72rem;
+    color: var(--bia-text-muted);
+  }
+  .dash-tab-btn {
+    padding: 11px 20px;
+    border: none;
+    background: none;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--bia-text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color .15s, border-color .15s;
+  }
+  .dash-tab-btn.active {
+    color: var(--bia-text-primary);
+    border-bottom-color: var(--bia-accent);
+  }
+  .trend-up   { color: #ef4444; font-weight: 700; }
+  .trend-down { color: #16a34a; font-weight: 700; }
+  .trend-eq   { color: var(--bia-text-muted); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bia-stack bia-stack-24">
+
+  {# ── Cabecera ────────────────────────────────────────────────────────────── #}
+  <div class="bia-row-between" style="align-items:flex-end;">
+    <div>
+      <h1 style="font-size:1.3rem;font-weight:700;color:var(--bia-text-primary);letter-spacing:-0.02em;margin-bottom:4px;">
+        Dashboard de Seguimiento
+      </h1>
+      <p style="font-size:0.875rem;color:var(--bia-text-muted);">
+        Monitoreo global del proceso de conciliación por período.
+      </p>
+    </div>
+    <div style="display:flex;gap:12px;align-items:flex-end;">
+      <div class="bia-input-group" style="margin:0;">
+        <label>Período activo</label>
+        <select id="sel-periodo" class="bia-select" style="width:220px;" onchange="cambiarPeriodo()">
+          <option value="">Seleccionar período...</option>
+          {% for p in periodos %}
+          <option value="{{ p.id }}">{{ p.anio }}-{{ "%02d"|format(p.mes) }} — {{ p.estado.value }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="bia-btn-secondary" onclick="refrescarTodo()" id="btn-refrescar" style="display:none;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+          <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+        </svg>
+        Refrescar
+      </button>
+    </div>
+  </div>
+
+  {# ── Estado vacío ────────────────────────────────────────────────────────── #}
+  <div id="estado-vacio" class="bia-panel" style="text-align:center;padding:56px 24px;">
+    <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24"
+         fill="none" stroke="var(--bia-text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+         style="margin:0 auto 12px;">
+      <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+      <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+    </svg>
+    <p style="color:var(--bia-text-muted);font-size:0.9rem;">
+      Selecciona un período para cargar el dashboard.
+    </p>
+  </div>
+
+  {# ── Skeleton loader ─────────────────────────────────────────────────────── #}
+  <div id="estado-cargando" style="display:none;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:24px;">
+      {% for _ in range(6) %}
+      <div style="height:80px;background:linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%);
+                  background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:var(--radius);"></div>
+      {% endfor %}
+    </div>
+    <style>
+      @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+    </style>
+  </div>
+
+  {# ── Contenido principal ─────────────────────────────────────────────────── #}
+  <div id="contenido-dashboard" style="display:none;">
+
+    {# Tabs nav #}
+    <div style="border-bottom:1px solid var(--bia-border);margin-bottom:24px;">
+      <button class="dash-tab-btn active" id="btn-tab-principal"  onclick="activarTab('principal')">Panel Principal</button>
+      <button class="dash-tab-btn"        id="btn-tab-historico"  onclick="activarTab('historico')">Histórico 12 M</button>
+      <button class="dash-tab-btn"        id="btn-tab-por-or"     onclick="activarTab('por-or')">Por Operador de Red</button>
+    </div>
+
+    {# ────────────────────────────── TAB PRINCIPAL ────────────────────────── #}
+    <div id="panel-principal">
+
+      {# KPI Grid #}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:24px;"
+           id="kpi-grid"></div>
+
+      {# Charts: dona + top-10 #}
+      <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;margin-bottom:24px;">
+
+        <div class="bia-panel" style="display:flex;flex-direction:column;">
+          <div class="dash-section-title">Distribución de fronteras</div>
+          <div style="position:relative;height:220px;display:flex;align-items:center;justify-content:center;">
+            <canvas id="chart-dona"></canvas>
+            <div id="dona-centro" style="position:absolute;text-align:center;pointer-events:none;">
+              <div style="font-size:1.6rem;font-weight:700;color:var(--bia-text-primary);" id="dona-total"></div>
+              <div style="font-size:0.7rem;color:var(--bia-text-muted);text-transform:uppercase;letter-spacing:0.05em;">fronteras</div>
+            </div>
+          </div>
+          <div id="dona-leyenda" style="margin-top:12px;display:flex;flex-direction:column;gap:5px;"></div>
+        </div>
+
+        <div class="bia-panel">
+          <div class="dash-section-title">Top 10 fronteras — impacto financiero L1</div>
+          <div style="position:relative;height:280px;">
+            <canvas id="chart-top10"></canvas>
+          </div>
+        </div>
+
+      </div>
+
+      {# Estado fuentes #}
+      <div class="bia-panel">
+        <div class="dash-section-title">Estado de fuentes del período</div>
+        <div class="bia-table-wrap">
+          <table class="bia-table" style="table-layout:fixed;width:100%;">
+            <colgroup>
+              <col style="width:120px;"><col><col style="width:80px;">
+              <col style="width:140px;"><col style="width:130px;"><col style="width:140px;">
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Tipo fuente</th>
+                <th>Operador de Red</th>
+                <th>Estado</th>
+                <th style="text-align:right;">Registros</th>
+                <th>Cargado por</th>
+                <th>Fecha</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-fuentes">
+              <tr><td colspan="6" style="text-align:center;color:var(--bia-text-muted);padding:24px;">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>{# /panel-principal #}
+
+    {# ─────────────────────────────── TAB HISTÓRICO ───────────────────────── #}
+    <div id="panel-historico" style="display:none;">
+
+      <div class="bia-panel" style="margin-bottom:16px;">
+        <div class="dash-section-title">Evolución mensual de fronteras por categoría</div>
+        <div style="position:relative;height:300px;">
+          <canvas id="chart-lineas"></canvas>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div class="bia-panel">
+          <div class="dash-section-title">Ingresos reales vs. costos mensuales (COP)</div>
+          <div style="position:relative;height:260px;">
+            <canvas id="chart-barras"></canvas>
+          </div>
+        </div>
+        <div class="bia-panel">
+          <div class="dash-section-title">Saldo acumulado — provisiones y contingencias (COP)</div>
+          <div style="position:relative;height:260px;">
+            <canvas id="chart-area"></canvas>
+          </div>
+        </div>
+      </div>
+
+    </div>{# /panel-historico #}
+
+    {# ──────────────────────────────── TAB POR OR ─────────────────────────── #}
+    <div id="panel-por-or" style="display:none;">
+      <div class="bia-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <div class="dash-section-title" style="margin:0;">Estado por Operador de Red</div>
+          <span id="total-or-label" style="font-size:0.8rem;color:var(--bia-text-muted);"></span>
+        </div>
+        <div class="bia-table-wrap">
+          <table class="bia-table" style="table-layout:fixed;width:100%;">
+            <colgroup>
+              <col style="width:180px;"><col style="width:62px;"><col style="width:55px;">
+              <col style="width:80px;"><col style="width:80px;"><col style="width:65px;">
+              <col style="width:65px;"><col style="width:72px;"><col style="width:140px;">
+              <col style="width:72px;">
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Operador de Red</th>
+                <th style="text-align:right;">Total</th>
+                <th style="text-align:right;">A1</th>
+                <th style="text-align:right;">Contingen.</th>
+                <th style="text-align:right;">Provisiones</th>
+                <th style="text-align:right;">Disputas</th>
+                <th style="text-align:right;">Alertas</th>
+                <th style="text-align:right;">Cont. ab.</th>
+                <th style="text-align:right;">Saldo prov. (COP)</th>
+                <th style="text-align:center;">Tendencia</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-por-or">
+              <tr><td colspan="10" style="text-align:center;color:var(--bia-text-muted);padding:32px;">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>{# /panel-por-or #}
+
+  </div>{# /contenido-dashboard #}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+// ── Configuración global Chart.js ─────────────────────────────────────────────
+Chart.defaults.font.family = "'Inter', sans-serif";
+Chart.defaults.font.size   = 11;
+Chart.defaults.color       = '#94a3b8';
+
+const PALETA = {
+  A1:           { bg: '#16a34a', dim: '#16a34a26' },
+  contingencias:{ bg: '#f59e0b', dim: '#f59e0b26' },
+  provisiones:  { bg: '#3b82f6', dim: '#3b82f626' },
+  disputas:     { bg: '#06b6d4', dim: '#06b6d426' },
+  alertas:      { bg: '#64748b', dim: '#64748b26' },
+  incompletas:  { bg: '#94a3b8', dim: '#94a3b826' },
+  errores:      { bg: '#ef4444', dim: '#ef444426' },
+};
+
+// ── Formatters ────────────────────────────────────────────────────────────────
+const fmtCOP  = n => n == null ? '—'
+  : new Intl.NumberFormat('es-CO', { style:'currency', currency:'COP', maximumFractionDigits:0 }).format(n);
+const fmtN    = n => n == null ? '—'
+  : new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 }).format(n);
+const fmtKWh  = n => n == null ? '—'
+  : new Intl.NumberFormat('es-CO', { maximumFractionDigits: 1 }).format(n) + ' kWh';
+const pct     = (v, t) => t > 0 ? ((v / t) * 100).toFixed(1) + '%' : '0%';
+
+// ── Estado ────────────────────────────────────────────────────────────────────
+let _periodoId   = null;
+let _charts      = {};   // instancias Chart.js para destroy/recrear
+let _histCargado = false;
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function activarTab(nombre) {
+  ['principal', 'historico', 'por-or'].forEach(t => {
+    document.getElementById(`panel-${t}`).style.display     = t === nombre ? 'block' : 'none';
+    document.getElementById(`btn-tab-${t}`).classList.toggle('active', t === nombre);
+  });
+
+  // Carga diferida del histórico
+  if (nombre === 'historico' && !_histCargado) cargarHistorico();
+  if (nombre === 'por-or' && _periodoId)       cargarPorOR();
+}
+
+// ── Entrada principal ─────────────────────────────────────────────────────────
+function cambiarPeriodo() {
+  _periodoId   = document.getElementById('sel-periodo').value;
+  _histCargado = false;
+  if (!_periodoId) {
+    mostrarEstado('vacio');
+    return;
+  }
+  refrescarTodo();
+}
+
+async function refrescarTodo() {
+  if (!_periodoId) return;
+  mostrarEstado('cargando');
+  await Promise.all([cargarResumen(), cargarFuentes()]);
+  mostrarEstado('datos');
+}
+
+function mostrarEstado(estado) {
+  document.getElementById('estado-vacio').style.display    = estado === 'vacio'    ? 'block' : 'none';
+  document.getElementById('estado-cargando').style.display = estado === 'cargando' ? 'block' : 'none';
+  document.getElementById('contenido-dashboard').style.display = estado === 'datos'  ? 'block' : 'none';
+  document.getElementById('btn-refrescar').style.display   = estado !== 'vacio'    ? 'flex'  : 'none';
+}
+
+// ── Resumen (KPIs + gráficos del panel principal) ─────────────────────────────
+async function cargarResumen() {
+  const r    = await fetch(`/api/dashboard/${_periodoId}/resumen`);
+  const data = await r.json();
+  if (!data.ok) return;
+
+  renderKPIs(data);
+  renderDona(data);
+  renderTop10(data.top10);
+}
+
+function renderKPIs(d) {
+  const dist = d.distribucion;
+  const kpis = [
+    { label: 'Total fronteras',          val: fmtN(d.total),                              color: 'var(--bia-text-primary)',  sub: d.periodo_label },
+    { label: 'Sin diferencia (A1)',       val: fmtN(dist.A1),                              color: PALETA.A1.bg,              sub: pct(dist.A1, d.total) },
+    { label: 'Provisiones',              val: fmtN(dist.provisiones),                     color: PALETA.provisiones.bg,     sub: fmtCOP(d.saldo_provision_cop) },
+    { label: 'Contingencias L1',         val: fmtN(dist.contingencias_l1),                color: PALETA.contingencias.bg,   sub: `${dist.contingencias_l1} abiertas` },
+    { label: 'Disputas L2',              val: fmtN(dist.disputas),                        color: PALETA.disputas.bg,        sub: fmtCOP(d.valor_disputa_cop) },
+    { label: 'Alertas manuales',         val: fmtN(dist.alertas_manuales),                color: PALETA.alertas.bg,         sub: '' },
+    { label: 'Incompletas / Errores',    val: `${dist.incompletas} / ${dist.errores}`,    color: PALETA.errores.bg,         sub: '' },
+    { label: 'Impacto estimado (L1+L2)', val: fmtCOP(d.impacto_total_cop),               color: '#8b5cf6',                 sub: fmtKWh(d.saldo_provision_kwh) },
+  ];
+
+  document.getElementById('kpi-grid').innerHTML = kpis.map(k => `
+    <div class="kpi-card">
+      <div class="kpi-card__label">${k.label}</div>
+      <div class="kpi-card__value" style="color:${k.color};">${k.val}</div>
+      ${k.sub ? `<div class="kpi-card__sub">${k.sub}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+function renderDona(d) {
+  const dist = d.distribucion;
+  const datos = [
+    { key: 'A1',           label: 'A1 — Sin diferencia',   val: dist.A1 },
+    { key: 'contingencias',label: 'Contingencias L1',       val: dist.contingencias_l1 },
+    { key: 'provisiones',  label: 'Provisiones',            val: dist.provisiones },
+    { key: 'disputas',     label: 'Disputas L2',            val: dist.disputas },
+    { key: 'alertas',      label: 'Alertas manuales',       val: dist.alertas_manuales },
+    { key: 'incompletas',  label: 'Incompletas',            val: dist.incompletas },
+    { key: 'errores',      label: 'Errores',                val: dist.errores },
+  ].filter(x => x.val > 0);
+
+  document.getElementById('dona-total').textContent = fmtN(d.total);
+
+  if (_charts.dona) _charts.dona.destroy();
+  const ctx = document.getElementById('chart-dona').getContext('2d');
+  _charts.dona = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels:   datos.map(x => x.label),
+      datasets: [{
+        data:            datos.map(x => x.val),
+        backgroundColor: datos.map(x => PALETA[x.key]?.bg || '#94a3b8'),
+        borderWidth:     2,
+        borderColor:     '#fff',
+        hoverOffset:     6,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '68%',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const v = ctx.raw;
+              const t = d.total;
+              return ` ${ctx.label}: ${fmtN(v)}  (${pct(v, t)})`;
+            },
+          },
+        },
+      },
+    },
+  });
+
+  document.getElementById('dona-leyenda').innerHTML = datos.map(x => `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <div style="display:flex;align-items:center;gap:7px;min-width:0;">
+        <span style="width:10px;height:10px;border-radius:2px;background:${PALETA[x.key]?.bg};flex-shrink:0;"></span>
+        <span style="font-size:0.78rem;color:var(--bia-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.label}</span>
+      </div>
+      <span style="font-size:0.78rem;font-weight:600;color:var(--bia-text-primary);white-space:nowrap;">${fmtN(x.val)}</span>
+    </div>
+  `).join('');
+}
+
+function renderTop10(top10) {
+  if (!top10 || !top10.length) return;
+
+  const CASO_COLOR = {
+    A1:'#16a34a', B1:'#f59e0b', B2:'#3b82f6', C1:'#06b6d4', C2:'#8b5cf6',
+    D1:'#f97316', D2:'#ec4899', D3:'#14b8a6', D4:'#64748b',
+    INCOMPLETA:'#94a3b8', ERROR:'#ef4444',
+  };
+
+  const labels = top10.map(r => r.codigo_frontera);
+  const vals   = top10.map(r => r.impacto_l1);
+  const colors = top10.map(r => CASO_COLOR[r.caso] || '#94a3b8');
+
+  if (_charts.top10) _charts.top10.destroy();
+  const ctx = document.getElementById('chart-top10').getContext('2d');
+  _charts.top10 = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label:           'Impacto L1 (COP)',
+        data:            vals,
+        backgroundColor: colors.map(c => c + '99'),
+        borderColor:     colors,
+        borderWidth:     1,
+        borderRadius:    3,
+      }],
+    },
+    options: {
+      indexAxis:           'y',
+      responsive:          true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${fmtCOP(ctx.raw)}`,
+            afterLabel: (ctx) => {
+              const r = top10[ctx.dataIndex];
+              return ` Caso: ${r.caso}  |  OR: ${r.operador_red}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(0,0,0,0.05)' },
+          ticks: { callback: v => fmtCOP(v) },
+        },
+        y: {
+          grid:  { display: false },
+          ticks: { font: { family: 'monospace', size: 11 } },
+        },
+      },
+    },
+  });
+}
+
+// ── Estado fuentes ────────────────────────────────────────────────────────────
+async function cargarFuentes() {
+  const r    = await fetch(`/api/dashboard/${_periodoId}/estado-fuentes`);
+  const data = await r.json();
+  if (!data.ok) return;
+
+  const ESTADO_COLOR = {
+    COMPLETADA:  { bg: '#16a34a1a', color: '#16a34a' },
+    PROCESANDO:  { bg: '#3b82f61a', color: '#3b82f6' },
+    PENDIENTE:   { bg: '#f59e0b1a', color: '#f59e0b' },
+    ERROR:       { bg: '#ef44441a', color: '#ef4444' },
+  };
+
+  const tbody = document.getElementById('tbody-fuentes');
+  if (!data.fuentes.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--bia-text-muted);padding:24px;">Sin fuentes cargadas en este período.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.fuentes.map(f => {
+    const ec   = ESTADO_COLOR[f.estado] || { bg: '#94a3b81a', color: '#94a3b8' };
+    const prog = f.total > 0 ? ` (${Math.round(f.procesados / f.total * 100)}%)` : '';
+    return `<tr>
+      <td style="font-weight:600;font-size:0.8rem;">${f.tipo}</td>
+      <td style="font-size:0.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${f.or_nombre}">${f.or_nombre || '—'}</td>
+      <td><span style="background:${ec.bg};color:${ec.color};border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:700;">${f.estado}</span></td>
+      <td style="text-align:right;font-size:0.8rem;">${fmtN(f.procesados)}${prog}</td>
+      <td style="font-size:0.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.usuario}</td>
+      <td style="font-size:0.78rem;color:var(--bia-text-muted);white-space:nowrap;">${f.fecha}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Histórico 12 M ────────────────────────────────────────────────────────────
+async function cargarHistorico() {
+  const r    = await fetch('/api/dashboard/historico?meses=12');
+  const data = await r.json();
+  if (!data.ok) return;
+  _histCargado = true;
+
+  const labels = data.data.map(d => d.label);
+
+  renderLineas(labels, data.data);
+  renderBarrasApiladas(labels, data.data);
+  renderArea(labels, data.data);
+}
+
+function renderLineas(labels, rows) {
+  const series = [
+    { key: 'A1',           label: 'A1 — Sin diferencia', ...PALETA.A1 },
+    { key: 'contingencias',label: 'Contingencias L1',     ...PALETA.contingencias },
+    { key: 'provisiones',  label: 'Provisiones',          ...PALETA.provisiones },
+    { key: 'disputas',     label: 'Disputas L2',          ...PALETA.disputas },
+    { key: 'incompletas',  label: 'Incompletas',          ...PALETA.incompletas },
+  ];
+
+  if (_charts.lineas) _charts.lineas.destroy();
+  const ctx = document.getElementById('chart-lineas').getContext('2d');
+  _charts.lineas = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: series.map(s => ({
+        label:       s.label,
+        data:        rows.map(r => r[s.key]),
+        borderColor: s.bg,
+        backgroundColor: s.bg + '20',
+        borderWidth: 2,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        tension: 0.3,
+      })),
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtN(ctx.raw)}` } },
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: { color: 'rgba(0,0,0,0.05)' },
+          ticks: { precision: 0 },
+        },
+        x: { grid: { display: false } },
+      },
+    },
+  });
+}
+
+function renderBarrasApiladas(labels, rows) {
+  if (_charts.barras) _charts.barras.destroy();
+  const ctx = document.getElementById('chart-barras').getContext('2d');
+  _charts.barras = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label:           'Ingresos (COP)',
+          data:            rows.map(r => r.ingresos_cop),
+          backgroundColor: '#16a34a99',
+          borderColor:     '#16a34a',
+          borderWidth:     1,
+          borderRadius:    2,
+          stack:           'stack',
+        },
+        {
+          label:           'Costos (COP)',
+          data:            rows.map(r => -r.costos_cop),
+          backgroundColor: '#ef444499',
+          borderColor:     '#ef4444',
+          borderWidth:     1,
+          borderRadius:    2,
+          stack:           'stack',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { boxWidth: 12, padding: 14 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${fmtCOP(Math.abs(ctx.raw))}`,
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, stacked: true },
+        y: {
+          stacked: true,
+          grid: { color: 'rgba(0,0,0,0.05)' },
+          ticks: { callback: v => fmtCOP(Math.abs(v)) },
+        },
+      },
+    },
+  });
+}
+
+function renderArea(labels, rows) {
+  if (_charts.area) _charts.area.destroy();
+  const ctx = document.getElementById('chart-area').getContext('2d');
+
+  const gradProv = ctx.createLinearGradient(0, 0, 0, 260);
+  gradProv.addColorStop(0, '#3b82f640');
+  gradProv.addColorStop(1, '#3b82f605');
+
+  const gradCont = ctx.createLinearGradient(0, 0, 0, 260);
+  gradCont.addColorStop(0, '#f59e0b40');
+  gradCont.addColorStop(1, '#f59e0b05');
+
+  _charts.area = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label:           'Saldo provisiones (COP)',
+          data:            rows.map(r => r.saldo_provisiones),
+          borderColor:     '#3b82f6',
+          backgroundColor: gradProv,
+          fill:            true,
+          borderWidth:     2,
+          pointRadius:     3,
+          tension:         0.4,
+        },
+        {
+          label:           'Contingencias abiertas (cnt)',
+          data:            rows.map(r => r.cont_abiertas),
+          borderColor:     '#f59e0b',
+          backgroundColor: gradCont,
+          fill:            true,
+          borderWidth:     2,
+          pointRadius:     3,
+          tension:         0.4,
+          yAxisID:         'y2',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { boxWidth: 12, padding: 14 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              if (ctx.dataset.yAxisID === 'y2')
+                return ` ${ctx.dataset.label}: ${fmtN(ctx.raw)}`;
+              return ` ${ctx.dataset.label}: ${fmtCOP(ctx.raw)}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x:  { grid: { display: false } },
+        y:  {
+          position: 'left',
+          grid: { color: 'rgba(0,0,0,0.05)' },
+          ticks: { callback: v => fmtCOP(v) },
+        },
+        y2: {
+          position: 'right',
+          grid:     { display: false },
+          ticks:    { precision: 0, color: '#f59e0b' },
+        },
+      },
+    },
+  });
+}
+
+// ── Por Operador de Red ───────────────────────────────────────────────────────
+async function cargarPorOR() {
+  const r    = await fetch(`/api/dashboard/${_periodoId}/por-operador`);
+  const data = await r.json();
+  if (!data.ok) return;
+
+  document.getElementById('total-or-label').textContent =
+    `${data.items.length} operadores`;
+
+  const tbody = document.getElementById('tbody-por-or');
+  if (!data.items.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--bia-text-muted);padding:32px;">Sin resultados para este período.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.items.map(or => {
+    let trendHtml = '';
+    if (or.tendencia > 0)
+      trendHtml = `<span class="trend-up" title="vs. mes anterior">↑ ${or.tendencia}</span>`;
+    else if (or.tendencia < 0)
+      trendHtml = `<span class="trend-down" title="vs. mes anterior">↓ ${Math.abs(or.tendencia)}</span>`;
+    else
+      trendHtml = `<span class="trend-eq">—</span>`;
+
+    const a1pct = or.total > 0 ? Math.round(or.A1 / or.total * 100) : 0;
+    const a1bar = `<div title="${a1pct}% A1" style="height:3px;border-radius:2px;background:var(--bia-border);margin-top:3px;">
+      <div style="width:${a1pct}%;height:100%;background:#16a34a;border-radius:2px;"></div></div>`;
+
+    return `<tr>
+      <td style="font-size:0.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${or.or_nombre}">
+        <strong style="font-size:0.72rem;display:block;color:var(--bia-text-muted);">${or.or_codigo}</strong>
+        ${or.or_nombre}
+      </td>
+      <td style="text-align:right;font-weight:700;">${fmtN(or.total)}${a1bar}</td>
+      <td style="text-align:right;color:#16a34a;font-weight:600;">${fmtN(or.A1)}</td>
+      <td style="text-align:right;color:#f59e0b;">${fmtN(or.contingencias)}</td>
+      <td style="text-align:right;color:#3b82f6;">${fmtN(or.provisiones)}</td>
+      <td style="text-align:right;color:#06b6d4;">${fmtN(or.disputas)}</td>
+      <td style="text-align:right;color:#64748b;">${fmtN(or.alertas)}</td>
+      <td style="text-align:right;font-size:0.8rem;">${fmtN(or.cont_abiertas)}</td>
+      <td style="text-align:right;font-weight:600;font-size:0.82rem;">${or.saldo_prov_cop > 0 ? fmtCOP(or.saldo_prov_cop) : '<span style="color:var(--bia-text-muted);">—</span>'}</td>
+      <td style="text-align:center;">${trendHtml}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  // Auto-seleccionar el primer período si hay alguno
+  const sel = document.getElementById('sel-periodo');
+  if (sel.options.length > 1) {
+    sel.selectedIndex = 1;
+    cambiarPeriodo();
+  }
+});
+</script>
+{% endblock %}

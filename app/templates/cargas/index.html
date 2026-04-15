@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Cargas — BIA Energy{% endblock %}
+{% block page_title %}Cargas de fuentes{% endblock %}
+
+{% block content %}
+<div class="bia-stack bia-stack-24">
+
+  {# Header #}
+  <div class="bia-row-between">
+    <div>
+      <h1 style="font-size:1.3rem;font-weight:700;color:var(--bia-text-primary);letter-spacing:-0.02em;margin-bottom:4px;">
+        Historial de cargas
+      </h1>
+      <p style="font-size:0.875rem;color:var(--bia-text-muted);">
+        Archivos cargados al sistema por período y tipo de fuente
+      </p>
+    </div>
+    <a href="{{ url_for('cargas.nueva') }}" class="bia-btn-primary">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+           fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      Nueva carga
+    </a>
+  </div>
+
+  {# Tabla de cargas #}
+  <div class="bia-table-container">
+    {% if cargas %}
+    <table>
+      <thead>
+        <tr>
+          <th>Período</th>
+          <th>Tipo</th>
+          <th>Operador</th>
+          <th>Archivo</th>
+          <th>Registros</th>
+          <th>Estado</th>
+          <th>Cargado por</th>
+          <th>Fecha</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in cargas %}
+        <tr>
+          <td>
+            {% if c.periodo %}
+              {{ '%04d-%02d' | format(c.periodo.anio, c.periodo.mes) }}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% set tipo_labels = {
+              'FACTURACION': ('accent', 'Facturación'),
+              'XM': ('neutral', 'XM'),
+              'SDL': ('neutral', 'SDL'),
+              'BALANCE': ('warning', 'Balance'),
+            } %}
+            {% set tipo_info = tipo_labels.get(c.tipo_fuente.value, ('muted', c.tipo_fuente.value)) %}
+            <span class="bia-badge bia-badge-{{ tipo_info[0] }}">{{ tipo_info[1] }}</span>
+          </td>
+          <td>{{ c.operador_red.codigo if c.operador_red else '—' }}</td>
+          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ c.nombre_archivo }}">
+            {{ c.nombre_archivo }}
+          </td>
+          <td>{{ c.total_registros or '—' }}</td>
+          <td>
+            {% set estado_map = {
+              'COMPLETADA': ('success', 'Completada'),
+              'ERROR': ('error', 'Error'),
+              'PROCESANDO': ('warning', 'Procesando'),
+              'PENDIENTE': ('muted', 'Pendiente'),
+            } %}
+            {% set est = estado_map.get(c.estado.value, ('muted', c.estado.value)) %}
+            <span class="bia-badge bia-badge-{{ est[0] }}">{{ est[1] }}</span>
+          </td>
+          <td>{{ c.cargado_por.nombre if c.cargado_por else '—' }}</td>
+          <td style="white-space:nowrap;color:var(--bia-text-muted);">
+            {{ c.created_at.strftime('%d/%m/%Y %H:%M') if c.created_at else '—' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="bia-table-empty">
+      <p>No hay cargas registradas aún.</p>
+      <a href="{{ url_for('cargas.nueva') }}" class="bia-btn-primary" style="margin-top:12px;">
+        Realizar primera carga
+      </a>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

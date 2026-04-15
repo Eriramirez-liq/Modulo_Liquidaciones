@@ -35,3 +35,28 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/lib/generated/prisma
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+.eggs/
+*.so
+.coverage
+htmlcov/
+.pytest_cache/
+instance/
+
+# Virtual envs
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/

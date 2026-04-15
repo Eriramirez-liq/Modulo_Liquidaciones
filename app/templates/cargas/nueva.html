@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+{% block title %}Nueva Carga — BIA Energy{% endblock %}
+{% block page_title %}Nueva carga de fuente{% endblock %}
+
+{% block content %}
+<div class="bia-stack bia-stack-24">
+
+  {# Header #}
+  <div class="bia-row-between">
+    <div>
+      <h1 style="font-size:1.3rem;font-weight:700;color:var(--bia-text-primary);letter-spacing:-0.02em;margin-bottom:4px;">
+        Nueva carga de fuente
+      </h1>
+      <p style="font-size:0.875rem;color:var(--bia-text-muted);">
+        Sigue los pasos para cargar un archivo de datos al sistema
+      </p>
+    </div>
+    <a href="{{ url_for('cargas.index') }}" class="bia-btn-secondary">
+      ← Volver al historial
+    </a>
+  </div>
+
+  {# Steps indicator #}
+  <div class="bia-steps">
+    {% for label in ['Configurar', 'Cargar archivo', 'Confirmar'] %}
+    <div class="bia-step-item">
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <div class="bia-step-circle {% if loop.first %}current{% endif %}" data-step-circle="{{ loop.index0 }}">
+          {{ loop.index }}
+        </div>
+        <span class="bia-step-label {% if loop.first %}current{% endif %}" data-step-label="{{ loop.index0 }}">
+          {{ label }}
+        </span>
+      </div>
+      {% if not loop.last %}
+      <div class="bia-step-line" data-step-line="{{ loop.index0 }}"></div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ── Paso 0: Configurar ─────────────────────────────────────────────────── #}
+  <div class="bia-panel" data-paso="0">
+
+    <div class="bia-stack bia-stack-24">
+      {# Período #}
+      <div>
+        <label style="display:block;font-weight:600;font-size:0.85rem;color:var(--bia-text-primary);margin-bottom:10px;">
+          Período de conciliación
+        </label>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <div class="bia-input-group" style="margin:0;flex:0 0 auto;">
+            <label for="anio">Año</label>
+            <select id="anio" class="bia-select" style="width:100px;">
+              <option value="{{ anio_actual - 1 }}">{{ anio_actual - 1 }}</option>
+              <option value="{{ anio_actual }}" selected>{{ anio_actual }}</option>
+              <option value="{{ anio_actual + 1 }}">{{ anio_actual + 1 }}</option>
+            </select>
+          </div>
+          <div class="bia-input-group" style="margin:0;flex:0 0 auto;">
+            <label for="mes">Mes</label>
+            <select id="mes" class="bia-select" style="width:150px;">
+              {% set meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                           'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'] %}
+          {% for m in meses %}
+          <option value="{{ loop.index }}">{{ m }}</option>
+          {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {# Tipo de fuente #}
+      <div>
+        <label style="display:block;font-weight:600;font-size:0.85rem;color:var(--bia-text-primary);margin-bottom:10px;">
+          Tipo de fuente
+        </label>
+        <div class="bia-grid-fuentes">
+          {% set fuentes = [
+            ('FACTURACION', False, 'Facturación BIA', 'Fuente maestra del período. Define el universo de fronteras.',
+             'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'),
+            ('XM', False, 'Reporte CGM/XM', 'Energía reportada por XM por frontera.',
+             'M13 10V3L4 14h7v7l9-11h-7z'),
+            ('SDL', True, 'SDL por Operador', 'Archivo SDL del operador de red. Formato configurable por OR.',
+             'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4'),
+            ('BALANCE', True, 'Balance de Energía', 'Ajuste retroactivo de un operador a períodos anteriores.',
+             'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z'),
+          ] %}
+          {% for tipo, req_or, label, desc, icon_path in fuentes %}
+          <button
+            type="button"
+            class="bia-fuente-card"
+            data-tipo="{{ tipo }}"
+            data-requires-or="{{ 'true' if req_or else 'false' }}"
+            onclick="BiaWizard.setState({tipoFuente: '{{ tipo }}'}); initFuenteCards(); checkPaso1();"
+          >
+            <div style="display:flex;align-items:center;gap:8px;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                   fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="{{ icon_path }}"/>
+              </svg>
+              <span style="font-size:0.85rem;font-weight:600;">{{ label }}</span>
+            </div>
+            <span style="font-size:0.75rem;color:var(--bia-text-muted);line-height:1.4;">{{ desc }}</span>
+          </button>
+          {% endfor %}
+        </div>
+        <input type="hidden" id="tipo_fuente_input" value="" />
+      </div>
+
+      {# OR selector (condicional) #}
+      <div id="or-section" style="display:none;">
+        <div class="bia-input-group" style="margin:0;">
+          <label for="or_id">
+            Operador de Red
+            <span style="color:var(--bia-error);margin-left:2px;">*</span>
+          </label>
+          {% if operadores %}
+          <select id="or_id" class="bia-select" onchange="checkPaso1()">
+            <option value="">Seleccionar operador…</option>
+            {% for or in operadores %}
+            <option value="{{ or.id }}">{{ or.codigo }} — {{ or.nombre }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <div style="font-size:0.82rem;color:var(--bia-text-muted);padding:8px 0;">
+            No hay operadores activos registrados.
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      {# Botón siguiente #}
+      <div style="display:flex;justify-content:flex-end;">
+        <button
+          type="button"
+          class="bia-btn-primary"
+          id="btn-paso1-siguiente"
+          disabled
+          onclick="handlePaso1()"
+        >
+          Siguiente
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# ── Paso 1: Cargar archivo ──────────────────────────────────────────────── #}
+  <div class="bia-panel" data-paso="1" style="display:none;">
+    <div class="bia-stack bia-stack-24">
+
+      <div>
+        <h2 style="font-size:1rem;font-weight:600;color:var(--bia-text-primary);margin-bottom:4px;">
+          Cargar archivo
+        </h2>
+        <p style="font-size:0.875rem;color:var(--bia-text-muted);" id="archivo-desc">
+          Arrastra el archivo Excel o CSV del período seleccionado
+        </p>
+      </div>
+
+      {# Dropzone #}
+      <div class="bia-dropzone" id="dropzone">
+        <div class="bia-dropzone-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+               fill="none" stroke="var(--bia-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+          </svg>
+        </div>
+        <div class="bia-dropzone-text" id="dropzone-filename">
+          Haz clic o arrastra tu archivo aquí
+        </div>
+        <div class="bia-dropzone-sub">.xlsx, .xls, .csv — máx. 32 MB</div>
+        <input type="file" id="archivo-input" style="display:none;" accept=".xlsx,.xls,.csv" />
+      </div>
+
+      {# Alertas / preview #}
+      <div id="alertas-container"></div>
+      <div id="preview-container"></div>
+
+      {# Botones #}
+      <div style="display:flex;justify-content:space-between;gap:12px;">
+        <button type="button" class="bia-btn-secondary" onclick="BiaWizard.mostrarPaso(0)">
+          ← Atrás
+        </button>
+        <button type="button" class="bia-btn-primary" id="btn-paso2-siguiente" disabled onclick="handlePaso2()">
+          Siguiente →
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# ── Paso 2: Confirmar ───────────────────────────────────────────────────── #}
+  <div class="bia-panel" data-paso="2" style="display:none;">
+    <div class="bia-stack bia-stack-24">
+
+      <div>
+        <h2 style="font-size:1rem;font-weight:600;color:var(--bia-text-primary);margin-bottom:4px;">
+          Confirmar carga
+        </h2>
+        <p style="font-size:0.875rem;color:var(--bia-text-muted);">
+          Revisa el resumen antes de guardar los datos en el sistema
+        </p>
+      </div>
+
+      <div id="resumen-container" class="bia-stack bia-stack-12"></div>
+
+      {# Reemplazo — justificación #}
+      <div id="justificacion-section" style="display:none;">
+        <div class="bia-alert bia-alert-warning" style="margin-bottom:12px;">
+          Ya existe una carga completada para este período/fuente. Los datos anteriores serán reemplazados.
+        </div>
+        <div class="bia-input-group" style="margin:0;">
+          <label for="justificacion">Justificación del reemplazo *</label>
+          <input type="text" id="justificacion" class="bia-input" placeholder="ej. Corrección de error en archivos originales…" />
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;gap:12px;">
+        <button type="button" class="bia-btn-secondary" onclick="BiaWizard.mostrarPaso(1)">
+          ← Atrás
+        </button>
+        <button type="button" class="bia-btn-primary" id="btn-confirmar" onclick="handleConfirmar()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          Confirmar y guardar
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Meses en español para el select de mes
+(function() {
+  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                  'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const mesSelect = document.getElementById('mes');
+  const now = new Date();
+  if (mesSelect) mesSelect.value = now.getMonth() + 1;
+
+  // Usar enumerate con Jinja (ya lo hace el template)
+})();
+
+// Init dropzone y fuente cards
+initDropzone('dropzone', 'archivo-input', 'dropzone-filename');
+initFuenteCards();
+
+// Estado global del wizard (aquí se expande BiaWizard.state)
+let _previewData = null;
+
+function handlePaso1() {
+  const tipoFuente = document.getElementById('tipo_fuente_input')?.value;
+  const anio = parseInt(document.getElementById('anio')?.value || '0');
+  const mes  = parseInt(document.getElementById('mes')?.value || '0');
+  const orId = document.getElementById('or_id')?.value || null;
+
+  BiaWizard.setState({ tipoFuente, anio, mes, orId });
+  BiaWizard.mostrarPaso(1);
+}
+
+// Preview al seleccionar archivo
+document.getElementById('archivo-input')?.addEventListener('change', async function() {
+  const file = this.files?.[0];
+  if (!file) return;
+
+  const state = BiaWizard.getState();
+  const form = new FormData();
+  form.append('archivo', file);
+  form.append('tipo_fuente', state.tipoFuente || '');
+  form.append('anio', state.anio || '');
+  form.append('mes', state.mes || '');
+  if (state.orId) form.append('or_id', state.orId);
+
+  document.getElementById('alertas-container').innerHTML =
+    '<div class="bia-alert bia-alert-info">Analizando archivo…</div>';
+  document.getElementById('preview-container').innerHTML = '';
+  document.getElementById('btn-paso2-siguiente').disabled = true;
+
+  try {
+    const res = await fetch('/cargas/api/preview', { method: 'POST', body: form });
+    const data = await res.json();
+
+    if (data.error) {
+      document.getElementById('alertas-container').innerHTML =
+        `<div class="bia-alert bia-alert-error">${data.error}</div>`;
+      return;
+    }
+
+    _previewData = data;
+    BiaWizard.setState({
+      filasCompletas: data.filasCompletas || data.preview || [],
+      alertas: data.alertas || [],
+      erroresCriticos: data.erroresCriticos || [],
+      existeCargaPrevia: data.existeCargaPrevia,
+      cargaPreviaId: data.cargaPreviaId,
+      nombreArchivo: file.name,
+    });
+
+    renderAlertas(data.alertas || [], data.erroresCriticos || [], 'alertas-container');
+    renderPreviewTable(data.preview || [], 'preview-container');
+
+    const tieneErrores = (data.erroresCriticos || []).length > 0;
+    document.getElementById('btn-paso2-siguiente').disabled = tieneErrores;
+
+  } catch (e) {
+    document.getElementById('alertas-container').innerHTML =
+      `<div class="bia-alert bia-alert-error">Error de red: ${e.message}</div>`;
+  }
+});
+
+function handlePaso2() {
+  const state = BiaWizard.getState();
+  const resumen = document.getElementById('resumen-container');
+  if (resumen) {
+    const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                    'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    resumen.innerHTML = `
+      <div class="bia-stat-card">
+        <span style="font-size:0.75rem;font-weight:600;color:var(--bia-text-muted);text-transform:uppercase;letter-spacing:0.06em;">Período</span>
+        <span style="font-size:1rem;font-weight:700;">${state.anio} — ${meses[(state.mes||1)-1]}</span>
+      </div>
+      <div class="bia-stat-card">
+        <span style="font-size:0.75rem;font-weight:600;color:var(--bia-text-muted);text-transform:uppercase;letter-spacing:0.06em;">Tipo de fuente</span>
+        <span style="font-size:1rem;font-weight:700;">${state.tipoFuente}</span>
+      </div>
+      <div class="bia-stat-card">
+        <span style="font-size:0.75rem;font-weight:600;color:var(--bia-text-muted);text-transform:uppercase;letter-spacing:0.06em;">Registros</span>
+        <span style="font-size:1rem;font-weight:700;color:var(--bia-accent);">${(_previewData?.total || 0).toLocaleString()}</span>
+      </div>
+    `;
+  }
+
+  const justSection = document.getElementById('justificacion-section');
+  if (justSection) {
+    justSection.style.display = state.existeCargaPrevia ? '' : 'none';
+  }
+
+  BiaWizard.mostrarPaso(2);
+}
+
+async function handleConfirmar() {
+  const state    = BiaWizard.getState();
+  const justif   = document.getElementById('justificacion')?.value || null;
+
+  if (state.existeCargaPrevia && !justif) {
+    alert('Debes ingresar una justificación para reemplazar la carga existente.');
+    return;
+  }
+
+  const btn = document.getElementById('btn-confirmar');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+
+  try {
+    const result = await confirmarCarga({
+      anio:         state.anio,
+      mes:          state.mes,
+      tipo_fuente:  state.tipoFuente,
+      or_id:        state.orId || null,
+      nombre_archivo: state.nombreArchivo,
+      filas:        state.filasCompletas,
+      justificacion: justif,
+      reemplaza_id:  state.cargaPreviaId || null,
+    });
+
+    if (result.ok) {
+      window.location.href = '/cargas';
+    } else {
+      alert('Error al guardar: ' + (result.error || 'Error desconocido'));
+      if (btn) { btn.disabled = false; btn.textContent = 'Confirmar y guardar'; }
+    }
+  } catch (e) {
+    alert('Error de red: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar y guardar'; }
+  }
+}
+</script>
+{% endblock %}

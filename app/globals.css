@@ -2,128 +2,317 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
-
-@theme inline {
-    --font-heading: var(--font-sans);
-    --font-sans: var(--font-sans);
-    --color-sidebar-ring: var(--sidebar-ring);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar: var(--sidebar);
-    --color-chart-5: var(--chart-5);
-    --color-chart-4: var(--chart-4);
-    --color-chart-3: var(--chart-3);
-    --color-chart-2: var(--chart-2);
-    --color-chart-1: var(--chart-1);
-    --color-ring: var(--ring);
-    --color-input: var(--input);
-    --color-border: var(--border);
-    --color-destructive: var(--destructive);
-    --color-accent-foreground: var(--accent-foreground);
-    --color-accent: var(--accent);
-    --color-muted-foreground: var(--muted-foreground);
-    --color-muted: var(--muted);
-    --color-secondary-foreground: var(--secondary-foreground);
-    --color-secondary: var(--secondary);
-    --color-primary-foreground: var(--primary-foreground);
-    --color-primary: var(--primary);
-    --color-popover-foreground: var(--popover-foreground);
-    --color-popover: var(--popover);
-    --color-card-foreground: var(--card-foreground);
-    --color-card: var(--card);
-    --color-foreground: var(--foreground);
-    --color-background: var(--background);
-    --radius-sm: calc(var(--radius) * 0.6);
-    --radius-md: calc(var(--radius) * 0.8);
-    --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) * 1.4);
-    --radius-2xl: calc(var(--radius) * 1.8);
-    --radius-3xl: calc(var(--radius) * 2.2);
-    --radius-4xl: calc(var(--radius) * 2.6);
-}
+/* ─── BIA Energy Design System ────────────────────────────────────────────── */
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+  /* Acento BIA */
+  --bia-accent:        #07c5a8;
+  --bia-accent-hover:  #06b096;
+  --bia-accent-dim:    rgba(7, 197, 168, 0.10);
+  --bia-accent-border: rgba(7, 197, 168, 0.30);
+
+  /* Fondos */
+  --bia-bg-base:     #f3f4f6;
+  --bia-bg-surface:  #ffffff;
+  --bia-bg-card:     #ffffff;
+  --bia-bg-elevated: #f9fafb;
+
+  /* Texto */
+  --bia-text-primary:   #0f172a;
+  --bia-text-secondary: #475569;
+  --bia-text-muted:     #94a3b8;
+
+  /* Bordes */
+  --bia-border:        rgba(0, 0, 0, 0.08);
+  --bia-border-strong: rgba(0, 0, 0, 0.14);
+
+  /* Estados */
+  --bia-error:        #ef4444;
+  --bia-error-dim:    rgba(239, 68, 68, 0.08);
+  --bia-success:      #16a34a;
 }
 
-.dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+/* ─── Mapeo de variables shadcn → BIA ─────────────────────────────────────── */
+
+:root {
+  --background:           var(--bia-bg-base);
+  --foreground:           var(--bia-text-primary);
+  --card:                 var(--bia-bg-card);
+  --card-foreground:      var(--bia-text-primary);
+  --popover:              var(--bia-bg-card);
+  --popover-foreground:   var(--bia-text-primary);
+
+  /* Primario = acento turquesa BIA */
+  --primary:              var(--bia-accent);
+  --primary-foreground:   #050f0d;
+
+  --secondary:            var(--bia-bg-elevated);
+  --secondary-foreground: var(--bia-text-primary);
+  --muted:                var(--bia-bg-elevated);
+  --muted-foreground:     var(--bia-text-secondary);
+  --accent:               var(--bia-accent-dim);
+  --accent-foreground:    var(--bia-accent);
+
+  --destructive:          var(--bia-error);
+  --border:               var(--bia-border);
+  --input:                var(--bia-border-strong);
+  --ring:                 var(--bia-accent-border);
+
+  /* Sidebar */
+  --sidebar:                   var(--bia-bg-surface);
+  --sidebar-foreground:        var(--bia-text-secondary);
+  --sidebar-primary:           var(--bia-accent);
+  --sidebar-primary-foreground:#050f0d;
+  --sidebar-accent:            var(--bia-accent-dim);
+  --sidebar-accent-foreground: var(--bia-accent);
+  --sidebar-border:            var(--bia-border);
+  --sidebar-ring:              var(--bia-accent-border);
+
+  --radius: 0.5rem;
 }
+
+@theme inline {
+  --font-sans: var(--font-sans);
+  --color-sidebar-ring:              var(--sidebar-ring);
+  --color-sidebar-border:            var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent:            var(--sidebar-accent);
+  --color-sidebar-primary-foreground:var(--sidebar-primary-foreground);
+  --color-sidebar-primary:           var(--sidebar-primary);
+  --color-sidebar-foreground:        var(--sidebar-foreground);
+  --color-sidebar:                   var(--sidebar);
+  --color-ring:                      var(--ring);
+  --color-input:                     var(--input);
+  --color-border:                    var(--border);
+  --color-destructive:               var(--destructive);
+  --color-accent-foreground:         var(--accent-foreground);
+  --color-accent:                    var(--accent);
+  --color-muted-foreground:          var(--muted-foreground);
+  --color-muted:                     var(--muted);
+  --color-secondary-foreground:      var(--secondary-foreground);
+  --color-secondary:                 var(--secondary);
+  --color-primary-foreground:        var(--primary-foreground);
+  --color-primary:                   var(--primary);
+  --color-popover-foreground:        var(--popover-foreground);
+  --color-popover:                   var(--popover);
+  --color-card-foreground:           var(--card-foreground);
+  --color-card:                      var(--card);
+  --color-foreground:                var(--foreground);
+  --color-background:                var(--background);
+  --radius-sm:  calc(var(--radius) * 0.75);
+  --radius-md:  var(--radius);
+  --radius-lg:  calc(var(--radius) * 1.5);
+  --radius-xl:  calc(var(--radius) * 2);
+}
+
+/* ─── Estilos base ─────────────────────────────────────────────────────────── */
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
-    }
-  body {
-    @apply bg-background text-foreground;
-    }
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
   html {
-    @apply font-sans;
-    }
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background-color: var(--bia-bg-base);
+    color: var(--bia-text-primary);
+    font-family: var(--font-sans), Inter, sans-serif;
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+}
+
+/* ─── Scrollbar personalizado BIA ──────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+
+/* ─── Clases de componentes BIA ────────────────────────────────────────────── */
+
+.bia-panel {
+  background: var(--bia-bg-card);
+  border: 1px solid var(--bia-border);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+}
+
+.bia-card {
+  background: var(--bia-bg-card);
+  border: 1px solid var(--bia-border);
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+
+.bia-stat-card {
+  background: var(--bia-bg-card);
+  border: 1px solid var(--bia-border);
+  border-radius: 10px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bia-btn-primary {
+  background: var(--bia-accent);
+  color: #050f0d;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bia-btn-primary:hover { background: var(--bia-accent-hover); transform: translateY(-1px); }
+.bia-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.bia-btn-secondary {
+  background: transparent;
+  color: var(--bia-text-secondary);
+  border: 1px solid var(--bia-border-strong);
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: color 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bia-btn-secondary:hover { color: var(--bia-text-primary); }
+
+.bia-badge-accent {
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: var(--bia-accent-dim);
+  color: var(--bia-accent);
+  border: 1px solid var(--bia-accent-border);
+}
+
+.bia-badge-error {
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.30);
+}
+
+.bia-badge-neutral {
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: rgba(99, 102, 241, 0.10);
+  color: #6366f1;
+  border: 1px solid rgba(99, 102, 241, 0.30);
+}
+
+.bia-table-container {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--bia-border);
+  background: var(--bia-bg-card);
+}
+
+.bia-table-container table { width: 100%; border-collapse: collapse; }
+
+.bia-table-container th {
+  background: var(--bia-bg-elevated);
+  color: var(--bia-text-secondary);
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 10px 14px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.bia-table-container td {
+  color: var(--bia-text-primary);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--bia-border);
+  font-size: 0.85rem;
+}
+
+.bia-table-container tr:last-child td { border-bottom: none; }
+.bia-table-container tr:hover td { background: var(--bia-bg-elevated); }
+
+.bia-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.bia-input-group label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--bia-text-secondary);
+}
+
+.bia-input {
+  padding: 9px 12px;
+  border: 1px solid var(--bia-border-strong);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  background: var(--bia-bg-card);
+  color: var(--bia-text-primary);
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.bia-input:focus {
+  border-color: var(--bia-accent-border);
+  box-shadow: 0 0 0 3px var(--bia-accent-dim);
+}
+
+.bia-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--bia-border);
+  overflow-x: auto;
+}
+
+.bia-tab {
+  padding: 9px 14px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  font-weight: 500;
+  font-size: 0.82rem;
+  color: var(--bia-text-muted);
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: color 0.15s;
+  white-space: nowrap;
+}
+
+.bia-tab:hover { color: var(--bia-text-secondary); }
+
+.bia-tab.active {
+  color: var(--bia-accent);
+  border-bottom-color: var(--bia-accent);
 }

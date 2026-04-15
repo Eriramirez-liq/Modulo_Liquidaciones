@@ -1,0 +1,396 @@
+{% extends "base.html" %}
+{% block title %}Conciliaciones — BIA Energy{% endblock %}
+{% block page_title %}Conciliaciones{% endblock %}
+
+{% block content %}
+<div class="bia-stack bia-stack-24">
+  <div class="bia-row-between">
+    <div>
+      <h1 style="font-size:1.3rem;font-weight:700;color:var(--bia-text-primary);letter-spacing:-0.02em;margin-bottom:4px;">
+        Motor de Conciliación
+      </h1>
+      <p style="font-size:0.875rem;color:var(--bia-text-muted);">
+        Ejecuta las reglas de negocio sobre el período seleccionado para obtener Provisiones, Contingencias y Disputas.
+      </p>
+    </div>
+  </div>
+
+  <div class="bia-panel bia-stack bia-stack-24">
+    <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;">
+      <div class="bia-input-group" style="margin:0;">
+        <label for="periodo_id">Período de conciliación</label>
+        <select id="periodo_id" class="bia-select" style="width:220px;">
+          <option value="">Selecciona un período...</option>
+          {% for p in periodos %}
+          <option value="{{ p.id }}">{{ p.anio }}-{{ "%02d"|format(p.mes) }} ({{ p.estado.value }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="bia-input-group" style="margin:0;">
+        <label for="filtro-or">Operador de Red</label>
+        <select id="filtro-or" class="bia-select" style="width:160px;">
+          <option value="">Todos los ORs</option>
+          {% for op in operadores %}
+          <option value="{{ op.id }}">{{ op.codigo }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="bia-input-group" style="margin:0;">
+        <label for="filtro-tipo-liq">Tipo de liquidación</label>
+        <select id="filtro-tipo-liq" class="bia-select" style="width:140px;">
+          <option value="">Todos</option>
+          <option value="SDL">SDL</option>
+          <option value="TC1">TC1</option>
+          <option value="COT">COT</option>
+          <option value="BALANCE">BALANCE</option>
+        </select>
+      </div>
+      <div>
+        <button id="btn-ejecutar" class="bia-btn-primary" onclick="ejecutarConciliacion()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          Ejecutar Conciliación
+        </button>
+      </div>
+    </div>
+    
+    <div id="resultado-panel" style="display:none; border-top: 1px solid var(--bia-border); padding-top: 24px;">
+      <h2 style="font-size:1.1rem;font-weight:600;margin-bottom:16px;">Resumen de la corrida</h2>
+      <div id="alerta-container" style="margin-bottom: 24px;"></div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:24px;" id="dashboard-resumen">
+        <!-- Contenido inyectado por JS -->
+      </div>
+
+      <div id="alertas-sdl-panel" style="display:none;margin-bottom:16px;"></div>
+      <div style="display:flex;gap:12px;margin-bottom:16px;">
+        <button class="bia-btn-secondary" id="btn-ver-resultados" onclick="verResultados()">Ver resultados por frontera</button>
+        <button class="bia-btn-secondary" onclick="ejecutarConciliacion(true)">Re-ejecutar</button>
+      </div>
+    </div>
+  </div>
+
+  {# ── Tabla SDL: resultados por frontera ────────────────────────────────── #}
+  <div class="bia-panel" id="resultados-panel" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h2 style="font-size:1rem;font-weight:700;">Resultados por frontera — SDL</h2>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <select id="filtro-caso" class="bia-select" style="width:160px;" onchange="cargarResultados()">
+          <option value="">Todos los casos</option>
+          {% for caso in ['A1','B1','B2','C1','C2','D1','D2','D3','D4','INCOMPLETA','ERROR'] %}
+          <option value="{{ caso }}">{{ caso }}</option>
+          {% endfor %}
+        </select>
+        <span id="total-resultados" style="font-size:0.8rem;color:var(--bia-text-muted);"></span>
+      </div>
+    </div>
+    <div class="bia-table-wrap">
+      <table class="bia-table">
+        <thead>
+          <tr>
+            <th>Frontera</th>
+            <th>Usuario</th>
+            <th>OR</th>
+            <th style="text-align:right;">E_fac (kWh)</th>
+            <th style="text-align:right;">E_xm (kWh)</th>
+            <th style="text-align:right;">E_sdl (kWh)</th>
+            <th style="text-align:right;">ΔL1</th>
+            <th style="text-align:right;">ΔL2</th>
+            <th>Caso</th>
+            <th style="text-align:right;">Impacto L1 (COP)</th>
+            <th>Alerta</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-resultados">
+          <tr><td colspan="11" style="text-align:center;color:var(--bia-text-muted);padding:24px;">Pulsa "Ver resultados por frontera" para cargar.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="paginacion" style="display:flex;gap:8px;margin-top:16px;justify-content:center;"></div>
+  </div>
+
+  {# ── Tabla TC1: discrepancias tarifarias ───────────────────────────────── #}
+  <div class="bia-panel" id="resultados-tc1-panel" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h2 style="font-size:1rem;font-weight:700;">Discrepancias tarifarias — TC1</h2>
+      <span id="total-resultados-tc1" style="font-size:0.8rem;color:var(--bia-text-muted);"></span>
+    </div>
+    <div id="sin-tc1-aviso" style="display:none;background:#fefce8;border:1px solid #eab308;color:#854d0e;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:0.82rem;"></div>
+    <div class="bia-table-wrap">
+      <table class="bia-table">
+        <thead>
+          <tr>
+            <th>Frontera</th>
+            <th>Usuario</th>
+            <th>OR</th>
+            <th style="text-align:center;">NT Facturación</th>
+            <th style="text-align:center;">NT SDL</th>
+            <th style="text-align:center;">NT TC1</th>
+            <th style="text-align:center;">Propiedad SDL</th>
+            <th style="text-align:center;">Propiedad TC1</th>
+            <th>Diferencias detectadas</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-tc1">
+          <tr><td colspan="9" style="text-align:center;color:var(--bia-text-muted);padding:24px;">Sin datos.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="paginacion-tc1" style="display:flex;gap:8px;margin-top:16px;justify-content:center;"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const fmtN = n => n == null ? '—' : new Intl.NumberFormat('es-CO', {maximumFractionDigits:2}).format(n);
+const fmtCOP = n => n == null ? '—' : new Intl.NumberFormat('es-CO', {style:'currency',currency:'COP',maximumFractionDigits:0}).format(n);
+
+const CASO_COLOR = {
+  A1:'#16a34a', B1:'#f59e0b', B2:'#3b82f6', C1:'#06b6d4', C2:'#8b5cf6',
+  D1:'#f97316', D2:'#ec4899', D3:'#14b8a6', D4:'#64748b',
+  INCOMPLETA:'#94a3b8', ERROR:'#ef4444',
+};
+
+let _periodoActivo  = null;
+let _paginaActual   = 1;
+let _tipoLiqActivo  = null;
+
+async function ejecutarConciliacion(reejecutar = false) {
+  const periodo_id     = document.getElementById("periodo_id").value;
+  if (!periodo_id) { alert("Por favor selecciona un período."); return; }
+
+  const or_id          = document.getElementById("filtro-or").value || null;
+  const tipo_liq       = document.getElementById("filtro-tipo-liq").value || null;
+
+  _periodoActivo  = periodo_id;
+  _tipoLiqActivo  = tipo_liq;
+  _paginaActual   = 1;
+
+  // Ocultar ambos paneles de resultados
+  document.getElementById('resultados-panel').style.display     = 'none';
+  document.getElementById('resultados-tc1-panel').style.display = 'none';
+
+  const btn    = document.getElementById("btn-ejecutar");
+  const alerta = document.getElementById("alerta-container");
+  const panel  = document.getElementById("resultado-panel");
+  const alertasSDL = document.getElementById("alertas-sdl-panel");
+
+  btn.disabled    = true;
+  btn.textContent = 'Calculando...';
+  panel.style.display = "block";
+  alerta.innerHTML = '<div class="bia-alert bia-alert-info">Ejecutando motor…</div>';
+  alertasSDL.style.display = "none";
+  alertasSDL.innerHTML = '';
+  document.getElementById("dashboard-resumen").innerHTML = '';
+
+  const endpoint = reejecutar
+    ? `/conciliaciones/api/${periodo_id}/re-ejecutar`
+    : `/conciliaciones/api/${periodo_id}/ejecutar`;
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ or_id, tipo_liquidacion: tipo_liq }),
+    });
+    const data = await response.json();
+
+    if (data.ok) {
+      alerta.innerHTML = '<div style="background:#ecfdf5;border:1px solid #10b981;color:#047857;border-radius:6px;padding:10px 14px;">Conciliación ejecutada con éxito.</div>';
+      renderResumen(data.resumen, tipo_liq);
+      renderAlertasSDL(data.resumen.alertas_sdl || []);
+    } else {
+      alerta.innerHTML = `<div style="background:var(--bia-error-dim);border:1px solid var(--bia-error);color:var(--bia-error);border-radius:6px;padding:10px 14px;">Error: ${data.error}</div>`;
+    }
+  } catch(e) {
+    alerta.innerHTML = `<div style="background:var(--bia-error-dim);border:1px solid var(--bia-error);color:var(--bia-error);border-radius:6px;padding:10px 14px;">Error de red: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg> Ejecutar Conciliación`;
+  }
+}
+
+function renderAlertasSDL(alertas) {
+  const panel = document.getElementById("alertas-sdl-panel");
+  if (!alertas.length) return;
+  const duplicados = alertas.filter(a => a.tipo === "DUPLICADO_SDL");
+  const sinFac     = alertas.filter(a => a.tipo === "SDL_SIN_FACTURACION");
+  let html = '';
+  if (duplicados.length) {
+    html += `<div style="background:#fefce8;border:1px solid #eab308;color:#854d0e;border-radius:6px;padding:10px 14px;margin-bottom:8px;">
+      <strong>⚠ ${duplicados.length} frontera(s) duplicadas en SDL:</strong>
+      <ul style="margin:6px 0 0 16px;font-size:0.8rem;">${duplicados.map(a=>`<li>${a.codigo_frontera}</li>`).join('')}</ul>
+    </div>`;
+  }
+  if (sinFac.length) {
+    html += `<div style="background:#fef2f2;border:1px solid #f87171;color:#991b1b;border-radius:6px;padding:10px 14px;">
+      <strong>⚠ ${sinFac.length} frontera(s) en SDL sin registro en Facturación:</strong>
+      <ul style="margin:6px 0 0 16px;font-size:0.8rem;">${sinFac.map(a=>`<li>${a.codigo_frontera}</li>`).join('')}</ul>
+    </div>`;
+  }
+  panel.innerHTML = html;
+  panel.style.display = "block";
+}
+
+function renderResumen(res, tipoLiq) {
+  let kpis;
+  if (tipoLiq === 'TC1') {
+    kpis = [
+      { label:'Universo',         val: res.total,          color: 'var(--bia-text-primary)' },
+      { label:'Con discrepancia', val: res.discrepancias,  color: '#ef4444' },
+      { label:'Sin TC1',          val: res.sin_tc1,        color: '#f59e0b' },
+      { label:'OK',               val: (res.total||0)-(res.discrepancias||0)-(res.sin_tc1||0), color: CASO_COLOR.A1 },
+    ];
+    document.getElementById('btn-ver-resultados').textContent = 'Ver discrepancias tarifarias';
+  } else {
+    const casos = res.casos || {};
+    kpis = [
+      { label:'Universo',          val: res.total,                                              color: 'var(--bia-text-primary)' },
+      { label:'A1 — OK',           val: casos.A1 || 0,                                         color: CASO_COLOR.A1 },
+      { label:'Contingencias',     val: (casos.B1||0)+(casos.D1||0),                            color: CASO_COLOR.B1 },
+      { label:'Provisiones',       val: (casos.B2||0)+(casos.D2||0)+(casos.D3||0),              color: CASO_COLOR.B2 },
+      { label:'Disputas L2',       val: (casos.C1||0)+(casos.C2||0),                            color: CASO_COLOR.C1 },
+      { label:'Alertas manuales',  val: (casos.D4||0)+(casos.D1||0)+(casos.D2||0),              color: CASO_COLOR.D4 },
+      { label:'Incompletas',       val: casos.INCOMPLETA||0,                                    color: CASO_COLOR.INCOMPLETA },
+      { label:'Errores',           val: res.errores||0,                                         color: CASO_COLOR.ERROR },
+    ];
+    document.getElementById('btn-ver-resultados').textContent = 'Ver resultados por frontera';
+  }
+  document.getElementById('dashboard-resumen').innerHTML = kpis.map(k => `
+    <div class="bia-stat-card">
+      <span style="font-size:0.72rem;font-weight:600;color:var(--bia-text-muted);text-transform:uppercase;">${k.label}</span>
+      <span style="font-size:1.5rem;font-weight:700;color:${k.color};">${k.val}</span>
+    </div>
+  `).join('');
+}
+
+function verResultados() {
+  if (!_periodoActivo) { alert("Ejecuta primero una conciliación."); return; }
+  if (_tipoLiqActivo === 'TC1') {
+    cargarResultadosTC1();
+  } else {
+    cargarResultados();
+  }
+}
+
+async function cargarResultadosTC1(pagina = 1) {
+  if (!_periodoActivo) return;
+  const or_id = document.getElementById('filtro-or').value;
+  const qs    = new URLSearchParams({ page: pagina, limit: 50 });
+  if (or_id) qs.set('or_id', or_id);
+
+  const r    = await fetch(`/conciliaciones/api/${_periodoActivo}/resultados-tc1?${qs}`);
+  const data = await r.json();
+  if (!data.ok) { alert('Error: ' + data.error); return; }
+
+  document.getElementById('resultados-panel').style.display     = 'none';
+  document.getElementById('resultados-tc1-panel').style.display = 'block';
+  document.getElementById('total-resultados-tc1').textContent   = `${data.total} discrepancia(s)`;
+
+  const aviso = document.getElementById('sin-tc1-aviso');
+  if (data.sin_tc1 > 0) {
+    aviso.textContent  = `⚠ ${data.sin_tc1} frontera(s) no encontradas en el archivo TC1.`;
+    aviso.style.display = 'block';
+  } else {
+    aviso.style.display = 'none';
+  }
+
+  const tbody = document.getElementById('tbody-tc1');
+  if (!data.items.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--bia-text-muted);padding:24px;">Sin discrepancias tarifarias para este filtro.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.items.map(r => {
+    const diffs = (r.diferencias || []).join(' | ');
+    const ntDiff = (r.nt_facturacion && r.nt_tc1 && r.nt_facturacion !== r.nt_tc1)
+      ? 'background:#fef2f2;color:#991b1b;' : '';
+    const propDiff = (r.prop_sdl && r.prop_tc1 && r.prop_sdl !== r.prop_tc1)
+      ? 'background:#fef2f2;color:#991b1b;' : '';
+    return `<tr>
+      <td style="font-family:monospace;font-size:0.78rem;">${r.codigo_frontera}</td>
+      <td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.nombre_usuario||'—'}</td>
+      <td style="font-size:0.78rem;">${r.operador_red||'—'}</td>
+      <td style="text-align:center;${ntDiff}">${r.nt_facturacion||'—'}</td>
+      <td style="text-align:center;${ntDiff}">${r.nt_sdl||'—'}</td>
+      <td style="text-align:center;${ntDiff}">${r.nt_tc1||'—'}</td>
+      <td style="text-align:center;${propDiff}">${r.prop_sdl||'—'}</td>
+      <td style="text-align:center;${propDiff}">${r.prop_tc1||'—'}</td>
+      <td style="font-size:0.75rem;color:#b45309;">${diffs||'—'}</td>
+    </tr>`;
+  }).join('');
+
+  const totalPag = Math.ceil(data.total / 50);
+  let pag = '';
+  if (totalPag > 1) {
+    for (let i = 1; i <= totalPag; i++) {
+      const active = i === pagina ? 'background:var(--bia-accent);color:#fff;border-color:var(--bia-accent);' : '';
+      pag += `<button class="bia-btn-secondary" style="padding:4px 12px;${active}" onclick="cargarResultadosTC1(${i})">${i}</button>`;
+    }
+  }
+  document.getElementById('paginacion-tc1').innerHTML = pag;
+}
+
+async function cargarResultados(pagina = 1) {
+  if (!_periodoActivo) { alert("Ejecuta primero una conciliación."); return; }
+  _paginaActual = pagina;
+
+  const caso   = document.getElementById('filtro-caso').value;
+  const or_id  = document.getElementById('filtro-or').value;
+  const qs     = new URLSearchParams({ page: pagina, limit: 50 });
+  if (caso)  qs.set('caso', caso);
+  if (or_id) qs.set('or_id', or_id);
+
+  const r    = await fetch(`/conciliaciones/api/${_periodoActivo}/resultados?${qs}`);
+  const data = await r.json();
+  if (!data.ok) return;
+
+  document.getElementById('resultados-tc1-panel').style.display = 'none';
+  document.getElementById('resultados-panel').style.display = 'block';
+  document.getElementById('total-resultados').textContent   = `${data.total} fronteras`;
+
+  const tbody = document.getElementById('tbody-resultados');
+  if (!data.items.length) {
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--bia-text-muted);padding:24px;">Sin resultados para este filtro.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.items.map(r => {
+    const col = CASO_COLOR[r.caso] || '#94a3b8';
+    const alerta = r.alerta_manual
+      ? '<span style="color:#ef4444;font-weight:700;">⚠</span>'
+      : '';
+    return `<tr>
+      <td style="font-family:monospace;font-size:0.78rem;">${r.codigo_frontera}</td>
+      <td style="font-size:0.78rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.nombre_usuario||'—'}</td>
+      <td style="font-size:0.78rem;">${r.operador_red||'—'}</td>
+      <td style="text-align:right;">${fmtN(r.e_fac)}</td>
+      <td style="text-align:right;">${fmtN(r.e_xm)}</td>
+      <td style="text-align:right;">${fmtN(r.e_sdl)}</td>
+      <td style="text-align:right;color:${r.delta_l1 > 0 ? '#ef4444' : r.delta_l1 < 0 ? '#3b82f6' : 'inherit'}">${fmtN(r.delta_l1)}</td>
+      <td style="text-align:right;color:${r.delta_l2 > 0 ? '#ef4444' : r.delta_l2 < 0 ? '#3b82f6' : 'inherit'}">${fmtN(r.delta_l2)}</td>
+      <td><span style="background:${col}1a;color:${col};border-radius:4px;padding:2px 8px;font-size:0.75rem;font-weight:700;">${r.caso}</span></td>
+      <td style="text-align:right;font-weight:600;">${r.impacto_l1 ? fmtCOP(r.impacto_l1) : '—'}</td>
+      <td style="text-align:center;">${alerta}</td>
+    </tr>`;
+  }).join('');
+
+  // Paginación simple
+  const totalPag = Math.ceil(data.total / 50);
+  let pag = '';
+  if (totalPag > 1) {
+    for (let i = 1; i <= totalPag; i++) {
+      const active = i === pagina
+        ? 'background:var(--bia-accent);color:#fff;border-color:var(--bia-accent);'
+        : '';
+      pag += `<button class="bia-btn-secondary" style="padding:4px 12px;${active}"
+        onclick="cargarResultados(${i})">${i}</button>`;
+    }
+  }
+  document.getElementById('paginacion').innerHTML = pag;
+}
+</script>
+{% endblock %}
