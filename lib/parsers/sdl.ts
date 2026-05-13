@@ -492,15 +492,11 @@ export async function parsearSDL(
     const energia = toNum(row[colEnergia!])
     const valor   = colValor ? toNum(row[colValor]) : 0
 
-    if (energia == null) {
-      erroresCriticos.push(`Fila ${fila}: energia_kwh no numérica`); continue
-    }
+    if (energia == null) continue // blank/summary row — skip silently
     if (energia < 0) {
       erroresCriticos.push(`Fila ${fila}: energía negativa`); continue
     }
-    if (valor == null) {
-      erroresCriticos.push(`Fila ${fila}: valor_cop no numérico`); continue
-    }
+    if (valor == null) continue   // blank/summary row — skip silently
     if (valor < 0) {
       erroresCriticos.push(`Fila ${fila}: valor_cop negativo`); continue
     }
@@ -513,20 +509,23 @@ export async function parsearSDL(
       ? ((row[colPeriodo] ?? "").trim() || periodoDefault)
       : periodoDefault
 
+    // Use null (not undefined) for optional fields so JSON serialization keeps
+    // the keys and the preview table can show all columns regardless of which
+    // row appears first.
     filas.push({
       codigo_frontera:          codFrontera,
-      nombre_frontera:          colNombre ? (row[colNombre]?.trim() || undefined) : undefined,
+      nombre_frontera:          colNombre  ? (row[colNombre]?.trim()  || null) : null,
       periodo_sdl:              periodoSDL,
       energia_sdl_kwh:          energia,
       valor_sdl_cop:            valor,
       tarifa_sdl:               tarifaSDL,
-      nivel_tension:            colTension  ? (row[colTension]?.trim()  || undefined) : undefined,
-      propiedad_activos:        colProp     ? (row[colProp]?.trim()     || undefined) : undefined,
-      energia_reactiva_ind_pen: colReacInd  ? toNum(row[colReacInd])   ?? undefined  : undefined,
-      energia_reactiva_cap_pen: colReacCap  ? toNum(row[colReacCap])   ?? undefined  : undefined,
-      valor_reactiva_cop:       colValReac  ? toNum(row[colValReac])   ?? undefined  : undefined,
-      tarifa_reactiva:          colTarReac  ? toNum(row[colTarReac])   ?? undefined  : undefined,
-      factor_m:                 colFactorM  ? toNum(row[colFactorM])   ?? undefined  : undefined,
+      nivel_tension:            colTension ? (row[colTension]?.trim() || null) : null,
+      propiedad_activos:        colProp    ? (row[colProp]?.trim()    || null) : null,
+      energia_reactiva_ind_pen: colReacInd ? toNum(row[colReacInd])          : null,
+      energia_reactiva_cap_pen: colReacCap ? toNum(row[colReacCap])          : null,
+      valor_reactiva_cop:       colValReac ? toNum(row[colValReac])          : null,
+      tarifa_reactiva:          colTarReac ? toNum(row[colTarReac])          : null,
+      factor_m:                 colFactorM ? toNum(row[colFactorM])          : null,
       es_duplicado:             esDuplicado,
     } as FilaSDL)
   }

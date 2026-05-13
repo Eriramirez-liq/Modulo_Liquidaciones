@@ -22,18 +22,18 @@ export type FilaXM = {
 
 export type FilaSDL = {
   codigo_frontera:          string
-  nombre_frontera?:         string
+  nombre_frontera:          string | null
   periodo_sdl:              string
   energia_sdl_kwh:          number
   valor_sdl_cop:            number
   tarifa_sdl:               number
-  nivel_tension?:           string
-  propiedad_activos?:       string
-  energia_reactiva_ind_pen?: number
-  energia_reactiva_cap_pen?: number
-  valor_reactiva_cop?:      number
-  tarifa_reactiva?:         number
-  factor_m?:                number
+  nivel_tension:            string | null
+  propiedad_activos:        string | null
+  energia_reactiva_ind_pen: number | null
+  energia_reactiva_cap_pen: number | null
+  valor_reactiva_cop:       number | null
+  tarifa_reactiva:          number | null
+  factor_m:                 number | null
   es_duplicado:             boolean
 }
 
