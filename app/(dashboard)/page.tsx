@@ -1,173 +1,221 @@
-import { auth } from "@/lib/auth"
-import { Zap, GitMerge, Globe, BarChart3 } from "lucide-react"
+"use client"
+import { useState, useEffect, useCallback } from "react"
+import { RefreshCw } from "lucide-react"
 
-export default async function InicioPage() {
-  const session = await auth()
+type Periodo = { id: string; anio: number; mes: number; estado: string }
+type DashData = {
+  totalFronteras: number; sinDiferencia: number
+  provisiones: number; valorProvisiones: number
+  contingenciasAbiertas: number
+  disputas: number; valorDisputas: number
+  alertasManuales: number; incompletas: number; errores: number
+  impactoEstimado: number
+}
 
-  const stats = [
-    { label: "Conciliaciones del mes", value: "—", accent: false },
-    { label: "Fronteras activas", value: "—", accent: false },
-    { label: "Diferencias pendientes", value: "—", accent: true },
-    { label: "Provisiones abiertas", value: "—", accent: false },
-  ]
+export default function InicioPage() {
+  const [periodos, setPeriodos]   = useState<Periodo[]>([])
+  const [periodoId, setPeriodoId] = useState("")
+  const [tab, setTab]             = useState<"principal" | "historico" | "por_or">("principal")
+  const [data, setData]           = useState<DashData | null>(null)
+  const [loading, setLoading]     = useState(false)
 
-  const accesos = [
-    { label: "Conciliaciones", desc: "Gestionar períodos y resultados", icon: GitMerge, href: "/conciliaciones" },
-    { label: "Fronteras", desc: "Configurar fronteras de medición", icon: Globe, href: "/fronteras" },
-    { label: "Reportes", desc: "Exportar y visualizar informes", icon: BarChart3, href: "/reportes" },
-  ]
+  useEffect(() => {
+    fetch("/api/periodos")
+      .then(r => r.json())
+      .then((p: Periodo[]) => {
+        setPeriodos(p)
+        if (p.length > 0 && p[0]) setPeriodoId(p[0].id)
+      })
+  }, [])
+
+  const fetchData = useCallback(async () => {
+    if (!periodoId) return
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/dashboard?periodoId=${periodoId}`)
+      setData(await res.json())
+    } finally {
+      setLoading(false)
+    }
+  }, [periodoId])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  const sel = periodos.find(p => p.id === periodoId)
+  const periodoLabel = sel
+    ? `${sel.anio}-${String(sel.mes).padStart(2, "0")} — ${sel.estado}`
+    : "—"
+
+  const d = data
+  const pct = d && d.totalFronteras > 0
+    ? Math.round((d.sinDiferencia / d.totalFronteras) * 100)
+    : 0
+
+  function cop(v: number) {
+    return `$ ${v.toLocaleString("es-CO", { maximumFractionDigits: 0 })}`
+  }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      {/* Bienvenida */}
-      <div>
-        <h1
-          style={{
-            fontSize: "1.5rem",
-            fontWeight: 700,
-            color: "var(--bia-text-primary)",
-            letterSpacing: "-0.02em",
-            margin: "0 0 4px",
-          }}
-        >
-          Bienvenido, {session?.user.nombre.split(" ")[0]}
-        </h1>
-        <p style={{ fontSize: "0.875rem", color: "var(--bia-text-muted)", margin: 0 }}>
-          Sistema de conciliación de energía eléctrica por frontera
-        </p>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+        <div>
+          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#111827", margin: "0 0 4px" }}>
+            Dashboard de Seguimiento
+          </h1>
+          <p style={{ fontSize: "0.875rem", color: "#6b7280", margin: 0 }}>
+            Monitoreo global del proceso de conciliación por período.
+          </p>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
+          <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>Período activo</span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <select
+              value={periodoId}
+              onChange={e => setPeriodoId(e.target.value)}
+              style={{
+                border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 12px",
+                fontSize: "0.875rem", background: "#fff", cursor: "pointer",
+              }}
+            >
+              {periodos.length === 0 && <option value="">Sin períodos</option>}
+              {periodos.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.anio}-{String(p.mes).padStart(2, "0")} — {p.estado}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={fetchData}
+              disabled={loading}
+              style={{
+                border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 12px",
+                background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+                fontSize: "0.875rem", color: "#374151", opacity: loading ? 0.6 : 1,
+              }}
+            >
+              <RefreshCw size={14} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} />
+              Refrescar
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Stat cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
-        {stats.map((stat) => (
-          <div key={stat.label} className="bia-stat-card">
-            <span
-              style={{
-                fontSize: "0.75rem",
-                fontWeight: 600,
-                color: "var(--bia-text-muted)",
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-              }}
-            >
-              {stat.label}
-            </span>
-            <span
-              style={{
-                fontSize: "1.4rem",
-                fontWeight: 700,
-                color: stat.accent ? "var(--bia-accent)" : "var(--bia-text-primary)",
-              }}
-            >
-              {stat.value}
-            </span>
-          </div>
+      {/* Tabs */}
+      <div style={{ display: "flex", borderBottom: "1px solid #e5e7eb" }}>
+        {([["principal", "Panel Principal"], ["historico", "Histórico 12 M"], ["por_or", "Por Operador de Red"]] as const).map(([k, l]) => (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            style={{
+              padding: "10px 16px", fontSize: "0.875rem",
+              fontWeight: tab === k ? 600 : 400,
+              color: tab === k ? "#07c5a8" : "#6b7280",
+              background: "none", border: "none",
+              borderBottom: tab === k ? "2px solid #07c5a8" : "2px solid transparent",
+              cursor: "pointer", marginBottom: -1,
+            }}
+          >
+            {l}
+          </button>
         ))}
       </div>
 
-      {/* Accesos rápidos */}
-      <div>
-        <h2
-          style={{
-            fontSize: "1rem",
-            fontWeight: 600,
-            color: "var(--bia-text-primary)",
-            letterSpacing: "-0.02em",
-            margin: "0 0 16px",
-          }}
-        >
-          Accesos rápidos
-        </h2>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
-          {accesos.map((item) => {
-            const Icon = item.icon
-            return (
-              <a
-                key={item.href}
-                href={item.href}
-                className="bia-card"
-                style={{
-                  textDecoration: "none",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 12,
-                  cursor: "pointer",
-                  transition: "border-color 0.15s",
-                }}
-              >
-                <div
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 8,
-                    background: "var(--bia-accent-dim)",
-                    border: "1px solid var(--bia-accent-border)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Icon size={18} color="var(--bia-accent)" />
-                </div>
-                <div>
-                  <div
-                    style={{
-                      fontWeight: 600,
-                      fontSize: "0.875rem",
-                      color: "var(--bia-text-primary)",
-                      marginBottom: 2,
-                    }}
-                  >
-                    {item.label}
-                  </div>
-                  <div style={{ fontSize: "0.8rem", color: "var(--bia-text-muted)" }}>
-                    {item.desc}
-                  </div>
-                </div>
-              </a>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Banner de versión */}
-      <div
-        style={{
-          background: "#141414",
-          border: "1px solid #2E2E2E",
-          borderRadius: 10,
-          padding: "16px 20px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 16,
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Zap size={16} color="#2DFFC2" />
-          <div>
-            <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "#2DFFC2" }}>
-              BIA Energy — Módulo de Liquidaciones
-            </div>
-            <div style={{ fontSize: "0.8rem", color: "#999" }}>
-              Conciliación de energía eléctrica por frontera · Supabase + Vercel
-            </div>
+      {tab === "principal" && (
+        <>
+          {/* KPI row 1 — 7 cards */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12 }}>
+            <KPI label="TOTAL FRONTERAS" main={d?.totalFronteras ?? 0} sub={periodoLabel.split(" — ")[0] ?? ""} />
+            <KPI label="SIN DIFERENCIA (A1)" main={d?.sinDiferencia ?? 0} color="#07c5a8" sub={`${pct}%`} />
+            <KPI label="PROVISIONES" main={d?.provisiones ?? 0} color="#3b82f6" sub={cop(d?.valorProvisiones ?? 0)} />
+            <KPI label="CONTINGENCIAS L1" main={d?.contingenciasAbiertas ?? 0} color="#f59e0b"
+              sub={`${d?.contingenciasAbiertas ?? 0} abiertas`} />
+            <KPI label="DISPUTAS L2" main={d?.disputas ?? 0} color="#3b82f6" sub={cop(d?.valorDisputas ?? 0)} />
+            <KPI label="ALERTAS MANUALES" main={d?.alertasManuales ?? 0} />
+            <KPI label="INCOMPLETAS / ERRORES"
+              main={`${d?.incompletas ?? 0} / ${d?.errores ?? 0}`} color="#ef4444" />
           </div>
+
+          {/* KPI row 2 — impacto */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+            <KPI label="IMPACTO ESTIMADO (L1+L2)"
+              main={cop(d?.impactoEstimado ?? 0)} color="#7c3aed"
+              sub={`${(d?.totalFronteras ?? 0)} kWh`} />
+          </div>
+
+          {/* Charts */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <ChartCard title="DISTRIBUCIÓN DE FRONTERAS">
+              <div style={{ textAlign: "center", color: "#9ca3af" }}>
+                <div style={{ fontSize: "2.5rem", fontWeight: 700, color: "#d1d5db" }}>
+                  {d?.totalFronteras ?? 0}
+                </div>
+                <div style={{ fontSize: "0.7rem", letterSpacing: "0.08em" }}>FRONTERAS</div>
+              </div>
+            </ChartCard>
+            <ChartCard title="TOP 10 FRONTERAS — IMPACTO FINANCIERO L1">
+              <p style={{ fontSize: "0.8rem", color: "#9ca3af", textAlign: "center" }}>
+                Sin datos de conciliación para este período.
+              </p>
+            </ChartCard>
+          </div>
+        </>
+      )}
+
+      {tab === "historico" && (
+        <div style={{
+          background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12,
+          padding: "32px", textAlign: "center", color: "#9ca3af", fontSize: "0.875rem",
+        }}>
+          Histórico de 12 meses disponible cuando existan períodos cerrados.
         </div>
-        <span
-          style={{
-            background: "#1E1E1E",
-            border: "1px solid #2E2E2E",
-            color: "#2DFFC2",
-            borderRadius: 6,
-            padding: "5px 12px",
-            fontWeight: 600,
-            fontSize: "0.78rem",
-          }}
-        >
-          v0.1.0
-        </span>
+      )}
+
+      {tab === "por_or" && (
+        <div style={{
+          background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12,
+          padding: "32px", textAlign: "center", color: "#9ca3af", fontSize: "0.875rem",
+        }}>
+          Desglose por operador de red disponible después de ejecutar la conciliación.
+        </div>
+      )}
+    </div>
+  )
+}
+
+function KPI({ label, main, color, sub }: {
+  label: string; main: string | number; color?: string; sub?: string
+}) {
+  return (
+    <div style={{
+      background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10,
+      padding: "14px 16px", display: "flex", flexDirection: "column", gap: 4,
+    }}>
+      <span style={{
+        fontSize: "0.65rem", fontWeight: 600, color: "#9ca3af",
+        textTransform: "uppercase", letterSpacing: "0.06em",
+      }}>
+        {label}
+      </span>
+      <span style={{ fontSize: "1.5rem", fontWeight: 700, color: color ?? "#111827", lineHeight: 1.15 }}>
+        {main}
+      </span>
+      {sub && <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>{sub}</span>}
+    </div>
+  )
+}
+
+function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 16 }}>
+      <div style={{
+        fontSize: "0.65rem", fontWeight: 600, color: "#9ca3af",
+        textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 16,
+      }}>
+        {title}
+      </div>
+      <div style={{ minHeight: 120, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {children}
       </div>
     </div>
   )
