@@ -3,19 +3,21 @@
 -- Total: 21 operadores
 -- Excluidos: CARTAGO (consolidado en EEP_CARTAGO), EEP (consolidado)
 -- Estado:
---   validado: AFINIA, CEDENAR, CELSIA_TOLIMA, CELSIA_VALLE, CENS, CEO,
---             CETSA, CHEC, EBSA, EDEQ, EEP_CARTAGO, EEP_PEREIRA, EMSA,
---             ESSA, RUITOQUE
+--   validado: AFINIA, AIRE(*), CEDENAR, CELSIA_TOLIMA, CELSIA_VALLE, CENS,
+--             CEO, CETSA, CHEC, EBSA, EDEQ, EEP_CARTAGO, EEP_PEREIRA,
+--             EMSA, ESSA, RUITOQUE
+--   (*) AIRE: mapeo_sdl_json=NULL es correcto — usa MAPEO_SDL_DEFAULT +
+--       preprocessor propio (reactiva calculada, NT normalizado, propiedad)
 --   configurado (pendiente prueba): ENEL
 --   pendiente validación con archivo: EMCALI, ENERCA, EPM
---   pendiente mapeo SDL: AIRE, ELECTROHUILA
+--   pendiente mapeo SDL: ELECTROHUILA
 -- ================================================================
 
 INSERT INTO configuracion_or (id, codigo, nombre, activo, mapeo_sdl_json, mapeo_balance_json)
 VALUES
 -- AFINIA: validado con archivo
 (gen_random_uuid()::text, 'AFINIA', 'Afinia', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "SIC", "energia_kwh": "CONSUMO", "valor_cop": "PEAJES REGIONALES REGULADOS OTROS", "periodo": null, "nivel_tension": "NIVEL TENSION", "propiedad_activos": "PROPIEDAD", "energia_reactiva_ind_pen": "ENERGIA REACTIVA PEAJES", "energia_reactiva_cap_pen": null, "valor_reactiva_cop": "PEN. ENERGIA REACTIVA PEAJES", "factor_m": "M"}}'::jsonb, NULL),
--- AIRE: pendiente mapeo SDL
+-- AIRE: validado con archivo (mapeo=NULL intencional; usa default+preprocessor)
 (gen_random_uuid()::text, 'AIRE', 'Aire', true, NULL, NULL),
 -- CEDENAR: validado con archivo
 (gen_random_uuid()::text, 'CEDENAR', 'Cedenar', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "CODIGO SIC", "energia_kwh": "Activa", "valor_cop": "VALOR TARIFA", "periodo": null, "nivel_tension": "NIVEL DE TENSION", "propiedad_activos": null, "energia_reactiva_ind_pen": "Penalizada", "energia_reactiva_cap_pen": null, "valor_reactiva_cop": null, "factor_m": null}}'::jsonb, NULL),
