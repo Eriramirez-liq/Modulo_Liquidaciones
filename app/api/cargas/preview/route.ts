@@ -5,7 +5,7 @@ import { parsearFacturacion } from "@/lib/parsers/facturacion"
 import { parsearXM } from "@/lib/parsers/xm"
 import { parsearSDL } from "@/lib/parsers/sdl"
 import { parsearBalance } from "@/lib/parsers/balance"
-import { MapeoColumnas } from "@/lib/parsers/types"
+
 import { TipoFuente } from "@prisma/client"
 
 export async function POST(request: NextRequest) {
@@ -66,15 +66,16 @@ export async function POST(request: NextRequest) {
         if (!orId) return NextResponse.json({ error: "orId requerido para SDL" }, { status: 400 })
         const or = await db.configuracionOR.findUnique({
           where: { id: orId },
-          select: { mapeo_sdl_json: true },
+          select: { mapeo_sdl_json: true, codigo: true },
         })
         result = await parsearSDL(
           buffer,
-          or?.mapeo_sdl_json as MapeoColumnas | null,
+          or?.mapeo_sdl_json as Record<string, unknown> | null,
           orId,
           periodoExistente?.id ?? null,
           anio,
-          mes
+          mes,
+          or?.codigo ?? undefined,
         )
         break
       }
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
         })
         result = await parsearBalance(
           buffer,
-          or?.mapeo_balance_json as MapeoColumnas | null,
+          or?.mapeo_balance_json as Record<string, string> | null,
         )
         break
       }
