@@ -1,36 +1,43 @@
 import NextAuth from "next-auth"
-import Google from "next-auth/providers/google"
+import Credentials from "next-auth/providers/credentials"
+import bcrypt from "bcryptjs"
 import { db } from "@/lib/db"
 
-const ADMIN_EMAIL = "erika.ramirez@bia.app"
 const ALLOWED_DOMAIN = "@bia.app"
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    Credentials({
+      credentials: {
+        email:    { label: "Email",      type: "email" },
+        password: { label: "Contraseña", type: "password" },
+      },
+      async authorize(credentials) {
+        const email    = (credentials?.email    as string | undefined)?.toLowerCase().trim()
+        const password =  credentials?.password as string | undefined
+
+        if (!email || !password) return null
+        if (!email.endsWith(ALLOWED_DOMAIN))  return null
+
+        try {
+          const user = await db.user.findUnique({
+            where: { email },
+            select: { id: true, email: true, nombre: true, rol: true, password: true, activo: true },
+          })
+
+          if (!user || !user.activo) return null
+
+          const ok = await bcrypt.compare(password, user.password)
+          if (!ok) return null
+
+          return { id: user.id, email: user.email, name: user.nombre }
+        } catch {
+          return null
+        }
+      },
     }),
   ],
   callbacks: {
-    async signIn({ user }) {
-      if (!user.email?.endsWith(ALLOWED_DOMAIN)) return false
-      try {
-        await db.user.upsert({
-          where: { email: user.email },
-          create: {
-            email: user.email,
-            nombre: user.name ?? user.email!.split("@")[0] ?? "Usuario",
-            password: "",
-            rol: user.email === ADMIN_EMAIL ? "ADMINISTRADOR" : "ANALISTA",
-          },
-          update: {
-            nombre: user.name ?? user.email!.split("@")[0] ?? "Usuario",
-          },
-        })
-      } catch {}
-      return true
-    },
     async jwt({ token, user }) {
       if (user?.email) {
         try {
@@ -40,7 +47,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           })
           if (dbUser) {
             token.userId = dbUser.id
-            token.rol = dbUser.rol
+            token.rol    = dbUser.rol
             token.nombre = dbUser.nombre
           }
         } catch {}
@@ -52,8 +59,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         ...session,
         user: {
           ...session.user,
-          id: (token.userId as string) ?? "",
-          rol: (token.rol as string) ?? "ANALISTA",
+          id:     (token.userId as string) ?? "",
+          rol:    (token.rol    as string) ?? "ANALISTA",
           nombre: (token.nombre as string) ?? session.user?.name ?? "",
         },
       }
@@ -61,7 +68,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   pages: {
     signIn: "/login",
-    error: "/login",
+    error:  "/login",
   },
   session: { strategy: "jwt" },
 })
