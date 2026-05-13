@@ -1,6 +1,10 @@
-import { redirect } from "next/navigation"
-import { legacyAppUrl } from "@/lib/legacy-app"
+import { WizardCarga } from "@/components/cargas/WizardCarga"
 
 export default function NuevaCargaPage() {
-  redirect(legacyAppUrl("/cargas/nueva"))
+  return (
+    <div className="flex flex-col gap-4">
+      <h1 className="text-xl font-semibold">Nueva carga</h1>
+      <WizardCarga />
+    </div>
+  )
 }

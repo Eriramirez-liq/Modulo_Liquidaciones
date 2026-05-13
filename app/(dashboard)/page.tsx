@@ -130,7 +130,7 @@ export default async function InicioPage() {
         </div>
       </div>
 
-      {/* Banner de entorno */}
+      {/* Banner de versión */}
       <div
         style={{
           background: "#141414",
@@ -148,10 +148,10 @@ export default async function InicioPage() {
           <Zap size={16} color="#2DFFC2" />
           <div>
             <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "#2DFFC2" }}>
-              Entorno local operativo
+              BIA Energy — Módulo de Liquidaciones
             </div>
             <div style={{ fontSize: "0.8rem", color: "#999" }}>
-              Los modulos de carga y conciliacion se ejecutan en el backend Flask local
+              Conciliación de energía eléctrica por frontera · Supabase + Vercel
             </div>
           </div>
         </div>
