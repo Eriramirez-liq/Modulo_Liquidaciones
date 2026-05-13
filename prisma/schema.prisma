@@ -1,0 +1,475 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Rol {
+  ANALISTA
+  ADMINISTRADOR
+}
+
+enum TipoFuente {
+  FACTURACION
+  XM
+  SDL
+  BALANCE
+  TC1
+  COT
+}
+
+enum EstadoCarga {
+  PENDIENTE
+  PROCESANDO
+  COMPLETADA
+  ERROR
+}
+
+enum EstadoPeriodo {
+  ABIERTO
+  EN_PROCESO
+  CERRADO
+  ANULADO
+}
+
+enum CasoConciliacion {
+  A1
+  B1
+  B2
+  C1
+  C2
+  D1
+  D2
+  D3
+  D4
+  INCOMPLETA
+  ERROR
+}
+
+enum ResultadoLinea {
+  SIN_DIFERENCIA
+  CONTINGENCIA_L1
+  PROVISION_L1
+  PROVISION_L2
+  DISPUTA_L2
+  PROVISION_COMBINADA
+  ALERTA_MANUAL
+  INCOMPLETA
+}
+
+enum TipoProvision {
+  L1
+  D3
+  COMBINADA
+}
+
+enum EstadoProvision {
+  PENDIENTE
+  CRUZADO_PARCIAL
+  CRUZADO_TOTAL
+}
+
+enum EstadoContingencia {
+  PENDIENTE
+  COBRADO
+  CERRADO
+}
+
+enum ResultadoContingencia {
+  PENDIENTE
+  PERDIDA_REPORTE
+  GANANCIA_REAL
+  PERDIDA_REAL
+}
+
+enum TipoResultadoCruce {
+  INGRESO
+  COSTO
+  EXACTO
+}
+
+enum EstadoDisputa {
+  ABIERTA
+  EN_GESTION
+  RESUELTA
+  CERRADA_SIN_AJUSTE
+}
+
+enum AccionAuditoria {
+  LOGIN
+  LOGOUT
+  CARGAR_FUENTE
+  REEMPLAZAR_FUENTE
+  EJECUTAR_CONCILIACION
+  CREAR_PROVISION
+  ACTUALIZAR_PROVISION
+  CREAR_CONTINGENCIA
+  ACTUALIZAR_CONTINGENCIA
+  REGISTRAR_CRUCE
+  CREAR_DISPUTA
+  ACTUALIZAR_DISPUTA
+  EXPORTAR_REPORTE
+  CAMBIAR_CONFIGURACION
+  CREAR_USUARIO
+  ACTUALIZAR_USUARIO
+}
+
+// ─── Modelos ──────────────────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  nombre    String
+  email     String   @unique
+  password  String
+  rol       Rol      @default(ANALISTA)
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  periodos_creados      PeriodoConciliacion[]   @relation("PeriodoCreadoPor")
+  periodos_cerrados     PeriodoConciliacion[]   @relation("PeriodoCerradoPor")
+  cargas                CargaFuente[]
+  conciliaciones        ResultadoConciliacion[]
+  provisiones_creadas   Provision[]             @relation("ProvisionCreadoPor")
+  contingencias_creadas Contingencia[]          @relation("ContingenciaCreadoPor")
+  cruces_registrados    CruceBalance[]
+  disputas_abiertas     Disputa[]               @relation("DisputaAbiertaPor")
+  disputas_cerradas     Disputa[]               @relation("DisputaCerradaPor")
+  log_auditoria         LogAuditoria[]
+
+  @@map("users")
+}
+
+model PeriodoConciliacion {
+  id             String        @id @default(cuid())
+  anio           Int
+  mes            Int
+  estado         EstadoPeriodo @default(ABIERTO)
+  fecha_cierre   DateTime?
+  cerrado_por_id String?
+  creado_por_id  String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  creado_por    User                    @relation("PeriodoCreadoPor", fields: [creado_por_id], references: [id])
+  cerrado_por   User?                   @relation("PeriodoCerradoPor", fields: [cerrado_por_id], references: [id])
+  cargas        CargaFuente[]
+  resultados    ResultadoConciliacion[]
+  provisiones   Provision[]
+  contingencias Contingencia[]
+  disputas      Disputa[]
+
+  @@unique([anio, mes], name: "uq_periodo_anio_mes")
+  @@map("periodos_conciliacion")
+}
+
+model ConfiguracionOR {
+  id                 String   @id @default(cuid())
+  codigo             String   @unique
+  nombre             String
+  nit                String?
+  email_contacto     String?
+  telefono_contacto  String?
+  activo             Boolean  @default(true)
+  mapeo_sdl_json     Json?
+  mapeo_balance_json Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  cargas            CargaFuente[]
+  registros_sdl     RegistroSDL[]
+  registros_balance RegistroBalance[]
+  resultados        ResultadoConciliacion[]
+  provisiones       Provision[]
+  contingencias     Contingencia[]
+  disputas          Disputa[]
+
+  @@map("configuracion_or")
+}
+
+model CargaFuente {
+  id                      String      @id @default(cuid())
+  periodo_id              String
+  tipo_fuente             TipoFuente
+  or_id                   String?
+  nombre_archivo          String
+  estado                  EstadoCarga @default(PENDIENTE)
+  total_registros         Int?
+  registros_procesados    Int?
+  registros_error         Int?
+  mensaje_error           String?
+  justificacion_reemplazo String?
+  reemplaza_id            String?
+  cargado_por_id          String
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
+
+  periodo      PeriodoConciliacion @relation(fields: [periodo_id], references: [id])
+  operador_red ConfiguracionOR?    @relation(fields: [or_id], references: [id])
+  cargado_por  User                @relation(fields: [cargado_por_id], references: [id])
+
+  @@map("cargas_fuente")
+}
+
+model RegistroFacturacion {
+  id               String   @id @default(cuid())
+  carga_id         String
+  periodo_id       String
+  codigo_frontera  String
+  nombre_usuario   String
+  operador_red     String
+  energia_kwh      Decimal  @db.Decimal(18, 6)
+  g_bia            Decimal  @db.Decimal(18, 6)
+  t_bia            Decimal  @db.Decimal(18, 6)
+  d_bia            Decimal  @db.Decimal(18, 6)
+  pr_bia           Decimal  @db.Decimal(18, 6)
+  r_bia            Decimal  @db.Decimal(18, 6)
+  c_bia            Decimal  @db.Decimal(18, 6)
+  tarifa_total_bia Decimal  @db.Decimal(18, 6)
+  createdAt        DateTime @default(now())
+
+  @@map("registros_facturacion")
+}
+
+model RegistroXM {
+  id              String   @id @default(cuid())
+  carga_id        String
+  periodo_id      String
+  codigo_frontera String
+  nombre_frontera String?
+  energia_xm_kwh  Decimal  @db.Decimal(18, 6)
+  createdAt       DateTime @default(now())
+
+  @@map("registros_xm")
+}
+
+model RegistroSDL {
+  id                       String   @id @default(cuid())
+  carga_id                 String
+  periodo_id               String
+  or_id                    String
+  codigo_frontera          String
+  nombre_frontera          String?
+  periodo_sdl              String
+  energia_sdl_kwh          Decimal  @db.Decimal(18, 6)
+  valor_sdl_cop            Decimal  @db.Decimal(18, 2)
+  tarifa_sdl               Decimal  @db.Decimal(18, 6)
+  nivel_tension            String?
+  propiedad_activos        String?
+  energia_reactiva_ind_pen Decimal? @db.Decimal(18, 6)
+  energia_reactiva_cap_pen Decimal? @db.Decimal(18, 6)
+  valor_reactiva_cop       Decimal? @db.Decimal(18, 2)
+  factor_m                 Decimal? @db.Decimal(10, 4)
+  es_duplicado             Boolean  @default(false)
+  createdAt                DateTime @default(now())
+
+  operador_red ConfiguracionOR @relation(fields: [or_id], references: [id])
+
+  @@map("registros_sdl")
+}
+
+model RegistroTC1 {
+  id                     String   @id @default(cuid())
+  carga_id               String
+  periodo_id             String
+  codigo_frontera        String
+  niu                    String?
+  nivel_tension          String?
+  nivel_tension_primario String?
+  pct_propiedad_activo   String?
+  tipo_conexion          String?
+  conexion_red           String?
+  id_comercializador     String?
+  createdAt              DateTime @default(now())
+
+  @@map("registros_tc1")
+}
+
+model RegistroBalance {
+  id                  String   @id @default(cuid())
+  carga_id            String
+  or_id               String
+  codigo_frontera     String
+  periodo_ajuste      String
+  energia_balance_kwh Decimal  @db.Decimal(18, 6)
+  valor_balance_cop   Decimal  @db.Decimal(18, 2)
+  tarifa_balance      Decimal  @db.Decimal(18, 6)
+  periodo_tarifa      String
+  createdAt           DateTime @default(now())
+
+  operador_red ConfiguracionOR @relation(fields: [or_id], references: [id])
+  cruces       CruceBalance[]
+
+  @@map("registros_balance")
+}
+
+model RegistroCOT {
+  id              String   @id @default(cuid())
+  carga_id        String
+  periodo_id      String
+  or_id           String?
+  codigo_frontera String
+  nombre_frontera String?
+  periodo_cot     String?
+  valor_cot_cop   Decimal? @db.Decimal(18, 2)
+  tarifa_cot      Decimal? @db.Decimal(18, 6)
+  createdAt       DateTime @default(now())
+
+  @@map("registros_cot")
+}
+
+model ResultadoConciliacion {
+  id                     String            @id @default(cuid())
+  periodo_id             String
+  codigo_frontera        String
+  nombre_usuario         String?
+  operador_red           String?
+  or_id                  String?
+  e_fac                  Decimal?          @db.Decimal(18, 6)
+  e_xm                   Decimal?          @db.Decimal(18, 6)
+  e_sdl                  Decimal?          @db.Decimal(18, 6)
+  delta_l1               Decimal?          @db.Decimal(18, 6)
+  delta_l2               Decimal?          @db.Decimal(18, 6)
+  caso                   CasoConciliacion
+  resultado_l1           ResultadoLinea?
+  resultado_l2           ResultadoLinea?
+  impacto_financiero_l1  Decimal?          @db.Decimal(18, 2)
+  impacto_financiero_l2  Decimal?          @db.Decimal(18, 2)
+  requiere_alerta_manual Boolean           @default(false)
+  observaciones          String?
+  conciliado_por_id      String?
+  conciliado_at          DateTime?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+
+  periodo        PeriodoConciliacion @relation(fields: [periodo_id], references: [id])
+  or_obj         ConfiguracionOR?    @relation(fields: [or_id], references: [id])
+  conciliado_por User?               @relation(fields: [conciliado_por_id], references: [id])
+  provisiones    Provision[]
+  contingencias  Contingencia[]
+  disputas       Disputa[]
+
+  @@unique([periodo_id, codigo_frontera], name: "uq_resultado_periodo_frontera")
+  @@map("resultados_conciliacion")
+}
+
+model Provision {
+  id                     String          @id @default(cuid())
+  resultado_id           String
+  periodo_id             String
+  codigo_frontera        String
+  or_id                  String?
+  tipo                   TipoProvision
+  energia_kwh            Decimal         @db.Decimal(18, 6)
+  valor_provisionado_cop Decimal         @db.Decimal(18, 2)
+  componentes_json       Json?
+  estado                 EstadoProvision @default(PENDIENTE)
+  fecha_cierre           DateTime?
+  creado_por_id          String
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  resultado    ResultadoConciliacion @relation(fields: [resultado_id], references: [id])
+  periodo      PeriodoConciliacion   @relation(fields: [periodo_id], references: [id])
+  operador_red ConfiguracionOR?      @relation(fields: [or_id], references: [id])
+  creado_por   User                  @relation("ProvisionCreadoPor", fields: [creado_por_id], references: [id])
+  cruces       CruceBalance[]
+
+  @@map("provisiones")
+}
+
+model Contingencia {
+  id                        String                @id @default(cuid())
+  resultado_id              String
+  periodo_id                String
+  codigo_frontera           String
+  or_id                     String?
+  energia_kwh               Decimal               @db.Decimal(18, 6)
+  costo_calculado_cop       Decimal?              @db.Decimal(18, 2)
+  refacturacion_cliente_cop Decimal?              @db.Decimal(18, 2)
+  costo_neto_cop            Decimal?              @db.Decimal(18, 2)
+  estado                    EstadoContingencia    @default(PENDIENTE)
+  resultado_tipo            ResultadoContingencia @default(PENDIENTE)
+  descripcion               String?
+  fecha_cobro               DateTime?
+  fecha_cierre              DateTime?
+  creado_por_id             String
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+
+  resultado    ResultadoConciliacion @relation(fields: [resultado_id], references: [id])
+  periodo      PeriodoConciliacion   @relation(fields: [periodo_id], references: [id])
+  operador_red ConfiguracionOR?      @relation(fields: [or_id], references: [id])
+  creado_por   User                  @relation("ContingenciaCreadoPor", fields: [creado_por_id], references: [id])
+  cruces       CruceBalance[]
+
+  @@map("contingencias")
+}
+
+model CruceBalance {
+  id                  String             @id @default(cuid())
+  registro_balance_id String
+  codigo_frontera     String
+  provision_id        String?
+  contingencia_id     String?
+  energia_cruzada_kwh Decimal            @db.Decimal(18, 6)
+  valor_cruzado_cop   Decimal            @db.Decimal(18, 2)
+  resultado_neto_cop  Decimal            @db.Decimal(18, 2)
+  tipo_resultado      TipoResultadoCruce
+  fecha_cruce         DateTime           @default(now())
+  registrado_por_id   String
+  createdAt           DateTime           @default(now())
+
+  registro_balance RegistroBalance @relation(fields: [registro_balance_id], references: [id])
+  provision        Provision?      @relation(fields: [provision_id], references: [id])
+  contingencia     Contingencia?   @relation(fields: [contingencia_id], references: [id])
+  registrado_por   User            @relation(fields: [registrado_por_id], references: [id])
+
+  @@map("cruces_balance")
+}
+
+model Disputa {
+  id                 String        @id @default(cuid())
+  resultado_id       String
+  periodo_id         String
+  codigo_frontera    String
+  or_id              String
+  energia_exceso_kwh Decimal       @db.Decimal(18, 6)
+  valor_disputa_cop  Decimal       @db.Decimal(18, 2)
+  estado             EstadoDisputa @default(ABIERTA)
+  descripcion        String?
+  resolucion         String?
+  abierta_por_id     String
+  cerrada_por_id     String?
+  cerrada_at         DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  resultado    ResultadoConciliacion @relation(fields: [resultado_id], references: [id])
+  periodo      PeriodoConciliacion   @relation(fields: [periodo_id], references: [id])
+  operador_red ConfiguracionOR       @relation(fields: [or_id], references: [id])
+  abierta_por  User                  @relation("DisputaAbiertaPor", fields: [abierta_por_id], references: [id])
+  cerrada_por  User?                 @relation("DisputaCerradaPor", fields: [cerrada_por_id], references: [id])
+
+  @@map("disputas")
+}
+
+model LogAuditoria {
+  id         String          @id @default(cuid())
+  usuario_id String
+  accion     AccionAuditoria
+  entidad    String
+  entidad_id String
+  detalle    Json?
+  ip         String?
+  createdAt  DateTime        @default(now())
+
+  usuario User @relation(fields: [usuario_id], references: [id])
+
+  @@map("log_auditoria")
+}

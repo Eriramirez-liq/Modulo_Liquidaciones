@@ -85,6 +85,10 @@
              'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4'),
             ('BALANCE', True, 'Balance de Energía', 'Ajuste retroactivo de un operador a períodos anteriores.',
              'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z'),
+            ('TC1', False, 'TC1 — Conf. Técnica', 'Archivo de configuración técnica de fronteras (XM/SUI). Niveles de tensión y propiedad.',
+             'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01'),
+            ('COT', True, 'COT por Operador', 'Cargo por Otros Trámites enviado por el OR.',
+             'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z'),
           ] %}
           {% for tipo, req_or, label, desc, icon_path in fuentes %}
           <button
@@ -119,7 +123,11 @@
           <select id="or_id" class="bia-select" onchange="checkPaso1()">
             <option value="">Seleccionar operador…</option>
             {% for or in operadores %}
-            <option value="{{ or.id }}">{{ or.codigo }} — {{ or.nombre }}</option>
+            <option value="{{ or.id }}"
+                    data-codigo="{{ or.codigo }}"
+                    data-multi-sdl="{{ 'true' if or.mapeo_sdl_json and or.mapeo_sdl_json.get('multi_archivos') else 'false' }}">
+              {{ or.codigo }} — {{ or.nombre }}
+            </option>
             {% endfor %}
           </select>
           {% else %}
@@ -177,6 +185,55 @@
         <input type="file" id="archivo-input" style="display:none;" accept=".xlsx,.xls,.csv" />
       </div>
 
+      {# Archivos adicionales — visible cuando el OR requiere multi_archivos en SDL #}
+      <div id="multi-archivos-extra" style="display:none;">
+        <div class="bia-stack bia-stack-12" style="border-top:1px solid var(--bia-border);padding-top:16px;">
+          <p id="multi-archivos-intro" style="font-size:0.82rem;color:var(--bia-text-muted);"></p>
+
+          {# Segundo archivo (siempre visible cuando multi_archivos) #}
+          <div>
+            <label id="dropzone-cap-label" style="display:block;font-size:0.78rem;font-weight:600;color:var(--bia-text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">
+              Archivo 2
+            </label>
+            <div class="bia-dropzone" id="dropzone-cap"
+                 style="padding:14px 20px;flex-direction:row;justify-content:space-between;gap:12px;cursor:pointer;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+                     fill="none" stroke="var(--bia-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                </svg>
+                <span class="bia-dropzone-text" id="dropzone-cap-filename" style="font-size:0.85rem;margin:0;">
+                  Haz clic para seleccionar archivo
+                </span>
+              </div>
+              <span id="dropzone-cap-hint" class="bia-dropzone-sub" style="font-size:0.75rem;white-space:nowrap;"></span>
+              <input type="file" id="archivo-cap-input" style="display:none;" accept=".xlsx,.xls" />
+            </div>
+          </div>
+
+          {# Tercer archivo (solo ORs con 3 archivos, ej. EMSA) #}
+          <div id="dropzone-ind-wrapper" style="display:none;">
+            <label id="dropzone-ind-label" style="display:block;font-size:0.78rem;font-weight:600;color:var(--bia-text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">
+              Archivo 3
+            </label>
+            <div class="bia-dropzone" id="dropzone-ind"
+                 style="padding:14px 20px;flex-direction:row;justify-content:space-between;gap:12px;cursor:pointer;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+                     fill="none" stroke="var(--bia-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                </svg>
+                <span class="bia-dropzone-text" id="dropzone-ind-filename" style="font-size:0.85rem;margin:0;">
+                  Haz clic para seleccionar archivo
+                </span>
+              </div>
+              <span id="dropzone-ind-hint" class="bia-dropzone-sub" style="font-size:0.75rem;white-space:nowrap;"></span>
+              <input type="file" id="archivo-ind-input" style="display:none;" accept=".xlsx,.xls" />
+            </div>
+          </div>
+        </div>
+      </div>
+
       {# Alertas / preview #}
       <div id="alertas-container"></div>
       <div id="preview-container"></div>
@@ -208,14 +265,28 @@
 
       <div id="resumen-container" class="bia-stack bia-stack-12"></div>
 
-      {# Reemplazo — justificación #}
+      {# Carga previa — opción añadir vs reemplazar #}
       <div id="justificacion-section" style="display:none;">
         <div class="bia-alert bia-alert-warning" style="margin-bottom:12px;">
-          Ya existe una carga completada para este período/fuente. Los datos anteriores serán reemplazados.
+          Ya existe una carga completada para este período y fuente. Elige cómo proceder:
         </div>
-        <div class="bia-input-group" style="margin:0;">
-          <label for="justificacion">Justificación del reemplazo *</label>
-          <input type="text" id="justificacion" class="bia-input" placeholder="ej. Corrección de error en archivos originales…" />
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.875rem;">
+            <input type="radio" name="modo_carga" id="modo-adicionar" value="adicionar" checked
+                   onchange="toggleModoReemplazo()" />
+            <span><strong>Añadir registros al período</strong> — los registros anteriores se conservan (útil cuando el OR entrega el SDL en varios archivos).</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.875rem;">
+            <input type="radio" name="modo_carga" id="modo-reemplazar" value="reemplazar"
+                   onchange="toggleModoReemplazo()" />
+            <span><strong>Reemplazar carga existente</strong> — los registros del archivo anterior quedan marcados como reemplazados.</span>
+          </label>
+        </div>
+        <div id="justificacion-reemplazo" style="display:none;">
+          <div class="bia-input-group" style="margin:0;">
+            <label for="justificacion">Justificación del reemplazo *</label>
+            <input type="text" id="justificacion" class="bia-input" placeholder="ej. Corrección de error en archivos originales…" />
+          </div>
         </div>
       </div>
 
@@ -241,44 +312,137 @@
 <script>
 // Meses en español para el select de mes
 (function() {
-  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
-                  'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const mesSelect = document.getElementById('mes');
   const now = new Date();
   if (mesSelect) mesSelect.value = now.getMonth() + 1;
-
-  // Usar enumerate con Jinja (ya lo hace el template)
 })();
 
-// Init dropzone y fuente cards
-initDropzone('dropzone', 'archivo-input', 'dropzone-filename');
+// Init dropzones y fuente cards
+initDropzone('dropzone',     'archivo-input',     'dropzone-filename');
+initDropzone('dropzone-cap', 'archivo-cap-input', 'dropzone-cap-filename');
+initDropzone('dropzone-ind', 'archivo-ind-input', 'dropzone-ind-filename');
 initFuenteCards();
 
-// Estado global del wizard (aquí se expande BiaWizard.state)
 let _previewData = null;
+
+// Configuracion de multi-archivos por OR (codigo → config)
+const MULTI_FILE_CFG = {
+  EMSA: {
+    intro:       'EMSA entrega la informacion en 3 archivos. Carga los 3 para continuar.',
+    label1:      'Archivo 1 de 3 — Activa',
+    label2:      'Archivo 2 de 3 — Capacitiva',
+    hint2:       'CODIGO · SumaCapacitiva · Cobro',
+    label3:      'Archivo 3 de 3 — Inductiva',
+    hint3:       'CODIGO · Nivel · TotalInduc · M · COSTO_DISTRIBUCION · Cobro',
+    tercerArchivo: true,
+  },
+  ENEL: {
+    intro:       'ENEL entrega la informacion en 2 archivos. Carga los 2 para continuar.',
+    label1:      'Archivo 1 de 2 — Activa',
+    label2:      'Archivo 2 de 2 — Reactiva',
+    hint2:       'CODIGO SIC · PERIODO · FACTOR M · EXCESO_REACTIVA_INDUCTIVA · EXCESO_REACTIVA_CAPACITIVA',
+    label3:      null,
+    hint3:       null,
+    tercerArchivo: false,
+  },
+};
+
+function _getOrCodigo() {
+  const sel = document.getElementById('or_id');
+  return sel?.options[sel.selectedIndex]?.getAttribute('data-codigo') || '';
+}
+
+function _isMultiSdl() {
+  const sel = document.getElementById('or_id');
+  const opt = sel?.options[sel?.selectedIndex];
+  const tipoFuente = document.getElementById('tipo_fuente_input')?.value || '';
+  return opt?.getAttribute('data-multi-sdl') === 'true' && tipoFuente === 'SDL';
+}
+
+// Muestra/oculta y configura la seccion de archivos extra segun el OR
+function checkMultiArchivos() {
+  const isMulti = _isMultiSdl();
+  const orCodigo = _getOrCodigo();
+  const cfg = MULTI_FILE_CFG[orCodigo] || null;
+
+  const section  = document.getElementById('multi-archivos-extra');
+  const desc     = document.getElementById('archivo-desc');
+  const intro    = document.getElementById('multi-archivos-intro');
+  const capLabel = document.getElementById('dropzone-cap-label');
+  const capHint  = document.getElementById('dropzone-cap-hint');
+  const capFn    = document.getElementById('dropzone-cap-filename');
+  const indWrap  = document.getElementById('dropzone-ind-wrapper');
+  const indLabel = document.getElementById('dropzone-ind-label');
+  const indHint  = document.getElementById('dropzone-ind-hint');
+  const indFn    = document.getElementById('dropzone-ind-filename');
+
+  if (section) section.style.display = isMulti ? '' : 'none';
+
+  if (isMulti && cfg) {
+    if (desc)     desc.textContent     = cfg.label1;
+    if (intro)    intro.textContent    = cfg.intro;
+    if (capLabel) capLabel.textContent = cfg.label2;
+    if (capHint)  capHint.textContent  = cfg.hint2 || '';
+    if (capFn)    capFn.textContent    = 'Haz clic para seleccionar archivo';
+    if (indWrap)  indWrap.style.display = cfg.tercerArchivo ? '' : 'none';
+    if (cfg.tercerArchivo) {
+      if (indLabel) indLabel.textContent = cfg.label3 || 'Archivo 3';
+      if (indHint)  indHint.textContent  = cfg.hint3 || '';
+      if (indFn)    indFn.textContent    = 'Haz clic para seleccionar archivo';
+    }
+  } else {
+    if (desc) desc.textContent = 'Arrastra el archivo Excel o CSV del período seleccionado';
+  }
+
+  return isMulti;
+}
 
 function handlePaso1() {
   const tipoFuente = document.getElementById('tipo_fuente_input')?.value;
-  const anio = parseInt(document.getElementById('anio')?.value || '0');
-  const mes  = parseInt(document.getElementById('mes')?.value || '0');
-  const orId = document.getElementById('or_id')?.value || null;
+  const anio  = parseInt(document.getElementById('anio')?.value || '0');
+  const mes   = parseInt(document.getElementById('mes')?.value || '0');
+  const orId  = document.getElementById('or_id')?.value || null;
+  const isMultiSdl  = _isMultiSdl();
+  const orCodigo    = _getOrCodigo();
+  const multiFileCfg = MULTI_FILE_CFG[orCodigo] || null;
 
-  BiaWizard.setState({ tipoFuente, anio, mes, orId });
+  BiaWizard.setState({ tipoFuente, anio, mes, orId, isMultiSdl, multiFileCfg });
+  checkMultiArchivos();
   BiaWizard.mostrarPaso(1);
 }
 
-// Preview al seleccionar archivo
-document.getElementById('archivo-input')?.addEventListener('change', async function() {
-  const file = this.files?.[0];
-  if (!file) return;
+// ── Preview ──────────────────────────────────────────────────────────────────
 
+async function fetchPreview() {
   const state = BiaWizard.getState();
+  const archivoActiva = document.getElementById('archivo-input')?.files?.[0];
+  if (!archivoActiva) return;
+
+  const archivoCap = document.getElementById('archivo-cap-input')?.files?.[0];
+  const archivoInd = document.getElementById('archivo-ind-input')?.files?.[0];
+  const cfg = state.multiFileCfg;
+
+  // Para ORs multi-archivo, esperar que estén todos los archivos requeridos
+  if (state.isMultiSdl) {
+    const faltaCap = !archivoCap;
+    const faltaInd = cfg?.tercerArchivo && !archivoInd;
+    if (faltaCap || faltaInd) {
+      const total = cfg?.tercerArchivo ? 3 : 2;
+      document.getElementById('alertas-container').innerHTML =
+        `<div class="bia-alert bia-alert-info">Selecciona los ${total} archivos requeridos para analizar.</div>`;
+      document.getElementById('btn-paso2-siguiente').disabled = true;
+      return;
+    }
+  }
+
   const form = new FormData();
-  form.append('archivo', file);
-  form.append('tipo_fuente', state.tipoFuente || '');
-  form.append('anio', state.anio || '');
-  form.append('mes', state.mes || '');
+  form.append('archivo',      archivoActiva);
+  form.append('tipo_fuente',  state.tipoFuente || '');
+  form.append('anio',         state.anio || '');
+  form.append('mes',          state.mes || '');
   if (state.orId) form.append('or_id', state.orId);
+  if (state.isMultiSdl && archivoCap) form.append('archivo_cap', archivoCap);
+  if (state.isMultiSdl && cfg?.tercerArchivo && archivoInd) form.append('archivo_ind', archivoInd);
 
   document.getElementById('alertas-container').innerHTML =
     '<div class="bia-alert bia-alert-info">Analizando archivo…</div>';
@@ -286,7 +450,7 @@ document.getElementById('archivo-input')?.addEventListener('change', async funct
   document.getElementById('btn-paso2-siguiente').disabled = true;
 
   try {
-    const res = await fetch('/cargas/api/preview', { method: 'POST', body: form });
+    const res  = await fetch('/cargas/api/preview', { method: 'POST', body: form });
     const data = await res.json();
 
     if (data.error) {
@@ -296,26 +460,41 @@ document.getElementById('archivo-input')?.addEventListener('change', async funct
     }
 
     _previewData = data;
+
+    let nombreArchivo = archivoActiva.name;
+    if (state.isMultiSdl) {
+      const parts = [archivoActiva.name];
+      if (archivoCap) parts.push(archivoCap.name);
+      if (cfg?.tercerArchivo && archivoInd) parts.push(archivoInd.name);
+      nombreArchivo = parts.join(' + ');
+    }
+
     BiaWizard.setState({
-      filasCompletas: data.filasCompletas || data.preview || [],
-      alertas: data.alertas || [],
-      erroresCriticos: data.erroresCriticos || [],
+      filasCompletas:    data.filasCompletas || data.preview || [],
+      alertas:           data.alertas || [],
+      erroresCriticos:   data.erroresCriticos || [],
       existeCargaPrevia: data.existeCargaPrevia,
-      cargaPreviaId: data.cargaPreviaId,
-      nombreArchivo: file.name,
+      cargaPreviaId:     data.cargaPreviaId,
+      nombreArchivo,
     });
 
     renderAlertas(data.alertas || [], data.erroresCriticos || [], 'alertas-container');
     renderPreviewTable(data.preview || [], 'preview-container');
 
-    const tieneErrores = (data.erroresCriticos || []).length > 0;
-    document.getElementById('btn-paso2-siguiente').disabled = tieneErrores;
+    document.getElementById('btn-paso2-siguiente').disabled =
+      (data.erroresCriticos || []).length > 0;
 
   } catch (e) {
     document.getElementById('alertas-container').innerHTML =
       `<div class="bia-alert bia-alert-error">Error de red: ${e.message}</div>`;
   }
-});
+}
+
+document.getElementById('archivo-input')?.addEventListener('change',     fetchPreview);
+document.getElementById('archivo-cap-input')?.addEventListener('change', fetchPreview);
+document.getElementById('archivo-ind-input')?.addEventListener('change', fetchPreview);
+
+// ── Paso 2 / 3 ───────────────────────────────────────────────────────────────
 
 function handlePaso2() {
   const state = BiaWizard.getState();
@@ -340,18 +519,29 @@ function handlePaso2() {
   }
 
   const justSection = document.getElementById('justificacion-section');
-  if (justSection) {
-    justSection.style.display = state.existeCargaPrevia ? '' : 'none';
-  }
+  if (justSection) justSection.style.display = state.existeCargaPrevia ? '' : 'none';
+
+  const radioAdicionar = document.getElementById('modo-adicionar');
+  if (radioAdicionar) radioAdicionar.checked = true;
+  toggleModoReemplazo();
 
   BiaWizard.mostrarPaso(2);
 }
 
-async function handleConfirmar() {
-  const state    = BiaWizard.getState();
-  const justif   = document.getElementById('justificacion')?.value || null;
+function toggleModoReemplazo() {
+  const reemplazar = document.getElementById('modo-reemplazar')?.checked;
+  const divJust = document.getElementById('justificacion-reemplazo');
+  if (divJust) divJust.style.display = reemplazar ? '' : 'none';
+  const inputJust = document.getElementById('justificacion');
+  if (inputJust && !reemplazar) inputJust.value = '';
+}
 
-  if (state.existeCargaPrevia && !justif) {
+async function handleConfirmar() {
+  const state = BiaWizard.getState();
+  const modoReemplazar = document.getElementById('modo-reemplazar')?.checked ?? false;
+  const justif = document.getElementById('justificacion')?.value?.trim() || null;
+
+  if (state.existeCargaPrevia && modoReemplazar && !justif) {
     alert('Debes ingresar una justificación para reemplazar la carga existente.');
     return;
   }
@@ -361,14 +551,14 @@ async function handleConfirmar() {
 
   try {
     const result = await confirmarCarga({
-      anio:         state.anio,
-      mes:          state.mes,
-      tipo_fuente:  state.tipoFuente,
-      or_id:        state.orId || null,
+      anio:           state.anio,
+      mes:            state.mes,
+      tipo_fuente:    state.tipoFuente,
+      or_id:          state.orId || null,
       nombre_archivo: state.nombreArchivo,
-      filas:        state.filasCompletas,
-      justificacion: justif,
-      reemplaza_id:  state.cargaPreviaId || null,
+      filas:          state.filasCompletas,
+      justificacion:  modoReemplazar ? justif : null,
+      reemplaza_id:   (state.existeCargaPrevia && modoReemplazar) ? (state.cargaPreviaId || null) : null,
     });
 
     if (result.ok) {

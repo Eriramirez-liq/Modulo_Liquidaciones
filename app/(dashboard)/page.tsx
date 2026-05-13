@@ -148,10 +148,10 @@ export default async function InicioPage() {
           <Zap size={16} color="#2DFFC2" />
           <div>
             <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "#2DFFC2" }}>
-              Entorno de desarrollo
+              Entorno local operativo
             </div>
             <div style={{ fontSize: "0.8rem", color: "#999" }}>
-              Módulos en construcción — Los datos mostrados son de ejemplo
+              Los modulos de carga y conciliacion se ejecutan en el backend Flask local
             </div>
           </div>
         </div>

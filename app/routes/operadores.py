@@ -36,10 +36,16 @@ FORMATO_SDL_DEFAULT = {
     "fila_inicio": 2,
     "separador_csv": ",",
     "columnas": {
-        "codigo_frontera": "CODIGO_FRONTERA",
-        "energia_kwh":     "ENERGIA_KWH",
-        "valor_cop":       "VALOR_COP",
-        "periodo":         "PERIODO",
+        "codigo_frontera":          "CODIGO_FRONTERA",
+        "energia_kwh":              "ENERGIA_KWH",
+        "valor_cop":                "VALOR_COP",
+        "periodo":                  "PERIODO",
+        "nivel_tension":            "NIVEL_TENSION",
+        "propiedad_activos":        "PROPIEDAD_ACTIVOS",
+        "energia_reactiva_ind_pen": "ENERGIA_REACTIVA_IND_PEN",
+        "energia_reactiva_cap_pen": "ENERGIA_REACTIVA_CAP_PEN",
+        "valor_reactiva_cop":       "VALOR_REACTIVA_COP",
+        "factor_m":                 "FACTOR_M",
     },
 }
 
@@ -232,10 +238,16 @@ def api_formato(or_id: str):
             if not v:
                 return jsonify({"ok": False, "error": f"Columna SDL requerida: {c}"}), 400
         mapeo["columnas"] = {
-            "codigo_frontera": (cols_raw.get("codigo_frontera") or "").strip(),
-            "energia_kwh":     (cols_raw.get("energia_kwh") or "").strip(),
-            "valor_cop":       (cols_raw.get("valor_cop") or "").strip(),
-            "periodo":         (cols_raw.get("periodo") or "").strip() or None,
+            "codigo_frontera":          (cols_raw.get("codigo_frontera") or "").strip(),
+            "energia_kwh":              (cols_raw.get("energia_kwh") or "").strip(),
+            "valor_cop":                (cols_raw.get("valor_cop") or "").strip(),
+            "periodo":                  (cols_raw.get("periodo") or "").strip() or None,
+            "nivel_tension":            (cols_raw.get("nivel_tension") or "").strip() or None,
+            "propiedad_activos":        (cols_raw.get("propiedad_activos") or "").strip() or None,
+            "energia_reactiva_ind_pen": (cols_raw.get("energia_reactiva_ind_pen") or "").strip() or None,
+            "energia_reactiva_cap_pen": (cols_raw.get("energia_reactiva_cap_pen") or "").strip() or None,
+            "valor_reactiva_cop":       (cols_raw.get("valor_reactiva_cop") or "").strip() or None,
+            "factor_m":                 (cols_raw.get("factor_m") or "").strip() or None,
         }
         or_obj.mapeo_sdl_json = mapeo
 

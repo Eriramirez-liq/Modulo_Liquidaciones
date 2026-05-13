@@ -34,6 +34,7 @@ class TipoFuente(str, enum.Enum):
     SDL         = "SDL"
     BALANCE     = "BALANCE"
     TC1         = "TC1"
+    COT         = "COT"
 
 
 class EstadoCarga(str, enum.Enum):
@@ -249,6 +250,7 @@ class CargaFuente(db.Model):
     registros_sdl        = db.relationship("RegistroSDL", back_populates="carga")
     registros_tc1        = db.relationship("RegistroTC1", back_populates="carga")
     registros_balance    = db.relationship("RegistroBalance", back_populates="carga")
+    registros_cot        = db.relationship("RegistroCOT", back_populates="carga")
 
     __table_args__ = (
         db.Index("idx_carga_periodo_tipo", "periodo_id", "tipo_fuente"),
@@ -311,12 +313,17 @@ class RegistroSDL(db.Model):
     codigo_frontera   = db.Column(db.String(100), nullable=False)
     nombre_frontera   = db.Column(db.String(255), nullable=True)
     periodo_sdl       = db.Column(db.String(7), nullable=False)  # AAAA-MM
-    energia_sdl_kwh   = db.Column(db.Numeric(18, 6), nullable=False)
-    valor_sdl_cop     = db.Column(db.Numeric(18, 2), nullable=False)
-    tarifa_sdl        = db.Column(db.Numeric(18, 6), nullable=False)
-    nivel_tension     = db.Column(db.String(50), nullable=True)
-    propiedad_activos = db.Column(db.String(100), nullable=True)
-    es_duplicado      = db.Column(db.Boolean, nullable=False, default=False)
+    energia_sdl_kwh              = db.Column(db.Numeric(18, 6), nullable=False)
+    valor_sdl_cop                = db.Column(db.Numeric(18, 2), nullable=False)
+    tarifa_sdl                   = db.Column(db.Numeric(18, 6), nullable=False)
+    nivel_tension                = db.Column(db.String(50), nullable=True)
+    propiedad_activos            = db.Column(db.String(100), nullable=True)
+    energia_reactiva_ind_pen     = db.Column(db.Numeric(18, 6), nullable=True)  # kWh
+    energia_reactiva_cap_pen     = db.Column(db.Numeric(18, 6), nullable=True)  # kWh
+    valor_reactiva_cop           = db.Column(db.Numeric(18, 2), nullable=True)
+    tarifa_reactiva              = db.Column(db.Numeric(18, 6), nullable=True)
+    factor_m                     = db.Column(db.Numeric(10, 4), nullable=True)
+    es_duplicado                 = db.Column(db.Boolean, nullable=False, default=False)
     created_at        = db.Column("createdAt", db.DateTime, nullable=False, default=datetime.utcnow)
 
     carga        = db.relationship("CargaFuente", back_populates="registros_sdl")
@@ -376,6 +383,29 @@ class RegistroBalance(db.Model):
         db.Index("idx_balance_carga", "carga_id"),
         db.Index("idx_balance_or_periodo", "or_id", "periodo_ajuste"),
         db.Index("idx_balance_frontera", "codigo_frontera"),
+    )
+
+
+class RegistroCOT(db.Model):
+    """Cargo por Otros Trámites — archivo complementario al SDL enviado por el OR."""
+    __tablename__ = "registros_cot"
+
+    id              = db.Column(db.String(25), primary_key=True, default=_cuid)
+    carga_id        = db.Column(db.String(25), db.ForeignKey("cargas_fuente.id"), nullable=False)
+    periodo_id      = db.Column(db.String(25), nullable=False)
+    or_id           = db.Column(db.String(25), db.ForeignKey("configuracion_or.id"), nullable=True)
+    codigo_frontera = db.Column(db.String(100), nullable=False)
+    nombre_frontera = db.Column(db.String(255), nullable=True)
+    periodo_cot     = db.Column(db.String(7), nullable=True)   # AAAA-MM
+    valor_cot_cop   = db.Column(db.Numeric(18, 2), nullable=True)
+    tarifa_cot      = db.Column(db.Numeric(18, 6), nullable=True)
+    created_at      = db.Column("createdAt", db.DateTime, nullable=False, default=datetime.utcnow)
+
+    carga = db.relationship("CargaFuente", back_populates="registros_cot")
+
+    __table_args__ = (
+        db.Index("idx_cot_periodo_frontera", "periodo_id", "codigo_frontera"),
+        db.Index("idx_cot_or", "or_id"),
     )
 
 

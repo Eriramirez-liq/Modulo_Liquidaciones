@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
   ])
 
   const sdlResultados = await Promise.all(
-    operadores.map(async (or) => ({
+    operadores.map(async (or: { id: string; codigo: string; nombre: string }) => ({
       orId: or.id,
       codigo: or.codigo,
       nombre: or.nombre,
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
   )
 
   const balanceResultados = await Promise.all(
-    operadores.map(async (or) => ({
+    operadores.map(async (or: { id: string; codigo: string; nombre: string }) => ({
       orId: or.id,
       codigo: or.codigo,
       nombre: or.nombre,

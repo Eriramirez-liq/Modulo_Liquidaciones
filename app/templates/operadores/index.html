@@ -313,10 +313,16 @@
         </div>
         <div style="display:grid;gap:10px;">
           {% set sdl_cols = [
-            ('sdl-col-frontera', 'Código frontera', 'CODIGO_FRONTERA', True),
-            ('sdl-col-energia',  'Energía (kWh)',   'ENERGIA_KWH',     True),
-            ('sdl-col-valor',    'Valor (COP)',      'VALOR_COP',       True),
-            ('sdl-col-periodo',  'Período (AAAA-MM)','PERIODO',         False),
+            ('sdl-col-frontera',      'Código frontera',                          'CODIGO_FRONTERA',          True),
+            ('sdl-col-energia',       'Energía activa (kWh)',                      'ENERGIA_KWH',              True),
+            ('sdl-col-valor',         'Valor activa (COP)',                        'VALOR_COP',                True),
+            ('sdl-col-periodo',       'Período (AAAA-MM)',                         'PERIODO',                  False),
+            ('sdl-col-nivel-tension', 'Nivel de tensión',                          'NIVEL_TENSION',            False),
+            ('sdl-col-propiedad',     'Propiedad de activos',                      'PROPIEDAD_ACTIVOS',        False),
+            ('sdl-col-reac-ind-pen',  'Energía reactiva Ind Penalizada (kWh)',     'ENERGIA_REACTIVA_IND_PEN', False),
+            ('sdl-col-reac-cap-pen',  'Energía reactiva Cap Penalizada (kWh)',     'ENERGIA_REACTIVA_CAP_PEN', False),
+            ('sdl-col-valor-reac',    'Valor reactiva (COP)',                      'VALOR_REACTIVA_COP',       False),
+            ('sdl-col-factor-m',      'Factor M',                                  'FACTOR_M',                 False),
           ] %}
           {% for fid, flabel, fplaceholder, freq in sdl_cols %}
           <div class="bia-input-group compact">
@@ -454,10 +460,16 @@ const ES_ADMIN = {{ 'true' if es_admin else 'false' }};
 const SDL_DEFAULT = {
   tipo_archivo: 'xlsx', hoja: 0, fila_inicio: 2, separador_csv: ',',
   columnas: {
-    codigo_frontera: 'CODIGO_FRONTERA',
-    energia_kwh:     'ENERGIA_KWH',
-    valor_cop:       'VALOR_COP',
-    periodo:         'PERIODO',
+    codigo_frontera:          'CODIGO_FRONTERA',
+    energia_kwh:              'ENERGIA_KWH',
+    valor_cop:                'VALOR_COP',
+    periodo:                  'PERIODO',
+    nivel_tension:            '',
+    propiedad_activos:        '',
+    energia_reactiva_ind_pen: '',
+    energia_reactiva_cap_pen: '',
+    valor_reactiva_cop:       '',
+    factor_m:                 '',
   },
 };
 const BAL_DEFAULT = {
@@ -565,10 +577,16 @@ function cargarFormato(prefijo, fmt) {
 
   const cols = fmt.columnas || {};
   if (prefijo === 'sdl') {
-    document.getElementById('sdl-col-frontera').value = cols.codigo_frontera || '';
-    document.getElementById('sdl-col-energia').value  = cols.energia_kwh     || '';
-    document.getElementById('sdl-col-valor').value    = cols.valor_cop       || '';
-    document.getElementById('sdl-col-periodo').value  = cols.periodo         || '';
+    document.getElementById('sdl-col-frontera').value      = cols.codigo_frontera          || '';
+    document.getElementById('sdl-col-energia').value       = cols.energia_kwh              || '';
+    document.getElementById('sdl-col-valor').value         = cols.valor_cop                || '';
+    document.getElementById('sdl-col-periodo').value       = cols.periodo                  || '';
+    document.getElementById('sdl-col-nivel-tension').value = cols.nivel_tension            || '';
+    document.getElementById('sdl-col-propiedad').value     = cols.propiedad_activos        || '';
+    document.getElementById('sdl-col-reac-ind-pen').value  = cols.energia_reactiva_ind_pen || '';
+    document.getElementById('sdl-col-reac-cap-pen').value  = cols.energia_reactiva_cap_pen || '';
+    document.getElementById('sdl-col-valor-reac').value    = cols.valor_reactiva_cop       || '';
+    document.getElementById('sdl-col-factor-m').value      = cols.factor_m                 || '';
   } else {
     document.getElementById('bal-col-frontera').value   = cols.codigo_frontera || '';
     document.getElementById('bal-col-energia').value    = cols.energia_kwh     || '';
@@ -589,10 +607,16 @@ function leerFormato(prefijo) {
   };
   if (prefijo === 'sdl') {
     fmt.columnas = {
-      codigo_frontera: document.getElementById('sdl-col-frontera').value.trim(),
-      energia_kwh:     document.getElementById('sdl-col-energia').value.trim(),
-      valor_cop:       document.getElementById('sdl-col-valor').value.trim(),
-      periodo:         document.getElementById('sdl-col-periodo').value.trim() || null,
+      codigo_frontera:          document.getElementById('sdl-col-frontera').value.trim(),
+      energia_kwh:              document.getElementById('sdl-col-energia').value.trim(),
+      valor_cop:                document.getElementById('sdl-col-valor').value.trim(),
+      periodo:                  document.getElementById('sdl-col-periodo').value.trim() || null,
+      nivel_tension:            document.getElementById('sdl-col-nivel-tension').value.trim() || null,
+      propiedad_activos:        document.getElementById('sdl-col-propiedad').value.trim() || null,
+      energia_reactiva_ind_pen: document.getElementById('sdl-col-reac-ind-pen').value.trim() || null,
+      energia_reactiva_cap_pen: document.getElementById('sdl-col-reac-cap-pen').value.trim() || null,
+      valor_reactiva_cop:       document.getElementById('sdl-col-valor-reac').value.trim() || null,
+      factor_m:                 document.getElementById('sdl-col-factor-m').value.trim() || null,
     };
   } else {
     fmt.columnas = {

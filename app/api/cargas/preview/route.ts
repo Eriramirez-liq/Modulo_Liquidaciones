@@ -6,6 +6,7 @@ import { parsearXM } from "@/lib/parsers/xm"
 import { parsearSDL } from "@/lib/parsers/sdl"
 import { parsearBalance } from "@/lib/parsers/balance"
 import { MapeoColumnas } from "@/lib/parsers/types"
+import { TipoFuente } from "@prisma/client"
 
 export async function POST(request: NextRequest) {
   const session = await auth()
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
     const cargaPrevia = await db.cargaFuente.findFirst({
       where: {
         periodo_id: periodoExistente.id,
-        tipo_fuente: tipoFuente as "FACTURACION" | "XM" | "SDL" | "BALANCE",
+        tipo_fuente: tipoFuente as TipoFuente,
         ...(orId ? { or_id: orId } : { or_id: null }),
         estado: "COMPLETADA",
       },

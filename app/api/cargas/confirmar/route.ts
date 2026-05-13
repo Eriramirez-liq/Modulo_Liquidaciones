@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { Prisma } from "@prisma/client"
 import {
   FilaFacturacion,
   FilaXM,
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined
 
   try {
-    const resultado = await db.$transaction(async (tx) => {
+    const resultado = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       // Upsert del período
       const periodo = await tx.periodoConciliacion.upsert({
         where: { anio_mes: { anio: meta.anio, mes: meta.mes } },

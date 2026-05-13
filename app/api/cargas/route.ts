@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { Prisma, TipoFuente } from "@prisma/client"
 
 export async function GET(request: NextRequest) {
   const session = await auth()
@@ -14,16 +15,23 @@ export async function GET(request: NextRequest) {
   const page     = Number(searchParams.get("page") ?? "1")
   const pageSize = 50
 
+  const where: Prisma.CargaFuenteWhereInput = {
+    ...(anio !== undefined || mes !== undefined
+      ? {
+          periodo: {
+            is: {
+              ...(anio !== undefined ? { anio } : {}),
+              ...(mes !== undefined ? { mes } : {}),
+            },
+          },
+        }
+      : {}),
+    ...(fuente ? { tipo_fuente: fuente as TipoFuente } : {}),
+    ...(orId ? { or_id: orId } : {}),
+  }
+
   const cargas = await db.cargaFuente.findMany({
-    where: {
-      ...(anio !== undefined && mes !== undefined
-        ? { periodo: { anio, mes } }
-        : anio !== undefined
-        ? { periodo: { anio } }
-        : {}),
-      ...(fuente ? { tipo_fuente: fuente as "FACTURACION" | "XM" | "SDL" | "BALANCE" } : {}),
-      ...(orId ? { or_id: orId } : {}),
-    },
+    where,
     include: {
       periodo: { select: { anio: true, mes: true } },
       operador_red: { select: { codigo: true, nombre: true } },
@@ -34,13 +42,7 @@ export async function GET(request: NextRequest) {
     take: pageSize,
   })
 
-  const total = await db.cargaFuente.count({
-    where: {
-      ...(anio !== undefined && mes !== undefined ? { periodo: { anio, mes } } : {}),
-      ...(fuente ? { tipo_fuente: fuente as "FACTURACION" | "XM" | "SDL" | "BALANCE" } : {}),
-      ...(orId ? { or_id: orId } : {}),
-    },
-  })
+  const total = await db.cargaFuente.count({ where })
 
   return NextResponse.json({ cargas, total, page, pageSize })
 }

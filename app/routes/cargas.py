@@ -16,7 +16,7 @@ from ..models import (
     db, CargaFuente, PeriodoConciliacion,
     ConfiguracionOR, TipoFuente, EstadoCarga,
     RegistroFacturacion, RegistroXM, RegistroSDL, RegistroTC1, RegistroBalance,
-    AccionAuditoria, LogAuditoria,
+    RegistroCOT, AccionAuditoria, LogAuditoria,
 )
 from ..parsers import parsear_archivo
 
@@ -102,6 +102,14 @@ def api_preview():
             key = "mapeo_sdl_json" if tipo_fuente == "SDL" else "mapeo_balance_json"
             mapeo = getattr(or_config, key)
 
+    # Para ORs multi-archivo (ej. EMSA), inyectar buffers extras en el mapeo
+    if mapeo and mapeo.get("multi_archivos"):
+        mapeo = dict(mapeo)
+        for campo, buf_key in [("archivo_cap", "_buf_cap"), ("archivo_ind", "_buf_ind")]:
+            f = request.files.get(campo)
+            if f and f.filename:
+                mapeo[buf_key] = f.read()
+
     # Parsear
     try:
         result = parsear_archivo(
@@ -118,10 +126,11 @@ def api_preview():
         return jsonify({"error": f"Error al parsear el archivo: {exc}"}), 500
 
     return jsonify({
-        "preview":         result["filas"][:20],
-        "total":           len(result["filas"]),
-        "alertas":         result["alertas"],
-        "erroresCriticos": result["errores_criticos"],
+        "preview":          result["filas"][:20],
+        "filasCompletas":   result["filas"],
+        "total":            len(result["filas"]),
+        "alertas":          result["alertas"],
+        "erroresCriticos":  result["errores_criticos"],
         "existeCargaPrevia": existe_previa,
         "cargaPreviaId":    carga_previa_id,
     })
@@ -251,6 +260,11 @@ def _guardar_registros(
                 tarifa_sdl=f["tarifa_sdl"],
                 nivel_tension=f.get("nivel_tension"),
                 propiedad_activos=f.get("propiedad_activos"),
+                energia_reactiva_ind_pen=f.get("energia_reactiva_ind_pen"),
+                energia_reactiva_cap_pen=f.get("energia_reactiva_cap_pen"),
+                valor_reactiva_cop=f.get("valor_reactiva_cop"),
+                tarifa_reactiva=f.get("tarifa_reactiva"),
+                factor_m=f.get("factor_m"),
                 es_duplicado=f.get("es_duplicado", False),
             ))
 
@@ -280,6 +294,19 @@ def _guardar_registros(
                 valor_balance_cop=f["valor_balance_cop"],
                 tarifa_balance=f["tarifa_balance"],
                 periodo_tarifa=f["periodo_tarifa"],
+            ))
+
+    elif tipo_fuente == "COT":
+        for f in filas:
+            db.session.add(RegistroCOT(
+                carga_id=carga.id,
+                periodo_id=periodo.id,
+                or_id=or_id,
+                codigo_frontera=f["codigo_frontera"],
+                nombre_frontera=f.get("nombre_frontera"),
+                periodo_cot=f.get("periodo_cot"),
+                valor_cot_cop=f.get("valor_cot_cop"),
+                tarifa_cot=f.get("tarifa_cot"),
             ))
 
 

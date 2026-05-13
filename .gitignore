@@ -38,6 +38,10 @@ next-env.d.ts
 
 /lib/generated/prisma
 
+# SQLite dev databases
+*.db
+*.sqlite3
+
 # Python
 __pycache__/
 *.pyc
@@ -60,3 +64,6 @@ env/
 # IDE
 .idea/
 .vscode/
+
+# Claude Code local config
+.claude/settings.local.json

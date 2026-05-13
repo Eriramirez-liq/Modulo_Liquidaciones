@@ -16,7 +16,9 @@ def create_app() -> Flask:
 
     # ── Configuración ──────────────────────────────────────────────────────────
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-change-me")
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "")
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
+        "FLASK_DATABASE_URL", os.getenv("DATABASE_URL", "")
+    )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     if _SERVERLESS:
         from sqlalchemy.pool import NullPool
