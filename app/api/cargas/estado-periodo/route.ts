@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   }
 
   const periodo = await db.periodoConciliacion.findUnique({
-    where: { anio_mes: { anio, mes } },
+    where: { uq_periodo_anio_mes: { anio, mes } },
     select: { id: true },
   })
 

@@ -7,3 +7,13 @@ prisma.config.ts
 *.pyc
 __pycache__/
 .env
+
+# Flask / Python (no se despliegan en Vercel)
+run.py
+requirements.txt
+app/__init__.py
+app/models.py
+app/routes/
+app/parsers/
+app/templates/
+app/static/

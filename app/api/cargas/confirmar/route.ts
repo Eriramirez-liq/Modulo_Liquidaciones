@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     const resultado = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       // Upsert del período
       const periodo = await tx.periodoConciliacion.upsert({
-        where: { anio_mes: { anio: meta.anio, mes: meta.mes } },
+        where: { uq_periodo_anio_mes: { anio: meta.anio, mes: meta.mes } },
         update: {},
         create: {
           anio: meta.anio,

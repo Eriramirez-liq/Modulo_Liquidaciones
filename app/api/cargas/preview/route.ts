@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
 
   // Verificar si ya existe carga para este período+fuente+OR
   const periodoExistente = await db.periodoConciliacion.findUnique({
-    where: { anio_mes: { anio, mes } },
+    where: { uq_periodo_anio_mes: { anio, mes } },
     select: { id: true },
   })
 
