@@ -43,10 +43,17 @@ function norm(s: string): string {
 
 function resolveCol(headers: string[], name: string): string | null {
   const nameN = norm(name)
+  if (!nameN) return null
   // exact match
   for (const h of headers) if (norm(h) === nameN) return h
-  // substring match
-  for (const h of headers) if (norm(h).includes(nameN) || nameN.includes(norm(h))) return h
+  // header contains the search term
+  for (const h of headers) if (norm(h).includes(nameN)) return h
+  // search term contains the header — require ≥4 chars to prevent
+  // single-letter column names (e.g. "M") matching unrelated searches
+  for (const h of headers) {
+    const hN = norm(h)
+    if (hN.length >= 4 && nameN.includes(hN)) return h
+  }
   return null
 }
 
@@ -151,16 +158,88 @@ function readRows(buffer: Buffer, mapeo: MapeoSDL): Row[] {
 
 type PreResult = { rows: Row[]; mapeo: MapeoSDL }
 
-function preAfinia(rows: Row[], mapeo: MapeoSDL): PreResult {
-  const m = deepCloneMapeo(mapeo)
+function preAfinia(rows: Row[], mapeo: MapeoSDL, buffer: Buffer): PreResult {
+  const m    = deepCloneMapeo(mapeo)
   const cols = m.columnas!
-  // AFINIA: valor_cop comes from "PEAJES REGIONALES REGULADOS OTROS"
-  // reactiva: "ENERGIA REACTIVA PEAJES" / "PEN. ENERGIA REACTIVA PEAJES"
-  // Already in mapeo — no extra transforms needed
+  const headers = Object.keys(rows[0] ?? {})
+
+  // 1. Nombre de frontera: column is DES_CLIENTE in AFINIA files
+  const colDes = resolveCol(headers, "DES_CLIENTE")
+  if (colDes) cols["nombre_frontera"] = colDes
+
+  // 2. Tarifa reactiva: calculated as valor_reactiva / energia_reactiva
+  const colVR = resolveCol(headers, cols["valor_reactiva_cop"] ?? "PEN. ENERGIA REACTIVA PEAJES")
+  const colER = resolveCol(headers, cols["energia_reactiva_ind_pen"] ?? "ENERGIA REACTIVA PEAJES")
+  if (colVR && colER) {
+    rows = rows.map(r => {
+      const vr = toNum(r[colVR])
+      const er = toNum(r[colER])
+      const tar = er && er > 0 ? (vr ?? 0) / er : null
+      return { ...r, __TARIFA_REACTIVA__: tar != null ? String(tar) : "" }
+    })
+    cols["tarifa_reactiva"] = "__TARIFA_REACTIVA__"
+  }
+
+  // 3. Propiedad activos: from "CONSOLIDADO PEAJES" sheet, looked up by SIC
+  //    Rules: NT=2 → "Usuario"; NT=1, prop=0 → "OR"; NT=1, prop=1/101 → "Usuario"
+  try {
+    const wb = XLSX.read(buffer, { type: "buffer", cellDates: false })
+    const sheetConsolidado = wb.SheetNames.find(s =>
+      norm(s).includes("CONSOLIDADO") || norm(s).includes("PEAJES")
+    )
+    if (sheetConsolidado) {
+      const wsC = wb.Sheets[sheetConsolidado]!
+      const rawC = XLSX.utils.sheet_to_json<Row>(wsC, {
+        header: 1, defval: "", raw: true,
+      }) as unknown as (string | number)[][]
+
+      if (rawC.length > 1) {
+        const cHeaders = (rawC[0] ?? []).map(h => String(h).trim())
+        const cColSIC  = resolveCol(cHeaders, "SIC")
+        const cColProp = resolveCol(cHeaders, "PROPIEDAD_ACTIVOS")
+
+        if (cColSIC && cColProp) {
+          // Build lookup: SIC → propiedad numeric value
+          const propLookup = new Map<string, number>()
+          for (let i = 1; i < rawC.length; i++) {
+            const cRow: Row = {}
+            cHeaders.forEach((h, j) => { cRow[h] = String(rawC[i]?.[j] ?? "").trim() })
+            const sic  = (cRow[cColSIC]  ?? "").trim()
+            const prop = toNum(cRow[cColProp])
+            if (sic && prop != null) propLookup.set(sic, prop)
+          }
+
+          const colSIC = resolveCol(headers, cols["codigo_frontera"] ?? "SIC")
+          const colNT  = resolveCol(headers, cols["nivel_tension"]   ?? "NIVEL TENSION")
+          if (colSIC && colNT) {
+            rows = rows.map(r => {
+              const sic  = (r[colSIC] ?? "").trim()
+              const nt   = toNum(r[colNT]) ?? 0
+              const prop = propLookup.get(sic) ?? null
+
+              let mapped: string
+              if (nt === 2) {
+                mapped = "Usuario"
+              } else if (prop === 0) {
+                mapped = "OR"
+              } else {
+                mapped = "Usuario"
+              }
+              return { ...r, __PROPIEDAD__: mapped }
+            })
+            cols["propiedad_activos"] = "__PROPIEDAD__"
+          }
+        }
+      }
+    }
+  } catch {
+    // CONSOLIDADO PEAJES sheet not found or unreadable — propiedad stays unset
+  }
+
   return { rows, mapeo: m }
 }
 
-function preAire(rows: Row[], mapeo: MapeoSDL): PreResult {
+function preAire(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const m = deepCloneMapeo(mapeo)
   const cols = m.columnas!
   const headers = Object.keys(rows[0] ?? {})
@@ -215,7 +294,7 @@ function preAire(rows: Row[], mapeo: MapeoSDL): PreResult {
   return { rows, mapeo: m }
 }
 
-function preCelsiaTolima(rows: Row[], mapeo: MapeoSDL): PreResult {
+function preCelsiaTolima(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const m = deepCloneMapeo(mapeo)
   const cols = m.columnas!
   const headers = Object.keys(rows[0] ?? {})
@@ -234,12 +313,12 @@ function preCelsiaTolima(rows: Row[], mapeo: MapeoSDL): PreResult {
   return { rows, mapeo: m }
 }
 
-function preCens(rows: Row[], mapeo: MapeoSDL): PreResult {
+function preCens(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   // CENS: nivel_tension from "NT_PRO", no extra transforms
   return { rows, mapeo: deepCloneMapeo(mapeo) }
 }
 
-function preCeo(rows: Row[], mapeo: MapeoSDL): PreResult {
+function preCeo(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const m = deepCloneMapeo(mapeo)
   const cols = m.columnas!
   const headers = Object.keys(rows[0] ?? {})
@@ -257,14 +336,14 @@ function preCeo(rows: Row[], mapeo: MapeoSDL): PreResult {
   return { rows, mapeo: m }
 }
 
-function preChec(rows: Row[], mapeo: MapeoSDL): PreResult {
+function preChec(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const m = deepCloneMapeo(mapeo)
   // CHEC: codigo_frontera may have format "Frt18771-INCOCO_NO.8" → "Frt18771"
   // This is handled by the split_char mechanism in mapeo, not here
   return { rows, mapeo: m }
 }
 
-function preEbsa(rows: Row[], mapeo: MapeoSDL): PreResult {
+function preEbsa(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const m = deepCloneMapeo(mapeo)
   const cols = m.columnas!
   const headers = Object.keys(rows[0] ?? {})
@@ -276,7 +355,7 @@ function preEbsa(rows: Row[], mapeo: MapeoSDL): PreResult {
   return { rows, mapeo: m }
 }
 
-function preEdeq(rows: Row[], mapeo: MapeoSDL): PreResult {
+function preEdeq(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const m = deepCloneMapeo(mapeo)
   const cols = m.columnas!
   const headers = Object.keys(rows[0] ?? {})
@@ -294,12 +373,12 @@ function preEdeq(rows: Row[], mapeo: MapeoSDL): PreResult {
   return { rows, mapeo: m }
 }
 
-function preEepc(rows: Row[], mapeo: MapeoSDL): PreResult {
+function preEepc(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   // EEP_CARTAGO / EEP_PEREIRA: standard xlsx, no extra transforms
   return { rows, mapeo: deepCloneMapeo(mapeo) }
 }
 
-function preEmsa(rows: Row[], mapeo: MapeoSDL): PreResult {
+function preEmsa(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   // EMSA: multi_archivos handled at wizard level; here just normalize
   const m = deepCloneMapeo(mapeo)
   const cols = m.columnas!
@@ -317,7 +396,7 @@ function preEmsa(rows: Row[], mapeo: MapeoSDL): PreResult {
   return { rows, mapeo: m }
 }
 
-function preEssa(rows: Row[], mapeo: MapeoSDL): PreResult {
+function preEssa(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const m = deepCloneMapeo(mapeo)
   const cols = m.columnas!
   const headers = Object.keys(rows[0] ?? {})
@@ -335,21 +414,21 @@ function preEssa(rows: Row[], mapeo: MapeoSDL): PreResult {
   return { rows, mapeo: m }
 }
 
-function preRuitoque(rows: Row[], mapeo: MapeoSDL): PreResult {
+function preRuitoque(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   return { rows, mapeo: deepCloneMapeo(mapeo) }
 }
 
-function preEnel(rows: Row[], mapeo: MapeoSDL): PreResult {
+function preEnel(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   return { rows, mapeo: deepCloneMapeo(mapeo) }
 }
 
-function preCedenar(rows: Row[], mapeo: MapeoSDL): PreResult {
+function preCedenar(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   return { rows, mapeo: deepCloneMapeo(mapeo) }
 }
 
 // ─── Preprocessor registry ───────────────────────────────────────────────────
 
-type PreFn = (rows: Row[], mapeo: MapeoSDL) => PreResult
+type PreFn = (rows: Row[], mapeo: MapeoSDL, buffer: Buffer) => PreResult
 
 const PREPROCESSORS: Record<string, PreFn> = {
   AFINIA:        preAfinia,
@@ -414,7 +493,7 @@ export async function parsearSDL(
   let m = mapeo
   if (preFn) {
     try {
-      const result = preFn(rows, m)
+      const result = preFn(rows, m, buffer)
       rows = result.rows
       m    = result.mapeo
     } catch (e) {
@@ -434,7 +513,9 @@ export async function parsearSDL(
   const colPeriodo  = cols["periodo"]
     ? resolveCol(headers, cols["periodo"])
     : null
-  const colNombre   = resolveColMulti(headers, ["NOMBRE_FRONTERA", "NOMBRE FRONTERA", "NOMBRE"])
+  const colNombre   = cols["nombre_frontera"]
+    ? resolveCol(headers, cols["nombre_frontera"])
+    : resolveColMulti(headers, ["NOMBRE_FRONTERA", "NOMBRE FRONTERA", "NOMBRE"])
   const colTension  = cols["nivel_tension"]
     ? resolveCol(headers, cols["nivel_tension"])
     : resolveColMulti(headers, ["NIVEL TENSION", "NIVEL DE TENSION", "NIVEL TENSIÓN", "NT", "NT_PRO"])
@@ -490,13 +571,13 @@ export async function parsearSDL(
     fronterasVistas.add(codFrontera)
 
     const energia = toNum(row[colEnergia!])
-    const valor   = colValor ? toNum(row[colValor]) : 0
+    // null valor_cop → default to 0 (row is still valid; preserves row count)
+    const valor   = colValor ? (toNum(row[colValor]) ?? 0) : 0
 
     if (energia == null) continue // blank/summary row — skip silently
     if (energia < 0) {
       erroresCriticos.push(`Fila ${fila}: energía negativa`); continue
     }
-    if (valor == null) continue   // blank/summary row — skip silently
     if (valor < 0) {
       erroresCriticos.push(`Fila ${fila}: valor_cop negativo`); continue
     }
