@@ -158,30 +158,71 @@ function readRows(buffer: Buffer, mapeo: MapeoSDL): Row[] {
 
 type PreResult = { rows: Row[]; mapeo: MapeoSDL }
 
+// Convert "dd/m/aaaa", "dd/mm/yyyy", "yyyy-mm-dd" → "AAAA-MM"
+function fechaAPeriodo(s: string): string | null {
+  const v = s.trim()
+  if (!v || ["nan", "none", ""].includes(v.toLowerCase())) return null
+  for (const sep of ["/", "-"]) {
+    const parts = v.split(sep)
+    if (parts.length === 3) {
+      const [a, b, c] = [parts[0]!.trim(), parts[1]!.trim(), parts[2]!.trim()]
+      if (c.length === 4) {
+        const m = parseInt(b, 10)
+        if (!isNaN(m)) return `${c}-${String(m).padStart(2, "0")}`
+      }
+      if (a.length === 4) {
+        const m = parseInt(b, 10)
+        if (!isNaN(m)) return `${a}-${String(m).padStart(2, "0")}`
+      }
+    }
+  }
+  return null
+}
+
 function preAfinia(rows: Row[], mapeo: MapeoSDL, buffer: Buffer): PreResult {
   const m    = deepCloneMapeo(mapeo)
   const cols = m.columnas!
   const headers = Object.keys(rows[0] ?? {})
 
-  // 1. Nombre de frontera: column is DES_CLIENTE in AFINIA files
+  // 1. Nombre de frontera: DES_CLIENTE
   const colDes = resolveCol(headers, "DES_CLIENTE")
   if (colDes) cols["nombre_frontera"] = colDes
 
-  // 2. Tarifa reactiva: calculated as valor_reactiva / energia_reactiva
-  const colVR = resolveCol(headers, cols["valor_reactiva_cop"] ?? "PEN. ENERGIA REACTIVA PEAJES")
-  const colER = resolveCol(headers, cols["energia_reactiva_ind_pen"] ?? "ENERGIA REACTIVA PEAJES")
-  if (colVR && colER) {
+  // 2. Valor activa = "PEAJES REGIONALES REGULADOS OTROS"
+  //                 + "PEAJES REGIONALES NO REGULADOS OTRO"
+  const colReg   = resolveCol(headers, "PEAJES REGIONALES REGULADOS OTROS")
+  const colNoreg = resolveCol(headers, "PEAJES REGIONALES NO REGULADOS OTRO")
+  if (colReg && colNoreg) {
+    rows = rows.map(r => ({
+      ...r,
+      __VALOR_ACTIVA__: String(
+        (toNum(r[colReg]) ?? 0) + (toNum(r[colNoreg]) ?? 0)
+      ),
+    }))
+    cols["valor_cop"] = "__VALOR_ACTIVA__"
+  }
+
+  // 3. Tarifa reactiva = "PEN. REACTIVA IND ($) - M APLICADA FINAL"
+  //                    / "ENERGIA REACTIVA PEAJES"
+  //                    / "M"
+  const colNum = resolveCol(headers, "PEN. REACTIVA IND ($) - M APLICADA FINAL")
+  const colDen = resolveCol(headers, "ENERGIA REACTIVA PEAJES")
+  const colMA  = resolveCol(headers, "M")
+  if (colNum && colDen && colMA) {
     rows = rows.map(r => {
-      const vr = toNum(r[colVR])
-      const er = toNum(r[colER])
-      const tar = er && er > 0 ? (vr ?? 0) / er : null
+      const num = toNum(r[colNum])
+      const den = toNum(r[colDen])
+      const mm  = toNum(r[colMA])
+      let tar: number | null = null
+      if (num != null && den && den !== 0 && mm && mm !== 0) {
+        tar = num / den / mm
+      }
       return { ...r, __TARIFA_REACTIVA__: tar != null ? String(tar) : "" }
     })
     cols["tarifa_reactiva"] = "__TARIFA_REACTIVA__"
   }
 
-  // 3. Propiedad activos: from "CONSOLIDADO PEAJES" sheet, looked up by SIC
-  //    Rules: NT=2 → "Usuario"; NT=1, prop=0 → "OR"; NT=1, prop=1/101 → "Usuario"
+  // 4. CONSOLIDADO PEAJES sheet: periodo from LIQ_FECHA_INICIO, propiedad lookup
   try {
     const wb = XLSX.read(buffer, { type: "buffer", cellDates: false })
     const sheetConsolidado = wb.SheetNames.find(s =>
@@ -195,37 +236,49 @@ function preAfinia(rows: Row[], mapeo: MapeoSDL, buffer: Buffer): PreResult {
 
       if (rawC.length > 1) {
         const cHeaders = (rawC[0] ?? []).map(h => String(h).trim())
-        const cColSIC  = resolveCol(cHeaders, "SIC")
-        const cColProp = resolveCol(cHeaders, "PROPIEDAD_ACTIVOS")
+        const cColFecha = resolveCol(cHeaders, "LIQ_FECHA_INICIO")
+        const cColSIC   = resolveCol(cHeaders, "SIC")
+        const cColProp  = resolveCol(cHeaders, "PROPIEDAD_ACTIVOS")
+            ?? resolveCol(cHeaders, "PROPIEDAD")
 
+        // Build row dicts once
+        const cRows: Row[] = []
+        for (let i = 1; i < rawC.length; i++) {
+          const cRow: Row = {}
+          cHeaders.forEach((h, j) => { cRow[h] = String(rawC[i]?.[j] ?? "").trim() })
+          cRows.push(cRow)
+        }
+
+        // 4a. Periodo from first valid LIQ_FECHA_INICIO
+        if (cColFecha) {
+          for (const cr of cRows) {
+            const p = fechaAPeriodo(cr[cColFecha] ?? "")
+            if (p) {
+              rows = rows.map(r => ({ ...r, __PERIODO__: p }))
+              cols["periodo"] = "__PERIODO__"
+              break
+            }
+          }
+        }
+
+        // 4b. Propiedad lookup by SIC → 0=OR, 1/101=Usuario
         if (cColSIC && cColProp) {
-          // Build lookup: SIC → propiedad numeric value
-          const propLookup = new Map<string, number>()
-          for (let i = 1; i < rawC.length; i++) {
-            const cRow: Row = {}
-            cHeaders.forEach((h, j) => { cRow[h] = String(rawC[i]?.[j] ?? "").trim() })
-            const sic  = (cRow[cColSIC]  ?? "").trim()
-            const prop = toNum(cRow[cColProp])
-            if (sic && prop != null) propLookup.set(sic, prop)
+          const propLookup = new Map<string, string>()
+          for (const cr of cRows) {
+            const sic = (cr[cColSIC] ?? "").trim()
+            const propRaw = (cr[cColProp] ?? "").trim()
+            const propStripped = propRaw.split(".")[0] ?? propRaw
+            if (!sic) continue
+            if (propStripped === "0") propLookup.set(sic, "OR")
+            else if (propStripped === "1" || propStripped === "101") propLookup.set(sic, "Usuario")
+            else if (propRaw && !["nan", "none", ""].includes(propRaw.toLowerCase())) propLookup.set(sic, propRaw)
           }
 
           const colSIC = resolveCol(headers, cols["codigo_frontera"] ?? "SIC")
-          const colNT  = resolveCol(headers, cols["nivel_tension"]   ?? "NIVEL TENSION")
-          if (colSIC && colNT) {
+          if (colSIC && propLookup.size > 0) {
             rows = rows.map(r => {
-              const sic  = (r[colSIC] ?? "").trim()
-              const nt   = toNum(r[colNT]) ?? 0
-              const prop = propLookup.get(sic) ?? null
-
-              let mapped: string
-              if (nt === 2) {
-                mapped = "Usuario"
-              } else if (prop === 0) {
-                mapped = "OR"
-              } else {
-                mapped = "Usuario"
-              }
-              return { ...r, __PROPIEDAD__: mapped }
+              const sic = (r[colSIC] ?? "").trim()
+              return { ...r, __PROPIEDAD__: propLookup.get(sic) ?? "" }
             })
             cols["propiedad_activos"] = "__PROPIEDAD__"
           }
@@ -233,7 +286,7 @@ function preAfinia(rows: Row[], mapeo: MapeoSDL, buffer: Buffer): PreResult {
       }
     }
   } catch {
-    // CONSOLIDADO PEAJES sheet not found or unreadable — propiedad stays unset
+    // CONSOLIDADO PEAJES not readable — periodo/propiedad stay unset
   }
 
   return { rows, mapeo: m }
@@ -304,6 +357,7 @@ function preAire(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   return { rows, mapeo: m }
 }
 
+// ─── CELSIA_TOLIMA (also CELSIA_VALLE, CETSA) ────────────────────────────────
 function preCelsiaTolima(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const m = deepCloneMapeo(mapeo)
   const cols = m.columnas!
@@ -312,22 +366,60 @@ function preCelsiaTolima(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult 
   if (colProp) {
     rows = rows.map(r => {
       const v = (r[colProp] ?? "").trim().toUpperCase()
-      const mapped = (v === "N/A" || v === "" || v.includes("USUARIO")) ? "Usuario"
-                   : v.includes("50%") && v.includes("OPERADOR") ? "Compartido"
-                   : v.includes("OPERADOR") ? "OR"
-                   : (r[colProp] ?? "").trim()
-      return { ...r, __PROPIEDAD__: mapped }
+      let mapped: string | null
+      if (v === "N/A" || v === "" || v.includes("USUARIO")) mapped = "Usuario"
+      else if (v.includes("50%") && v.includes("OPERADOR")) mapped = "Compartido"
+      else if (v.includes("OPERADOR")) mapped = "OR"
+      else mapped = (r[colProp] ?? "").trim() || null
+      return { ...r, __PROPIEDAD__: mapped ?? "" }
     })
     cols["propiedad_activos"] = "__PROPIEDAD__"
   }
   return { rows, mapeo: m }
 }
 
+// ─── CENS ────────────────────────────────────────────────────────────────────
 function preCens(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
-  // CENS: nivel_tension from "NT_PRO", no extra transforms
-  return { rows, mapeo: deepCloneMapeo(mapeo) }
+  const m = deepCloneMapeo(mapeo)
+  const cols = m.columnas!
+  const headers = Object.keys(rows[0] ?? {})
+
+  const CENS_PROP: Record<string, string> = {
+    "1_100": "OR", "1_50": "Compartido", "1_0": "Usuario",
+    "1-0":   "Usuario", "2_100": "Usuario", "2_0": "Usuario",
+  }
+
+  // NT_PRO → "1_100" => "1" | "1-0" => "1"
+  const colNTPRO = resolveCol(headers, "NT_PRO")
+  if (colNTPRO) {
+    rows = rows.map(r => {
+      const raw = (r[colNTPRO] ?? "").trim()
+      const nt = (raw.split("_")[0] ?? "").split("-")[0] ?? ""
+      const prop = CENS_PROP[raw] ?? ""
+      return { ...r, __NT__: nt, __PROPIEDAD__: prop }
+    })
+    cols["nivel_tension"]     = "__NT__"
+    cols["propiedad_activos"] = "__PROPIEDAD__"
+  }
+
+  // Valor reactiva = Valor R_Inductiva + Valor R_Capacitiva
+  const colInd = resolveCol(headers, "Valor R_Inductiva")
+  const colCap = resolveCol(headers, "Valor R_Capacitiva")
+  if (colInd || colCap) {
+    rows = rows.map(r => ({
+      ...r,
+      __VALOR_REACTIVA__: String(
+        (colInd ? toNum(r[colInd]) ?? 0 : 0) +
+        (colCap ? toNum(r[colCap]) ?? 0 : 0)
+      ),
+    }))
+    cols["valor_reactiva_cop"] = "__VALOR_REACTIVA__"
+  }
+
+  return { rows, mapeo: m }
 }
 
+// ─── CEO ─────────────────────────────────────────────────────────────────────
 function preCeo(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const m = deepCloneMapeo(mapeo)
   const cols = m.columnas!
@@ -336,8 +428,8 @@ function preCeo(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   if (colProp) {
     rows = rows.map(r => {
       const v = (r[colProp] ?? "").trim().toUpperCase()
-      const mapped = v.includes("USUARIO") ? "Usuario"
-                   : v.includes("OPERADOR") ? "OR"
+      const mapped = v.includes("OPERADOR") ? "OR"
+                   : v.includes("USUARIO")  ? "Usuario"
                    : (r[colProp] ?? "").trim()
       return { ...r, __PROPIEDAD__: mapped }
     })
@@ -346,94 +438,508 @@ function preCeo(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   return { rows, mapeo: m }
 }
 
+// ─── CHEC ────────────────────────────────────────────────────────────────────
 function preChec(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
-  const m = deepCloneMapeo(mapeo)
-  // CHEC: codigo_frontera may have format "Frt18771-INCOCO_NO.8" → "Frt18771"
-  // This is handled by the split_char mechanism in mapeo, not here
-  return { rows, mapeo: m }
-}
-
-function preEbsa(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const m = deepCloneMapeo(mapeo)
   const cols = m.columnas!
   const headers = Object.keys(rows[0] ?? {})
-  // EBSA: filter rows where a column indicates "ACTIVA" type if present
-  const colTipo = resolveCol(headers, "TIPO")
-  if (colTipo) {
-    rows = rows.filter(r => (r[colTipo] ?? "").trim().toUpperCase() === "ACTIVA" || (r[colTipo] ?? "").trim() === "")
+
+  // Propiedad from "PORCENTAJE CDI": 0%→Usuario, 50%→Compartido, 100%→OR
+  const colProp = resolveCol(headers, "PORCENTAJE CDI")
+  if (colProp) {
+    rows = rows.map(r => {
+      const v = (r[colProp] ?? "").trim().toUpperCase()
+      let mapped: string
+      if (v.startsWith("0%"))        mapped = "Usuario"
+      else if (v.startsWith("50%"))  mapped = "Compartido"
+      else if (v.startsWith("100%")) mapped = "OR"
+      else mapped = (r[colProp] ?? "").trim()
+      return { ...r, __PROPIEDAD__: mapped }
+    })
+    cols["propiedad_activos"] = "__PROPIEDAD__"
   }
   return { rows, mapeo: m }
 }
 
+// ─── EBSA (vertical → horizontal pivot) ──────────────────────────────────────
+function preEbsa(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
+  const m    = deepCloneMapeo(mapeo)
+  const cols = m.columnas!
+  const headers = Object.keys(rows[0] ?? {})
+
+  const colSic    = resolveCol(headers, "CODIGO SIC")
+  const colEng    = resolveCol(headers, "ENERGIA")
+  const colKwh    = resolveCol(headers, "KW-H")
+  const colValor  = resolveCol(headers, "VALOR")
+  const colNT     = resolveCol(headers, "NT")
+  const colAnio   = resolveCol(headers, "AÑO") ?? resolveCol(headers, "ANO")
+  const colMes    = resolveCol(headers, "MES")
+  const colPer    = resolveCol(headers, "PERIODO")
+  const colValorM = resolveCol(headers, "VALOR M")
+
+  if (!colSic || !colEng) return { rows, mapeo: m }
+
+  const activas:  Row[] = []
+  const reactivas: Row[] = []
+  for (const r of rows) {
+    const e = (r[colEng] ?? "").trim().toUpperCase()
+    if (e === "ACTIVA")    activas.push(r)
+    else if (e === "REACTIVA") reactivas.push(r)
+  }
+  if (activas.length === 0) return { rows, mapeo: m }
+
+  // Base: first ACTIVA per SIC
+  const baseMap = new Map<string, Row>()
+  for (const a of activas) {
+    const sic = (a[colSic] ?? "").trim()
+    if (sic && !baseMap.has(sic)) baseMap.set(sic, { ...a })
+  }
+  let base = Array.from(baseMap.values())
+
+  // Periodo from AÑO + MES (first valid row)
+  if (colAnio && colMes) {
+    for (const a of activas) {
+      const ay = (a[colAnio] ?? "").trim()
+      const my = (a[colMes]  ?? "").trim()
+      if (ay && my && !["nan", "none", ""].includes(ay.toLowerCase())) {
+        const aN = parseInt(ay, 10)
+        const mN = parseInt(my, 10)
+        if (!isNaN(aN) && !isNaN(mN)) {
+          const per = `${aN}-${String(mN).padStart(2, "0")}`
+          base = base.map(r => ({ ...r, __PERIODO__: per }))
+          cols["periodo"] = "__PERIODO__"
+          break
+        }
+      }
+    }
+  }
+
+  // Group reactivas by SIC and sub-type
+  const reactBySic = new Map<string, Row[]>()
+  const reactIndBySic = new Map<string, Row[]>()
+  const reactCapBySic = new Map<string, Row[]>()
+  for (const r of reactivas) {
+    const sic = (r[colSic] ?? "").trim()
+    if (!sic) continue
+    if (!reactBySic.has(sic)) reactBySic.set(sic, [])
+    reactBySic.get(sic)!.push(r)
+    if (colPer) {
+      const p = (r[colPer] ?? "").toUpperCase()
+      if (p.includes("MONOMIA")) {
+        if (!reactIndBySic.has(sic)) reactIndBySic.set(sic, [])
+        reactIndBySic.get(sic)!.push(r)
+      }
+      if (p.includes("CAPACIT")) {
+        if (!reactCapBySic.has(sic)) reactCapBySic.set(sic, [])
+        reactCapBySic.get(sic)!.push(r)
+      }
+    } else {
+      if (!reactIndBySic.has(sic)) reactIndBySic.set(sic, [])
+      reactIndBySic.get(sic)!.push(r)
+    }
+  }
+
+  // Valor reactiva (sum VALOR all REACTIVA rows by SIC)
+  if (colValor && reactBySic.size > 0) {
+    base = base.map(b => {
+      const sic = (b[colSic] ?? "").trim()
+      const sum = (reactBySic.get(sic) ?? [])
+        .reduce((s, r) => s + (toNum(r[colValor]) ?? 0), 0)
+      return { ...b, __VALOR_REAC__: String(sum) }
+    })
+    cols["valor_reactiva_cop"] = "__VALOR_REAC__"
+  }
+
+  // Factor M cascade: reactIndBySic → reactBySic → activas
+  const fmLookup = new Map<string, number>()
+  if (colValorM) {
+    const firstValid = (arr: Row[]): number | null => {
+      for (const r of arr) {
+        const n = toNum(r[colValorM])
+        if (n != null) return n
+      }
+      return null
+    }
+    for (const sic of new Set([...reactBySic.keys(), ...activas.map(a => (a[colSic] ?? "").trim())])) {
+      if (!sic) continue
+      const fromInd = firstValid(reactIndBySic.get(sic) ?? [])
+      const fromReac = fromInd != null ? fromInd : firstValid(reactBySic.get(sic) ?? [])
+      const final = fromReac != null ? fromReac : firstValid(activas.filter(a => (a[colSic] ?? "").trim() === sic))
+      if (final != null) fmLookup.set(sic, final)
+    }
+    base = base.map(b => {
+      const sic = (b[colSic] ?? "").trim()
+      const fm = fmLookup.get(sic)
+      return { ...b, __FACTOR_M__: fm != null ? String(fm) : "" }
+    })
+    cols["factor_m"] = "__FACTOR_M__"
+  }
+
+  // Energia reactiva ind/cap (kWh / Factor M)
+  if (colKwh && reactIndBySic.size > 0) {
+    base = base.map(b => {
+      const sic = (b[colSic] ?? "").trim()
+      const kwh = (reactIndBySic.get(sic) ?? []).reduce((s, r) => s + (toNum(r[colKwh]) ?? 0), 0)
+      const fm  = fmLookup.get(sic) ?? 1
+      const val = fm && fm !== 0 ? kwh / fm : kwh
+      return { ...b, __REAC_IND__: String(val) }
+    })
+    cols["energia_reactiva_ind_pen"] = "__REAC_IND__"
+  }
+  if (colKwh && reactCapBySic.size > 0) {
+    base = base.map(b => {
+      const sic = (b[colSic] ?? "").trim()
+      const kwh = (reactCapBySic.get(sic) ?? []).reduce((s, r) => s + (toNum(r[colKwh]) ?? 0), 0)
+      const fm  = fmLookup.get(sic) ?? 1
+      const val = fm && fm !== 0 ? kwh / fm : kwh
+      return { ...b, __REAC_CAP__: String(val) }
+    })
+    cols["energia_reactiva_cap_pen"] = "__REAC_CAP__"
+  }
+
+  // Tarifa reactiva = Σ VALOR / Σ KWH per SIC
+  if (colValor && colKwh && reactBySic.size > 0) {
+    base = base.map(b => {
+      const sic = (b[colSic] ?? "").trim()
+      const reacs = reactBySic.get(sic) ?? []
+      const v = reacs.reduce((s, r) => s + (toNum(r[colValor]) ?? 0), 0)
+      const k = reacs.reduce((s, r) => s + (toNum(r[colKwh])   ?? 0), 0)
+      const tar = k && k > 0 ? v / k : null
+      return { ...b, __TARIFA_REAC__: tar != null ? String(tar) : "" }
+    })
+    cols["tarifa_reactiva"] = "__TARIFA_REAC__"
+  }
+
+  // Propiedad from NT: 2/3 → Usuario; 1 → "" (pendiente Tarifas)
+  if (colNT) {
+    base = base.map(b => {
+      const nt = toNum(b[colNT])
+      const mapped = (nt === 2 || nt === 3) ? "Usuario" : ""
+      return { ...b, __PROPIEDAD__: mapped }
+    })
+    cols["propiedad_activos"] = "__PROPIEDAD__"
+  }
+
+  // EBSA pivot done — remove filtro_filas if it was set
+  delete m.filtro_filas
+
+  return { rows: base, mapeo: m }
+}
+
+// ─── EDEQ ────────────────────────────────────────────────────────────────────
 function preEdeq(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const m = deepCloneMapeo(mapeo)
   const cols = m.columnas!
   const headers = Object.keys(rows[0] ?? {})
-  const colProp = resolveCol(headers, "Propiedad")
+
+  const colNivel  = resolveCol(headers, "Nivel de Tensión  de la Frontera")
+                 ?? resolveCol(headers, "Nivel de Tension de la Frontera")
+                 ?? resolveCol(headers, "Nivel de Tensión de la Frontera")
+  const colProp   = resolveCol(headers, "Propiedad")
+  const colValInd = resolveCol(headers, "Valor Reactiva Inductiva Penalizada")
+  const colValCap = resolveCol(headers, "Valor Reactiva Capacitiva Penalizada")
+  const colKwhInd = resolveCol(headers, "Energía Reactiva Inductiva Penalizada")
+                 ?? resolveCol(headers, "Energia Reactiva Inductiva Penalizada")
+  const colFactor = resolveCol(headers, "Factor M (Energia Reactiva )")
+                 ?? resolveCol(headers, "Factor M (Energia Reactiva)")
+                 ?? resolveCol(headers, "Factor M")
+
+  // 1. Nivel = first digits of "Nivel 1 ..."
+  if (colNivel) {
+    rows = rows.map(r => {
+      const match = (r[colNivel] ?? "").match(/\d+/)
+      return { ...r, __NIVEL__: match ? match[0] : ((r[colNivel] ?? "").trim()) }
+    })
+    cols["nivel_tension"] = "__NIVEL__"
+  }
+
+  // 2. Propiedad: 100% EDEQ → OR, 100% USUARIO → Usuario, N/A + nivel 2/3 → Usuario
   if (colProp) {
     rows = rows.map(r => {
       const v = (r[colProp] ?? "").trim().toUpperCase()
-      const mapped = v.includes("USUARIO") ? "Usuario"
-                   : v.includes("OPERADOR") ? "OR"
-                   : (r[colProp] ?? "").trim()
+      const niv = parseInt((r["__NIVEL__"] ?? "").trim(), 10)
+      let mapped: string
+      if (v.includes("EDEQ"))         mapped = "OR"
+      else if (v.includes("USUARIO")) mapped = "Usuario"
+      else if (v === "N/A" || v.includes("N/A")) {
+        mapped = (niv === 2 || niv === 3) ? "Usuario" : ""
+      } else mapped = (r[colProp] ?? "").trim()
       return { ...r, __PROPIEDAD__: mapped }
     })
     cols["propiedad_activos"] = "__PROPIEDAD__"
   }
+
+  // 3. Valor reactiva = Ind + Cap
+  if (colValInd || colValCap) {
+    rows = rows.map(r => ({
+      ...r,
+      __VALOR_REAC__: String(
+        (colValInd ? toNum(r[colValInd]) ?? 0 : 0) +
+        (colValCap ? toNum(r[colValCap]) ?? 0 : 0)
+      ),
+    }))
+    cols["valor_reactiva_cop"] = "__VALOR_REAC__"
+  }
+
+  // 4. Tarifa reactiva = Valor Ind / KWH Ind / Factor M
+  if (colValInd && colKwhInd && colFactor) {
+    rows = rows.map(r => {
+      const v = toNum(r[colValInd])
+      const k = toNum(r[colKwhInd])
+      const f = toNum(r[colFactor])
+      let tar: number | null = null
+      if (v != null && k && k !== 0) {
+        tar = v / k
+        if (f && f !== 0) tar = tar / f
+      }
+      return { ...r, __TARIFA_REAC__: tar != null ? String(tar) : "" }
+    })
+    cols["tarifa_reactiva"] = "__TARIFA_REAC__"
+  }
+
   return { rows, mapeo: m }
 }
 
+// ─── EEP_CARTAGO / EEP_PEREIRA ──────────────────────────────────────────────
 function preEepc(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
-  // EEP_CARTAGO / EEP_PEREIRA: standard xlsx, no extra transforms
-  return { rows, mapeo: deepCloneMapeo(mapeo) }
-}
-
-function preEmsa(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
-  // EMSA: multi_archivos handled at wizard level; here just normalize
   const m = deepCloneMapeo(mapeo)
   const cols = m.columnas!
   const headers = Object.keys(rows[0] ?? {})
-  // codigo_frontera_split: "CODIGO" may contain "Frt12345-extra" → take before "-"
-  const colCod = resolveCol(headers, cols["codigo_frontera"] ?? "CODIGO")
-  if (colCod) {
+
+  const colNT     = resolveCol(headers, "Nivel Tension")
+  const colValInd = resolveCol(headers, "Valor $ Reactiva Inductiva")
+  const colValCap = resolveCol(headers, "Valor $ Reactiva Capacitiva")
+
+  // Propiedad: NT 2/3 → Usuario; NT 1 → "" (pendiente Tarifas)
+  if (colNT) {
     rows = rows.map(r => {
-      const raw = r[colCod] ?? ""
-      const split = raw.includes("-") ? (raw.split("-")[0] ?? "").trim() : raw.trim()
-      return { ...r, __COD__: split }
+      const nt = toNum(r[colNT])
+      const mapped = (nt === 2 || nt === 3) ? "Usuario" : ""
+      return { ...r, __PROPIEDAD__: mapped }
     })
-    cols["codigo_frontera"] = "__COD__"
+    cols["propiedad_activos"] = "__PROPIEDAD__"
   }
+
+  // Valor reactiva = Ind + Cap
+  if (colValInd || colValCap) {
+    rows = rows.map(r => ({
+      ...r,
+      __VALOR_REAC__: String(
+        (colValInd ? toNum(r[colValInd]) ?? 0 : 0) +
+        (colValCap ? toNum(r[colValCap]) ?? 0 : 0)
+      ),
+    }))
+    cols["valor_reactiva_cop"] = "__VALOR_REAC__"
+  }
+
   return { rows, mapeo: m }
 }
 
+// ─── EMSA (multi-file; current wizard supports only 1 file) ─────────────────
+function preEmsa(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
+  const m = deepCloneMapeo(mapeo)
+  const cols = m.columnas!
+  const headers = Object.keys(rows[0] ?? {})
+
+  // Map core columns from Activa file
+  const colCodigo = resolveCol(headers, "CODIGO")
+  if (colCodigo) cols["codigo_frontera"] = colCodigo
+
+  const colKwh = resolveCol(headers, "kWhR")
+  if (colKwh) cols["energia_kwh"] = colKwh
+
+  // valor_cop placeholder = 0 until Tarifas SDL module exists
+  rows = rows.map(r => ({ ...r, __VALOR_COP__: "0" }))
+  cols["valor_cop"] = "__VALOR_COP__"
+
+  // Periodo from ANO + MES
+  const colAno = resolveCol(headers, "ANO") ?? resolveCol(headers, "AÑO")
+  const colMes = resolveCol(headers, "MES")
+  if (colAno && colMes) {
+    rows = rows.map(r => {
+      const a = parseInt((r[colAno] ?? "").trim(), 10)
+      const me = parseInt((r[colMes] ?? "").trim(), 10)
+      const per = (!isNaN(a) && !isNaN(me)) ? `${a}-${String(me).padStart(2, "0")}` : ""
+      return { ...r, __PERIODO__: per }
+    })
+    cols["periodo"] = "__PERIODO__"
+  }
+
+  // Nivel from "Nivel" column if exists
+  const colNivel = resolveCol(headers, "Nivel")
+  if (colNivel) cols["nivel_tension"] = colNivel
+
+  return { rows, mapeo: m }
+}
+
+// ─── ESSA ────────────────────────────────────────────────────────────────────
 function preEssa(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const m = deepCloneMapeo(mapeo)
   const cols = m.columnas!
   const headers = Object.keys(rows[0] ?? {})
+
+  // Auto-detect Factor M column: "M ENE", "M FEB", "M MAR", ...
+  const factorMRegex = /^M\s+[A-Z]{2,4}$/
+  let colFactorM: string | null = null
+  for (const h of headers) {
+    if (factorMRegex.test(norm(h))) { colFactorM = h; break }
+  }
+  if (colFactorM) cols["factor_m"] = colFactorM
+
+  const colNT   = resolveCol(headers, "NIVEL TENSION")
   const colProp = resolveCol(headers, "PROPIEDAD")
-  if (colProp) {
+  const colInd  = resolveCol(headers, "PEAJE INDUCTIVA")
+  const colCap  = resolveCol(headers, "PEAJE CAPACITIVA")
+
+  // Propiedad: NT 2/3 → Usuario; NT 1 + PROP=1 → Usuario; NT 1 + PROP=2 → OR
+  if (colNT) {
     rows = rows.map(r => {
-      const v = (r[colProp] ?? "").trim().toUpperCase()
-      const mapped = v.includes("USUARIO") ? "Usuario"
-                   : v.includes("OPERADOR") || v === "OR" ? "OR"
-                   : (r[colProp] ?? "").trim()
+      const nt = toNum(r[colNT])
+      let mapped = ""
+      if (nt === 2 || nt === 3) mapped = "Usuario"
+      else if (nt === 1 && colProp) {
+        const p = toNum(r[colProp])
+        if      (p === 1) mapped = "Usuario"
+        else if (p === 2) mapped = "OR"
+      }
       return { ...r, __PROPIEDAD__: mapped }
     })
     cols["propiedad_activos"] = "__PROPIEDAD__"
   }
+
+  // Valor reactiva = PEAJE INDUCTIVA + PEAJE CAPACITIVA
+  if (colInd || colCap) {
+    rows = rows.map(r => ({
+      ...r,
+      __VALOR_REAC__: String(
+        (colInd ? toNum(r[colInd]) ?? 0 : 0) +
+        (colCap ? toNum(r[colCap]) ?? 0 : 0)
+      ),
+    }))
+    cols["valor_reactiva_cop"] = "__VALOR_REAC__"
+  }
+
   return { rows, mapeo: m }
 }
 
+// ─── RUITOQUE ────────────────────────────────────────────────────────────────
 function preRuitoque(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
-  return { rows, mapeo: deepCloneMapeo(mapeo) }
+  const m = deepCloneMapeo(mapeo)
+  const cols = m.columnas!
+  const headers = Object.keys(rows[0] ?? {})
+
+  const colNT     = resolveCol(headers, "NT")
+  const colValInd = resolveCol(headers, "Valor R_Inductiva")
+  const colValCap = resolveCol(headers, "Valor R_Capacitiva")
+
+  // Propiedad: NT 2/3 → Usuario, NT 1 → "" (pendiente Tarifas)
+  if (colNT) {
+    rows = rows.map(r => {
+      const nt = toNum(r[colNT])
+      const mapped = (nt === 2 || nt === 3) ? "Usuario" : ""
+      return { ...r, __PROPIEDAD__: mapped }
+    })
+    cols["propiedad_activos"] = "__PROPIEDAD__"
+  }
+
+  // Valor reactiva = Ind + Cap
+  if (colValInd || colValCap) {
+    rows = rows.map(r => ({
+      ...r,
+      __VALOR_REAC__: String(
+        (colValInd ? toNum(r[colValInd]) ?? 0 : 0) +
+        (colValCap ? toNum(r[colValCap]) ?? 0 : 0)
+      ),
+    }))
+    cols["valor_reactiva_cop"] = "__VALOR_REAC__"
+  }
+
+  return { rows, mapeo: m }
 }
 
+// ─── ENEL (multi-file; current wizard supports only 1 file) ─────────────────
 function preEnel(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
-  return { rows, mapeo: deepCloneMapeo(mapeo) }
+  const m = deepCloneMapeo(mapeo)
+  const cols = m.columnas!
+  const headers = Object.keys(rows[0] ?? {})
+
+  // Map core columns from Activa file
+  // Look for "SIC" in headers
+  let colSic: string | null = null
+  for (const h of headers) {
+    if (norm(h).includes("SIC")) { colSic = h; break }
+  }
+  if (colSic) cols["codigo_frontera"] = colSic
+
+  const colKwh        = resolveCol(headers, "CONSUMO ACTIVA")
+  const colNT         = resolveCol(headers, "NIVEL TENSION")
+  const colValorAct   = resolveCol(headers, "VALOR SDL ACT")
+  const colValorReac  = resolveCol(headers, "VALOR SDL REAC")
+
+  if (colKwh)       cols["energia_kwh"]       = colKwh
+  if (colNT)        cols["nivel_tension"]     = colNT
+  if (colValorAct)  cols["valor_cop"]         = colValorAct
+  if (colValorReac) cols["valor_reactiva_cop"] = colValorReac
+
+  // tarifa_sdl = VALOR SDL ACT / CONSUMO ACTIVA
+  if (colValorAct && colKwh) {
+    rows = rows.map(r => {
+      const v = toNum(r[colValorAct])
+      const k = toNum(r[colKwh])
+      const tar = (v != null && k && k !== 0) ? v / k : null
+      return { ...r, __TARIFA_ACT__: tar != null ? String(tar) : "" }
+    })
+    cols["tarifa_sdl"] = "__TARIFA_ACT__"
+  }
+
+  return { rows, mapeo: m }
 }
 
+// ─── CEDENAR ─────────────────────────────────────────────────────────────────
 function preCedenar(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
-  return { rows, mapeo: deepCloneMapeo(mapeo) }
+  const m = deepCloneMapeo(mapeo)
+  const cols = m.columnas!
+  const headers = Object.keys(rows[0] ?? {})
+
+  const colTarAct  = resolveCol(headers, "VALOR TARIFA ACTIVA ($)")
+  const colTarReac = resolveCol(headers, "VALOR TARIFA REACTIVA ($)")
+  const colActiva  = resolveCol(headers, "Activa")
+  const colPenal   = resolveCol(headers, "Penalizada")
+  const colTarifaI = resolveCol(headers, "TARIFA I")
+
+  // Valor activa = VALOR TARIFA ACTIVA × Activa
+  if (colTarAct && colActiva) {
+    rows = rows.map(r => ({
+      ...r,
+      __VALOR_ACTIVA__: String(
+        (toNum(r[colTarAct]) ?? 0) * (toNum(r[colActiva]) ?? 0)
+      ),
+    }))
+    cols["valor_cop"] = "__VALOR_ACTIVA__"
+  }
+
+  // Valor reactiva = Penalizada × VALOR TARIFA REACTIVA
+  if (colPenal && colTarReac) {
+    rows = rows.map(r => ({
+      ...r,
+      __VALOR_REACTIVA__: String(
+        (toNum(r[colPenal]) ?? 0) * (toNum(r[colTarReac]) ?? 0)
+      ),
+    }))
+    cols["valor_reactiva_cop"] = "__VALOR_REACTIVA__"
+  }
+
+  // Propiedad from TARIFA I: 300/301→Usuario, 324→Compartido, 312→OR
+  if (colTarifaI) {
+    const M: Record<string, string> = { "300": "Usuario", "301": "Usuario", "324": "Compartido", "312": "OR" }
+    rows = rows.map(r => {
+      const raw = (r[colTarifaI] ?? "").trim().split(".")[0] ?? ""
+      return { ...r, __PROPIEDAD__: M[raw] ?? "" }
+    })
+    cols["propiedad_activos"] = "__PROPIEDAD__"
+  }
+
+  return { rows, mapeo: m }
 }
 
 // ─── Preprocessor registry ───────────────────────────────────────────────────
