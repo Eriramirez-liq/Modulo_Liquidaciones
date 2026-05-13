@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server"
-import { db } from "@/lib/db"
+import { auth as nextAuth, handlers, signIn, signOut } from "@/auth"
+
+export { handlers, signIn, signOut }
 
 type AppUser = {
   id: string
@@ -12,36 +13,14 @@ type AppSession = {
 }
 
 export async function auth(): Promise<AppSession | null> {
-  try {
-    const user = await db.user.findFirst({
-      orderBy: { createdAt: "asc" },
-      select: { id: true, nombre: true, rol: true },
-    })
-    if (user) return { user }
-  } catch {
-    // DB no disponible — continuar con sesión de desarrollo
-  }
-
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const session = await nextAuth() as any
+  if (!session?.user?.id) return null
   return {
     user: {
-      id: "dev-user",
-      nombre: "Usuario Desarrollo",
-      rol: "ADMINISTRADOR",
+      id: session.user.id,
+      nombre: session.user.nombre ?? session.user.name ?? "Usuario",
+      rol: session.user.rol ?? "ANALISTA",
     },
   }
-}
-
-export const handlers = {
-  async GET() {
-    return NextResponse.json(
-      { message: "Auth local activa." },
-      { status: 200 }
-    )
-  },
-  async POST() {
-    return NextResponse.json(
-      { message: "Auth local activa." },
-      { status: 200 }
-    )
-  },
 }
