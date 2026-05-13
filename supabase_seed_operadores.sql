@@ -1,33 +1,59 @@
 -- ================================================================
 -- Seed: Operadores de Red con configuración SDL
--- Fuente: base de datos local Flask (instance/flask-dev.db)
--- Ejecutar en: Supabase → SQL Editor → Run and enable RLS
+-- Total: 21 operadores
+-- Excluidos: CARTAGO (consolidado en EEP_CARTAGO), EEP (consolidado)
+-- Estado:
+--   validado: AFINIA, CEDENAR, CELSIA_TOLIMA, CELSIA_VALLE, CENS, CEO,
+--             CETSA, CHEC, EBSA, EDEQ, EEP_CARTAGO, EEP_PEREIRA, EMSA,
+--             ESSA, RUITOQUE
+--   configurado (pendiente prueba): ENEL
+--   pendiente validación con archivo: EMCALI, ENERCA, EPM
+--   pendiente mapeo SDL: AIRE, ELECTROHUILA
 -- ================================================================
 
 INSERT INTO configuracion_or (id, codigo, nombre, activo, mapeo_sdl_json, mapeo_balance_json)
 VALUES
+-- AFINIA: validado con archivo
 (gen_random_uuid()::text, 'AFINIA', 'Afinia', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "SIC", "energia_kwh": "CONSUMO", "valor_cop": "PEAJES REGIONALES REGULADOS OTROS", "periodo": null, "nivel_tension": "NIVEL TENSION", "propiedad_activos": "PROPIEDAD", "energia_reactiva_ind_pen": "ENERGIA REACTIVA PEAJES", "energia_reactiva_cap_pen": null, "valor_reactiva_cop": "PEN. ENERGIA REACTIVA PEAJES", "factor_m": "M"}}'::jsonb, NULL),
+-- AIRE: pendiente mapeo SDL
 (gen_random_uuid()::text, 'AIRE', 'Aire', true, NULL, NULL),
-(gen_random_uuid()::text, 'CARTAGO', 'Cartago', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 3, "separador_csv": ",", "columnas": {"codigo_frontera": "SIC", "energia_kwh": "Energía Activa ", "valor_cop": "Valor $ Activa", "periodo": null, "nivel_tension": "Nivel Tension", "propiedad_activos": null, "energia_reactiva_ind_pen": "Energía Reactiva Inductiva", "energia_reactiva_cap_pen": "Energía Reactiva Capacitiva", "valor_reactiva_cop": "Valor $ Reactiva Inductiva", "factor_m": "Factor M"}}'::jsonb, NULL),
+-- CEDENAR: validado con archivo
 (gen_random_uuid()::text, 'CEDENAR', 'Cedenar', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "CODIGO SIC", "energia_kwh": "Activa", "valor_cop": "VALOR TARIFA", "periodo": null, "nivel_tension": "NIVEL DE TENSION", "propiedad_activos": null, "energia_reactiva_ind_pen": "Penalizada", "energia_reactiva_cap_pen": null, "valor_reactiva_cop": null, "factor_m": null}}'::jsonb, NULL),
+-- CELSIA_TOLIMA: validado con archivo
 (gen_random_uuid()::text, 'CELSIA_TOLIMA', 'Celsia Tolima', true, '{"tipo_archivo": "csv", "hoja": 0, "fila_inicio": 2, "separador_csv": ";", "columnas": {"codigo_frontera": "C?igo SIC", "energia_kwh": "Activa KWh", "valor_cop": "$Peaje Activa", "periodo": null, "nivel_tension": "Nivel Tensi?", "propiedad_activos": "Propiedad Activo", "energia_reactiva_ind_pen": "Reactiva Inductiva Penalizada kVAr", "energia_reactiva_cap_pen": "Reactiva Capacitiva Penal kVAr", "valor_reactiva_cop": "$Peaje Reactiva", "factor_m": "Factor M"}}'::jsonb, NULL),
+-- CELSIA_VALLE: validado con archivo
 (gen_random_uuid()::text, 'CELSIA_VALLE', 'Celsia Valle', true, '{"tipo_archivo": "csv", "hoja": 0, "fila_inicio": 2, "separador_csv": ";", "columnas": {"codigo_frontera": "C?igo SIC", "energia_kwh": "Activa KWh", "valor_cop": "$Peaje Activa", "periodo": null, "nivel_tension": "Nivel Tensi?", "propiedad_activos": "Propiedad Activo", "energia_reactiva_ind_pen": "Reactiva Inductiva Penalizada kVAr", "energia_reactiva_cap_pen": "Reactiva Capacitiva Penal kVAr", "valor_reactiva_cop": " $Peaje Reactiva ", "factor_m": "Factor M"}}'::jsonb, NULL),
+-- CENS: validado con archivo
 (gen_random_uuid()::text, 'CENS', 'Cens', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "Código SIC", "energia_kwh": "Activa", "valor_cop": "Valor Activa", "periodo": null, "nivel_tension": "NT_PRO", "propiedad_activos": null, "energia_reactiva_ind_pen": "R_Inductiva", "energia_reactiva_cap_pen": "R_Capacitiva", "valor_reactiva_cop": "Valor R_Inductiva", "factor_m": "Factor M"}}'::jsonb, NULL),
+-- CEO: validado con archivo
 (gen_random_uuid()::text, 'CEO', 'CEO', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "Código SIC", "energia_kwh": "Activa KWh", "valor_cop": "$ Peaje Activa", "periodo": "Periodo", "nivel_tension": "Nivel Tensión", "propiedad_activos": "Propiedad Activo", "energia_reactiva_ind_pen": "Reactiva Inductiva Penal kVAr", "energia_reactiva_cap_pen": null, "valor_reactiva_cop": "$ Peaje Reactiva", "factor_m": "Factor_m"}}'::jsonb, NULL),
+-- CETSA: validado con archivo
 (gen_random_uuid()::text, 'CETSA', 'Cetsa', true, '{"tipo_archivo": "csv", "hoja": 0, "fila_inicio": 2, "separador_csv": ";", "columnas": {"codigo_frontera": "C?igo SIC", "energia_kwh": "Activa KWh", "valor_cop": "$Peaje Activa", "periodo": null, "nivel_tension": "Nivel Tensi?", "propiedad_activos": "Propiedad Activo", "energia_reactiva_ind_pen": "Reactiva Inductiva Penalizada kVAr", "energia_reactiva_cap_pen": "Reactiva Capacitiva Penal kVAr", "valor_reactiva_cop": "$Peaje Reactiva", "factor_m": "Factor M"}}'::jsonb, NULL),
+-- CHEC: validado con archivo
 (gen_random_uuid()::text, 'CHEC', 'Chec', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "FRONTERA", "energia_kwh": "ENERGIA ACTIVA", "valor_cop": "LIQUIDACION ACTIVA", "periodo": null, "nivel_tension": "NIVEL TENSION", "propiedad_activos": null, "energia_reactiva_ind_pen": "TOTAL ENERGIA REACTIVA", "energia_reactiva_cap_pen": null, "valor_reactiva_cop": "LIQUIDACION REACTIVA", "factor_m": "FACTOR M"}}'::jsonb, NULL),
+-- EBSA: validado con archivo
 (gen_random_uuid()::text, 'EBSA', 'EBSA', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "CODIGO SIC", "energia_kwh": "KW-H", "valor_cop": "VALOR", "periodo": "PERIODO", "nivel_tension": "NT", "propiedad_activos": null, "energia_reactiva_ind_pen": "REACTIVA", "energia_reactiva_cap_pen": null, "valor_reactiva_cop": null, "factor_m": "VALOR M"}}'::jsonb, NULL),
+-- EDEQ: validado con archivo
 (gen_random_uuid()::text, 'EDEQ', 'Edeq', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "CODIGO SIC", "energia_kwh": "Energía Activa", "valor_cop": "Valor Activa", "periodo": null, "nivel_tension": "Nivel de Tensión  de la Frontera", "propiedad_activos": "Propiedad", "energia_reactiva_ind_pen": "Energía Reactiva Inductiva Penalizada", "energia_reactiva_cap_pen": "Energía Reactiva Capacitiva Penalizada", "valor_reactiva_cop": "Valor Reactiva Inductiva Penalizada", "factor_m": "Factor M (Energia Reactiva )"}}'::jsonb, NULL),
-(gen_random_uuid()::text, 'EEP', 'EEP', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 3, "separador_csv": ",", "columnas": {"codigo_frontera": "SIC", "energia_kwh": "Energía Activa ", "valor_cop": "Valor $ Activa", "periodo": null, "nivel_tension": "Nivel Tension", "propiedad_activos": null, "energia_reactiva_ind_pen": "Energía Reactiva Inductiva", "energia_reactiva_cap_pen": "Energía Reactiva Capacitiva", "valor_reactiva_cop": "Valor $ Reactiva Inductiva", "factor_m": "Factor M"}}'::jsonb, NULL),
+-- EEP_CARTAGO: validado con archivo
 (gen_random_uuid()::text, 'EEP_CARTAGO', 'EEP Cartago', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 3, "separador_csv": ",", "columnas": {"codigo_frontera": "SIC", "energia_kwh": "Energía Activa ", "valor_cop": "Valor $ Activa", "periodo": null, "nivel_tension": "Nivel Tension", "propiedad_activos": null, "energia_reactiva_ind_pen": "Energía Reactiva Inductiva", "energia_reactiva_cap_pen": "Energía Reactiva Capacitiva", "valor_reactiva_cop": "Valor $ Reactiva Inductiva", "factor_m": "Factor M"}}'::jsonb, NULL),
+-- EEP_PEREIRA: validado con archivo
 (gen_random_uuid()::text, 'EEP_PEREIRA', 'EEP Pereira', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 3, "separador_csv": ",", "columnas": {"codigo_frontera": "SIC", "energia_kwh": "Energía Activa ", "valor_cop": "Valor $ Activa", "periodo": null, "nivel_tension": "Nivel Tension", "propiedad_activos": null, "energia_reactiva_ind_pen": "Energía Reactiva Inductiva", "energia_reactiva_cap_pen": "Energía Reactiva Capacitiva", "valor_reactiva_cop": "Valor $ Reactiva Inductiva", "factor_m": "Factor M"}}'::jsonb, NULL),
+-- ELECTROHUILA: pendiente mapeo SDL
 (gen_random_uuid()::text, 'ELECTROHUILA', 'Electrohuila', true, NULL, NULL),
-(gen_random_uuid()::text, 'EMCALI', 'Emcali', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "codigo_sic", "energia_kwh": "activa", "valor_cop": "valor_peaje_activa", "periodo": null, "nivel_tension": "nt", "propiedad_activos": "propiedad_activo", "energia_reactiva_ind_pen": "reactva_inductiva_penal", "energia_reactiva_cap_pen": "reactiva_capacitiva_penalizada", "valor_reactiva_cop": "valor_peaje_reactiva", "factor_m": "factor_m"}}'::jsonb, NULL),
+-- EMCALI: pendiente validacion con archivo
+(gen_random_uuid()::text, 'EMCALI', 'Emcali', true, NULL, NULL),
+-- EMSA: validado con archivo
 (gen_random_uuid()::text, 'EMSA', 'Emsa', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "CODIGO", "energia_kwh": "kWhR", "valor_cop": null, "periodo": null, "nivel_tension": null, "propiedad_activos": null, "energia_reactiva_ind_pen": null, "energia_reactiva_cap_pen": null, "valor_reactiva_cop": null, "tarifa_reactiva": null, "tarifa_sdl": null, "factor_m": null, "codigo_frontera_split": null}, "multi_archivos": true}'::jsonb, NULL),
+-- ENEL: configurado — pendiente cargar archivo de prueba
 (gen_random_uuid()::text, 'ENEL', 'Enel', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "CODIGO SIC", "energia_kwh": "CONSUMO ACTIVA", "valor_cop": "VALOR SDL ACT", "periodo": null, "nivel_tension": "NIVEL TENSION", "propiedad_activos": null, "energia_reactiva_ind_pen": "CONSUMO REACTIVA", "energia_reactiva_cap_pen": null, "valor_reactiva_cop": "VALOR SDL REAC", "factor_m": null}}'::jsonb, NULL),
-(gen_random_uuid()::text, 'ENERCA', 'Enerca', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 5, "separador_csv": ",", "columnas": {"codigo_frontera": "CODIGO SIC", "energia_kwh": "CONSUMO ACTIVA LIQUIDADO", "valor_cop": "BALANCE SIC LIQUIDADO", "periodo": null, "nivel_tension": "NT", "propiedad_activos": "PROPIEDAD DE ACTIVO", "energia_reactiva_ind_pen": "EXCESO REACTIVA", "energia_reactiva_cap_pen": "EXCESO CAPACITIVA", "valor_reactiva_cop": "REACTIVA EN EXCESO LIQUIDADO", "factor_m": "FACTOR M"}}'::jsonb, NULL),
-(gen_random_uuid()::text, 'EPM', 'EPM', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 14, "separador_csv": ",", "columnas": {"codigo_frontera": "Código SIC", "energia_kwh": "ENERGÍA \nActiva SDL \n(KW)", "valor_cop": "INGRESO \nActiva SDL\n($)", "periodo": null, "nivel_tension": "Nivel de Tensión", "propiedad_activos": null, "energia_reactiva_ind_pen": null, "energia_reactiva_cap_pen": null, "valor_reactiva_cop": null, "factor_m": null}}'::jsonb, NULL),
+-- ENERCA: pendiente validacion con archivo
+(gen_random_uuid()::text, 'ENERCA', 'Enerca', true, NULL, NULL),
+-- EPM: pendiente validacion con archivo
+(gen_random_uuid()::text, 'EPM', 'EPM', true, NULL, NULL),
+-- ESSA: validado con archivo
 (gen_random_uuid()::text, 'ESSA', 'ESSA', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 5, "separador_csv": ",", "columnas": {"codigo_frontera": "CODIGO SIC", "energia_kwh": "DEFINITIVO", "valor_cop": "PEAJE ACTIVA", "periodo": null, "nivel_tension": "NIVEL TENSION", "propiedad_activos": "PROPIEDAD", "energia_reactiva_ind_pen": "REACTIVA PENALIZADA", "energia_reactiva_cap_pen": "CAPACITIVA PENALIZADA", "valor_reactiva_cop": "PEAJE INDUCTIVA", "factor_m": "M DIC"}}'::jsonb, NULL),
+-- RUITOQUE: validado con archivo
 (gen_random_uuid()::text, 'RUITOQUE', 'Ruitoque', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 7, "separador_csv": ",", "columnas": {"codigo_frontera": "Código SIC", "energia_kwh": "Activa", "valor_cop": "Valor Activa", "periodo": null, "nivel_tension": "NT", "propiedad_activos": null, "energia_reactiva_ind_pen": "R_Inductiva Penalizada", "energia_reactiva_cap_pen": "R_Capacitiva Penalizada", "valor_reactiva_cop": "Valor R_Inductiva", "factor_m": "Factor M"}}'::jsonb, NULL)
 ON CONFLICT (codigo) DO UPDATE SET
   nombre             = EXCLUDED.nombre,
