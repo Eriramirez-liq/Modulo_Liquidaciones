@@ -244,6 +244,16 @@ function preAire(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const cols = m.columnas!
   const headers = Object.keys(rows[0] ?? {})
 
+  // AIRE file uses non-standard column names — map core fields explicitly
+  const colSic    = resolveCol(headers, "CODIGOSIC")
+  const colConsumo = resolveCol(headers, "CONSUMOTOTAL")
+  const colValor  = resolveCol(headers, "TRANSPORTEREGIONAL")
+  const colCli    = resolveCol(headers, "CLIENTE")
+  if (colSic)     cols["codigo_frontera"]   = colSic
+  if (colConsumo) cols["energia_kwh"]       = colConsumo
+  if (colValor)   cols["valor_cop"]         = colValor
+  if (colCli)     cols["nombre_frontera"]   = colCli
+
   const colPen = resolveCol(headers, "PENALIZACIONREACTIVA$")
   const colCap = resolveCol(headers, "REACTIVACAPACITIVA$")
   if (colPen && colCap) {
@@ -529,7 +539,7 @@ export async function parsearSDL(
   const colTarSDL   = cols["tarifa_sdl"]                 ? resolveCol(headers, cols["tarifa_sdl"])               : null
   const colFactorM  = cols["factor_m"]                   ? resolveCol(headers, cols["factor_m"])                 : null
 
-  const dispHeaders = headers.slice(0, 20).map(h => `"${h}"`).join(", ")
+  const dispHeaders = headers.map(h => `"${h}"`).join(", ")
   if (!colFrontera) {
     erroresCriticos.push(`Columna codigo_frontera no encontrada: "${cols["codigo_frontera"]}". Disponibles: [${dispHeaders}]`)
   }
