@@ -23,10 +23,7 @@ export default async function DashboardLayout({
         userName={session.user.nombre}
       />
       <div className="flex flex-1 flex-col overflow-hidden">
-        <TopBar
-          userName={session.user.nombre}
-          userRol={session.user.rol}
-        />
+        <TopBar userName={session.user.nombre} />
         <main className="flex-1 overflow-y-auto bg-muted/20 p-6">
           {children}
         </main>

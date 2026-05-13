@@ -1,12 +1,605 @@
 "use client"
 
+import { useState, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
+
+const ACCENT = "#07c5a8"
+
+const MESES = [
+  "Enero","Febrero","Marzo","Abril","Mayo","Junio",
+  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
+]
+
+type TipoFuente = "FACTURACION" | "XM" | "SDL" | "BALANCE" | "TC1" | "COT"
+
+interface FuenteCard {
+  tipo: TipoFuente
+  label: string
+  desc: string
+  requiresOR: boolean
+  icon: string
+}
+
+const FUENTES: FuenteCard[] = [
+  {
+    tipo: "FACTURACION", label: "Facturación BIA", requiresOR: false,
+    desc: "Fuente maestra del período. Define el universo de fronteras.",
+    icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
+  },
+  {
+    tipo: "XM", label: "Reporte CGM/XM", requiresOR: false,
+    desc: "Energía reportada por XM por frontera.",
+    icon: "M13 10V3L4 14h7v7l9-11h-7z",
+  },
+  {
+    tipo: "SDL", label: "SDL por Operador", requiresOR: true,
+    desc: "Archivo SDL del operador de red. Formato configurable por OR.",
+    icon: "M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4",
+  },
+  {
+    tipo: "BALANCE", label: "Balance de Energía", requiresOR: true,
+    desc: "Ajuste retroactivo de un operador a períodos anteriores.",
+    icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
+  },
+  {
+    tipo: "TC1", label: "TC1 — Conf. Técnica", requiresOR: false,
+    desc: "Archivo de configuración técnica de fronteras (XM/SUI).",
+    icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01",
+  },
+  {
+    tipo: "COT", label: "COT por Operador", requiresOR: true,
+    desc: "Cargo por Otros Trámites enviado por el OR.",
+    icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+  },
+]
+
+interface Operador { id: string; codigo: string; nombre: string }
+
+const now = new Date()
+const CURRENT_YEAR  = now.getFullYear()
+const CURRENT_MONTH = now.getMonth() + 1
+
 export function WizardCarga() {
+  const router = useRouter()
+
+  const [step, setStep]                 = useState(0)
+  const [anio, setAnio]                 = useState(CURRENT_YEAR)
+  const [mes, setMes]                   = useState(CURRENT_MONTH)
+  const [tipoFuente, setTipoFuente]     = useState<TipoFuente | null>(null)
+  const [orId, setOrId]                 = useState("")
+  const [operadores, setOperadores]     = useState<Operador[]>([])
+  const [file, setFile]                 = useState<File | null>(null)
+  const [dragOver, setDragOver]         = useState(false)
+  const [loading, setLoading]           = useState(false)
+  const [error, setError]               = useState<string | null>(null)
+  const [preview, setPreview]           = useState<Record<string, unknown>[]>([])
+  const [filasCompletas, setFilasCompletas] = useState<unknown[]>([])
+  const [total, setTotal]               = useState(0)
+  const [alertas, setAlertas]           = useState<string[]>([])
+  const [erroresCriticos, setErroresCriticos] = useState<string[]>([])
+  const [existeCargaPrevia, setExisteCargaPrevia] = useState(false)
+  const [cargaPreviaId, setCargaPreviaId] = useState<string | undefined>()
+  const [justificacion, setJustificacion] = useState("")
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    fetch("/api/operadores")
+      .then((r) => r.json())
+      .then((data) => setOperadores(Array.isArray(data) ? data : data.operadores ?? []))
+      .catch(() => {})
+  }, [])
+
+  const fuenteActual = FUENTES.find((f) => f.tipo === tipoFuente)
+  const requiereOR  = fuenteActual?.requiresOR ?? false
+  const paso1Ok     = tipoFuente !== null && (!requiereOR || orId !== "")
+
+  // ── Dropzone handlers ──────────────────────────────────────────────────────
+
+  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] ?? null
+    setFile(f)
+    setError(null)
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragOver(false)
+    const f = e.dataTransfer.files?.[0] ?? null
+    if (f) { setFile(f); setError(null) }
+  }
+
+  // ── Step navigation ───────────────────────────────────────────────────────
+
+  async function handleSiguienteStep1() {
+    if (!paso1Ok) return
+    setStep(1)
+  }
+
+  async function handleSiguienteStep2() {
+    if (!file) { setError("Seleccioná un archivo."); return }
+    setLoading(true)
+    setError(null)
+    try {
+      const fd = new FormData()
+      fd.append("file", file)
+      fd.append("anio", String(anio))
+      fd.append("mes", String(mes))
+      fd.append("tipoFuente", tipoFuente!)
+      if (orId) fd.append("orId", orId)
+
+      const res = await fetch("/api/cargas/preview", { method: "POST", body: fd })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error ?? "Error al procesar el archivo."); return }
+
+      setPreview(data.preview ?? [])
+      setFilasCompletas(data.filasCompletas ?? [])
+      setTotal(data.total ?? 0)
+      setAlertas(data.alertas ?? [])
+      setErroresCriticos(data.erroresCriticos ?? [])
+      setExisteCargaPrevia(data.existeCargaPrevia ?? false)
+      setCargaPreviaId(data.cargaPreviaId)
+      setStep(2)
+    } catch {
+      setError("Error de red al procesar el archivo.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleConfirmar() {
+    if (existeCargaPrevia && !justificacion.trim()) {
+      setError("Ingresá una justificación para reemplazar la carga existente.")
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/cargas/confirmar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          meta: { anio, mes, tipoFuente, orId: orId || undefined, nombreArchivo: file?.name ?? "" },
+          filasCompletas,
+          justificacion: justificacion || undefined,
+          cargaPreviaId,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error ?? "Error al confirmar."); return }
+      router.push("/cargas")
+    } catch {
+      setError("Error de red al confirmar la carga.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  const previewCols = preview.length > 0 ? Object.keys(preview[0] ?? {}) : []
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
   return (
-    <section className="rounded border border-border bg-card p-4">
-      <h2 className="mb-2 text-sm font-semibold">Wizard de carga</h2>
-      <p className="text-sm text-muted-foreground">
-        Flujo de carga en construcción. Esta versión es un placeholder para pruebas de navegación.
-      </p>
-    </section>
+    <div style={{ maxWidth: "860px", margin: "0 auto" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "24px" }}>
+        <div>
+          <h1 style={{ fontSize: "1.25rem", fontWeight: 700, color: "#111827", marginBottom: "4px" }}>
+            Nueva carga de fuente
+          </h1>
+          <p style={{ fontSize: "0.875rem", color: "#6b7280" }}>
+            Sigue los pasos para cargar un archivo de datos al sistema
+          </p>
+        </div>
+        <a href="/cargas" style={{
+          fontSize: "0.8rem", color: "#374151", border: "1px solid #e5e7eb",
+          borderRadius: "6px", padding: "6px 14px", textDecoration: "none",
+          backgroundColor: "#ffffff",
+        }}>
+          ← Volver al historial
+        </a>
+      </div>
+
+      {/* Steps indicator */}
+      <div style={{ display: "flex", alignItems: "center", marginBottom: "24px" }}>
+        {["Configurar", "Cargar archivo", "Confirmar"].map((label, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", flex: i < 2 ? "1" : "0" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+              <div style={{
+                width: "28px", height: "28px", borderRadius: "50%",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "0.8rem", fontWeight: 700,
+                backgroundColor: step === i ? ACCENT : step > i ? ACCENT : "#e5e7eb",
+                color: step >= i ? "#050f0d" : "#9ca3af",
+              }}>
+                {i + 1}
+              </div>
+              <span style={{
+                fontSize: "0.85rem", fontWeight: step === i ? 600 : 400,
+                color: step === i ? "#111827" : step > i ? ACCENT : "#9ca3af",
+              }}>
+                {label}
+              </span>
+            </div>
+            {i < 2 && (
+              <div style={{
+                flex: 1, height: "1px", margin: "0 12px",
+                backgroundColor: step > i ? ACCENT : "#e5e7eb",
+              }}/>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Panel */}
+      <div style={{
+        backgroundColor: "#ffffff", borderRadius: "12px",
+        border: "1px solid #e5e7eb", padding: "24px",
+      }}>
+
+        {/* ── Step 0: Configurar ── */}
+        {step === 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+
+            {/* Período */}
+            <div>
+              <label style={{ display: "block", fontWeight: 600, fontSize: "0.85rem", color: "#111827", marginBottom: "10px" }}>
+                Período de conciliación
+              </label>
+              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <label style={{ fontSize: "0.75rem", color: "#6b7280", fontWeight: 500 }}>Año</label>
+                  <select
+                    value={anio}
+                    onChange={(e) => setAnio(Number(e.target.value))}
+                    style={{ width: "100px", padding: "7px 10px", borderRadius: "7px", border: "1px solid #d1d5db", fontSize: "0.875rem" }}
+                  >
+                    <option value={CURRENT_YEAR - 1}>{CURRENT_YEAR - 1}</option>
+                    <option value={CURRENT_YEAR}>{CURRENT_YEAR}</option>
+                    <option value={CURRENT_YEAR + 1}>{CURRENT_YEAR + 1}</option>
+                  </select>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <label style={{ fontSize: "0.75rem", color: "#6b7280", fontWeight: 500 }}>Mes</label>
+                  <select
+                    value={mes}
+                    onChange={(e) => setMes(Number(e.target.value))}
+                    style={{ width: "160px", padding: "7px 10px", borderRadius: "7px", border: "1px solid #d1d5db", fontSize: "0.875rem" }}
+                  >
+                    {MESES.map((m, i) => (
+                      <option key={i + 1} value={i + 1}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Tipo de fuente */}
+            <div>
+              <label style={{ display: "block", fontWeight: 600, fontSize: "0.85rem", color: "#111827", marginBottom: "10px" }}>
+                Tipo de fuente
+              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
+                {FUENTES.map((f) => {
+                  const selected = tipoFuente === f.tipo
+                  return (
+                    <button
+                      key={f.tipo}
+                      type="button"
+                      onClick={() => { setTipoFuente(f.tipo); if (!f.requiresOR) setOrId("") }}
+                      style={{
+                        display: "flex", flexDirection: "column", gap: "6px",
+                        padding: "12px 14px", borderRadius: "9px", textAlign: "left",
+                        border: selected ? `2px solid ${ACCENT}` : "1px solid #e5e7eb",
+                        backgroundColor: selected ? `${ACCENT}15` : "#fafafa",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                             fill="none" stroke={selected ? ACCENT : "#374151"}
+                             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d={f.icon}/>
+                        </svg>
+                        <span style={{ fontSize: "0.82rem", fontWeight: 600, color: selected ? ACCENT : "#111827" }}>
+                          {f.label}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: "0.75rem", color: "#6b7280", lineHeight: "1.4" }}>
+                        {f.desc}
+                      </span>
+                      {f.requiresOR && (
+                        <span style={{
+                          fontSize: "0.65rem", fontWeight: 600, color: selected ? ACCENT : "#9ca3af",
+                          textTransform: "uppercase", letterSpacing: "0.05em",
+                        }}>
+                          Requiere OR
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* OR selector */}
+            {requiereOR && (
+              <div>
+                <label style={{ display: "block", fontWeight: 600, fontSize: "0.85rem", color: "#111827", marginBottom: "6px" }}>
+                  Operador de Red <span style={{ color: "#ef4444" }}>*</span>
+                </label>
+                {operadores.length > 0 ? (
+                  <select
+                    value={orId}
+                    onChange={(e) => setOrId(e.target.value)}
+                    style={{ width: "320px", padding: "7px 10px", borderRadius: "7px", border: "1px solid #d1d5db", fontSize: "0.875rem" }}
+                  >
+                    <option value="">Seleccionar operador…</option>
+                    {operadores.map((o) => (
+                      <option key={o.id} value={o.id}>{o.codigo} — {o.nombre}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <p style={{ fontSize: "0.82rem", color: "#6b7280" }}>No hay operadores activos registrados.</p>
+                )}
+              </div>
+            )}
+
+            {/* Next */}
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                disabled={!paso1Ok}
+                onClick={handleSiguienteStep1}
+                style={{
+                  display: "flex", alignItems: "center", gap: "6px",
+                  padding: "9px 20px", borderRadius: "7px", border: "none",
+                  fontSize: "0.875rem", fontWeight: 600, cursor: paso1Ok ? "pointer" : "not-allowed",
+                  backgroundColor: paso1Ok ? ACCENT : "#e5e7eb",
+                  color: paso1Ok ? "#050f0d" : "#9ca3af",
+                }}
+              >
+                Siguiente
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 1: Cargar archivo ── */}
+        {step === 1 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+            <div>
+              <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "#111827", marginBottom: "4px" }}>
+                Cargar archivo
+              </h2>
+              <p style={{ fontSize: "0.875rem", color: "#6b7280" }}>
+                Arrastra el archivo Excel o CSV del período seleccionado
+              </p>
+            </div>
+
+            {/* Dropzone */}
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={onDrop}
+              style={{
+                border: `2px dashed ${dragOver ? ACCENT : file ? ACCENT : "#d1d5db"}`,
+                borderRadius: "10px", padding: "40px 24px",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: "10px",
+                cursor: "pointer", backgroundColor: dragOver ? `${ACCENT}08` : file ? `${ACCENT}06` : "#fafafa",
+                transition: "border-color 0.15s, background-color 0.15s",
+              }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"
+                   fill="none" stroke={file ? ACCENT : "#9ca3af"}
+                   strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+              </svg>
+              <div style={{ fontSize: "0.9rem", fontWeight: 500, color: file ? ACCENT : "#374151" }}>
+                {file ? file.name : "Haz clic o arrastra tu archivo aquí"}
+              </div>
+              {!file && (
+                <div style={{ fontSize: "0.8rem", color: "#9ca3af" }}>.xlsx, .xls, .csv — máx. 32 MB</div>
+              )}
+              {file && (
+                <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+                  {(file.size / 1024).toFixed(1)} KB — haz clic para cambiar
+                </div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{ display: "none" }}
+                onChange={onFileChange}
+              />
+            </div>
+
+            {error && (
+              <div style={{
+                padding: "10px 14px", borderRadius: "7px",
+                border: "1px solid #fca5a5", backgroundColor: "#fef2f2",
+                fontSize: "0.85rem", color: "#dc2626",
+              }}>
+                {error}
+              </div>
+            )}
+
+            {/* Buttons */}
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <button
+                type="button"
+                onClick={() => { setStep(0); setFile(null); setError(null) }}
+                style={{
+                  padding: "9px 20px", borderRadius: "7px",
+                  border: "1px solid #e5e7eb", backgroundColor: "#ffffff",
+                  fontSize: "0.875rem", fontWeight: 500, cursor: "pointer", color: "#374151",
+                }}
+              >
+                ← Atrás
+              </button>
+              <button
+                type="button"
+                disabled={!file || loading}
+                onClick={handleSiguienteStep2}
+                style={{
+                  display: "flex", alignItems: "center", gap: "6px",
+                  padding: "9px 20px", borderRadius: "7px", border: "none",
+                  fontSize: "0.875rem", fontWeight: 600,
+                  cursor: file && !loading ? "pointer" : "not-allowed",
+                  backgroundColor: file && !loading ? ACCENT : "#e5e7eb",
+                  color: file && !loading ? "#050f0d" : "#9ca3af",
+                }}
+              >
+                {loading ? "Procesando…" : "Vista previa →"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 2: Confirmar ── */}
+        {step === 2 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            <div>
+              <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "#111827", marginBottom: "4px" }}>
+                Confirmar carga
+              </h2>
+              <p style={{ fontSize: "0.875rem", color: "#6b7280" }}>
+                Revisa los primeros registros antes de guardar.{" "}
+                <strong style={{ color: "#111827" }}>{total.toLocaleString()} registros</strong> en total.
+              </p>
+            </div>
+
+            {/* Alertas */}
+            {erroresCriticos.length > 0 && (
+              <div style={{ padding: "12px 14px", borderRadius: "7px", border: "1px solid #fca5a5", backgroundColor: "#fef2f2" }}>
+                <p style={{ fontSize: "0.82rem", fontWeight: 600, color: "#dc2626", marginBottom: "6px" }}>Errores críticos</p>
+                <ul style={{ paddingLeft: "16px", margin: 0 }}>
+                  {erroresCriticos.map((e, i) => (
+                    <li key={i} style={{ fontSize: "0.8rem", color: "#dc2626" }}>{e}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {alertas.length > 0 && (
+              <div style={{ padding: "12px 14px", borderRadius: "7px", border: "1px solid #fde68a", backgroundColor: "#fffbeb" }}>
+                <p style={{ fontSize: "0.82rem", fontWeight: 600, color: "#92400e", marginBottom: "6px" }}>Alertas</p>
+                <ul style={{ paddingLeft: "16px", margin: 0 }}>
+                  {alertas.map((a, i) => (
+                    <li key={i} style={{ fontSize: "0.8rem", color: "#92400e" }}>{a}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Carga previa warning */}
+            {existeCargaPrevia && (
+              <div style={{ padding: "12px 14px", borderRadius: "7px", border: "1px solid #fde68a", backgroundColor: "#fffbeb" }}>
+                <p style={{ fontSize: "0.85rem", fontWeight: 600, color: "#92400e", marginBottom: "8px" }}>
+                  Ya existe una carga para este período y fuente. Ingresá una justificación para reemplazarla.
+                </p>
+                <textarea
+                  value={justificacion}
+                  onChange={(e) => setJustificacion(e.target.value)}
+                  placeholder="Motivo del reemplazo…"
+                  rows={2}
+                  style={{
+                    width: "100%", padding: "8px 10px", borderRadius: "7px",
+                    border: "1px solid #d1d5db", fontSize: "0.85rem",
+                    resize: "vertical", boxSizing: "border-box",
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Preview table */}
+            {preview.length > 0 && (
+              <div style={{ overflowX: "auto", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
+                  <thead>
+                    <tr style={{ backgroundColor: "#f9fafb" }}>
+                      {previewCols.map((col) => (
+                        <th key={col} style={{
+                          padding: "8px 12px", textAlign: "left", fontWeight: 600,
+                          color: "#374151", borderBottom: "1px solid #e5e7eb",
+                          whiteSpace: "nowrap",
+                        }}>
+                          {col}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.map((row, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                        {previewCols.map((col) => (
+                          <td key={col} style={{
+                            padding: "7px 12px", color: "#374151",
+                            whiteSpace: "nowrap", maxWidth: "200px",
+                            overflow: "hidden", textOverflow: "ellipsis",
+                          }}>
+                            {String(row[col] ?? "")}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {total > preview.length && (
+                  <div style={{ padding: "8px 12px", fontSize: "0.75rem", color: "#9ca3af", borderTop: "1px solid #e5e7eb" }}>
+                    Mostrando {preview.length} de {total.toLocaleString()} registros
+                  </div>
+                )}
+              </div>
+            )}
+
+            {error && (
+              <div style={{
+                padding: "10px 14px", borderRadius: "7px",
+                border: "1px solid #fca5a5", backgroundColor: "#fef2f2",
+                fontSize: "0.85rem", color: "#dc2626",
+              }}>
+                {error}
+              </div>
+            )}
+
+            {/* Buttons */}
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <button
+                type="button"
+                onClick={() => { setStep(1); setError(null) }}
+                style={{
+                  padding: "9px 20px", borderRadius: "7px",
+                  border: "1px solid #e5e7eb", backgroundColor: "#ffffff",
+                  fontSize: "0.875rem", fontWeight: 500, cursor: "pointer", color: "#374151",
+                }}
+              >
+                ← Atrás
+              </button>
+              <button
+                type="button"
+                disabled={loading || erroresCriticos.length > 0}
+                onClick={handleConfirmar}
+                style={{
+                  padding: "9px 24px", borderRadius: "7px", border: "none",
+                  fontSize: "0.875rem", fontWeight: 600,
+                  cursor: loading || erroresCriticos.length > 0 ? "not-allowed" : "pointer",
+                  backgroundColor: erroresCriticos.length > 0 ? "#e5e7eb" : ACCENT,
+                  color: erroresCriticos.length > 0 ? "#9ca3af" : "#050f0d",
+                }}
+              >
+                {loading ? "Guardando…" : "Confirmar carga"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }

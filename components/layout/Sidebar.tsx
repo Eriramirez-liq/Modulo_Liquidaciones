@@ -1,34 +1,155 @@
+"use client"
+
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 
-type SidebarProps = {
-  userRol?: string
-  userName?: string
-}
+type NavItem = { href: string; label: string; icon: string }
 
-const links = [
-  { href: "/", label: "Inicio" },
-  { href: "/cargas", label: "Cargas" },
-  { href: "/conciliaciones", label: "Conciliaciones" },
-  { href: "/fronteras", label: "Fronteras" },
-  { href: "/reportes", label: "Reportes" },
-  { href: "/administracion", label: "Administración" },
+const NAV_ITEMS: NavItem[] = [
+  { href: "/",               label: "Inicio",         icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
+  { href: "/cargas",         label: "Cargas",         icon: "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" },
+  { href: "/conciliaciones", label: "Conciliaciones", icon: "M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" },
+  { href: "/gestiones",      label: "Gestiones",      icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" },
+  { href: "/operadores",     label: "Operadores",     icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" },
+  { href: "/fronteras",      label: "Fronteras",      icon: "M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064" },
+  { href: "/reportes",       label: "Reportes",       icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" },
 ]
 
-export function Sidebar({ userRol, userName }: SidebarProps) {
+const ADMIN_ICON =
+  "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+
+function initials(nombre: string): string {
+  const parts = nombre.trim().split(/\s+/)
+  if (parts.length === 1) return (parts[0]?.[0] ?? "U").toUpperCase()
+  return (parts[0]?.[0] ?? "").toUpperCase() + (parts[parts.length - 1]?.[0] ?? "").toUpperCase()
+}
+
+function isActive(pathname: string, href: string): boolean {
+  if (href === "/") return pathname === "/"
+  return pathname === href || pathname.startsWith(href + "/")
+}
+
+type Props = { userRol?: string; userName?: string }
+
+export function Sidebar({ userRol, userName }: Props) {
+  const pathname = usePathname()
+  const name = userName ?? "Usuario"
+  const rol  = userRol  ?? "ANALISTA"
+  const accent = "#07c5a8"
+
   return (
-    <aside className="w-64 border-r border-border bg-background p-4">
-      <div className="mb-6">
-        <p className="text-sm font-semibold">BIA Conciliación</p>
-        <p className="text-xs text-muted-foreground">{userName ?? "Usuario"}</p>
-        <p className="text-xs text-muted-foreground">{userRol ?? "Sin rol"}</p>
+    <aside style={{
+      width: "240px", minWidth: "240px", height: "100vh",
+      display: "flex", flexDirection: "column",
+      backgroundColor: "#ffffff", borderRight: "1px solid #e5e7eb",
+    }}>
+      {/* Logo */}
+      <div style={{ padding: "20px 16px 16px", display: "flex", alignItems: "center", gap: "10px" }}>
+        <div style={{
+          width: "32px", height: "32px", borderRadius: "8px",
+          backgroundColor: accent, display: "flex", alignItems: "center",
+          justifyContent: "center", flexShrink: 0,
+        }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+               fill="none" stroke="#050f0d" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+        </div>
+        <div style={{ lineHeight: "1.2" }}>
+          <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#111827" }}>BIA Energy</div>
+          <div style={{ fontSize: "0.72rem", color: "#6b7280" }}>Conciliación SDL</div>
+        </div>
       </div>
-      <nav className="flex flex-col gap-2">
-        {links.map((item) => (
-          <Link key={item.href} href={item.href} className="rounded px-2 py-1 text-sm hover:bg-muted">
-            {item.label}
-          </Link>
-        ))}
+
+      {/* Nav */}
+      <nav style={{ flex: 1, padding: "0 8px", overflowY: "auto" }}>
+        <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "2px" }}>
+          {NAV_ITEMS.map(({ href, label, icon }) => {
+            const active = isActive(pathname, href)
+            return (
+              <li key={href}>
+                <Link href={href} style={{
+                  display: "flex", alignItems: "center", gap: "10px",
+                  padding: "8px 10px", borderRadius: "7px",
+                  fontSize: "0.875rem", fontWeight: active ? 600 : 400,
+                  color: active ? "#ffffff" : "#374151",
+                  backgroundColor: active ? accent : "transparent",
+                  textDecoration: "none",
+                }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                       fill="none" stroke="currentColor" strokeWidth="2"
+                       strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d={icon}/>
+                  </svg>
+                  {label}
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+
+        {rol === "ADMINISTRADOR" && (
+          <>
+            <div style={{
+              fontSize: "0.68rem", fontWeight: 600, color: "#9ca3af",
+              textTransform: "uppercase", letterSpacing: "0.08em",
+              padding: "14px 10px 6px",
+            }}>
+              Sistema
+            </div>
+            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              <li>
+                {(() => {
+                  const active = isActive(pathname, "/administracion")
+                  return (
+                    <Link href="/administracion" style={{
+                      display: "flex", alignItems: "center", gap: "10px",
+                      padding: "8px 10px", borderRadius: "7px",
+                      fontSize: "0.875rem", fontWeight: active ? 600 : 400,
+                      color: active ? "#ffffff" : "#374151",
+                      backgroundColor: active ? accent : "transparent",
+                      textDecoration: "none",
+                    }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                           fill="none" stroke="currentColor" strokeWidth="2"
+                           strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <path d={ADMIN_ICON}/>
+                        <circle cx="12" cy="12" r="3"/>
+                      </svg>
+                      Administración
+                    </Link>
+                  )
+                })()}
+              </li>
+            </ul>
+          </>
+        )}
       </nav>
+
+      <hr style={{ margin: "0 16px", border: "none", borderTop: "1px solid #e5e7eb" }}/>
+
+      {/* User */}
+      <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: "10px" }}>
+        <div style={{
+          width: "32px", height: "32px", borderRadius: "50%",
+          backgroundColor: accent, display: "flex", alignItems: "center",
+          justifyContent: "center", fontSize: "0.75rem", fontWeight: 700,
+          color: "#050f0d", flexShrink: 0,
+        }}>
+          {initials(name)}
+        </div>
+        <div style={{ overflow: "hidden" }}>
+          <div style={{
+            fontSize: "0.8rem", fontWeight: 600, color: "#111827",
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          }}>
+            {name}
+          </div>
+          <div style={{ fontSize: "0.72rem", color: "#6b7280" }}>
+            {rol === "ADMINISTRADOR" ? "Administrador" : "Analista"}
+          </div>
+        </div>
+      </div>
     </aside>
   )
 }
