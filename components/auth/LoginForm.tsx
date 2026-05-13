@@ -1,17 +1,35 @@
 "use client"
 
+import { useSearchParams } from "next/navigation"
 import { signIn } from "next-auth/react"
 
+const ERROR_MESSAGES: Record<string, string> = {
+  AccessDenied: "Acceso denegado. Solo se permiten cuentas @bia.app.",
+  OAuthAccountNotLinked: "Este correo ya está vinculado a otro método de acceso.",
+  Default: "Ocurrió un error al iniciar sesión. Intentá de nuevo.",
+}
+
 export function LoginForm() {
+  const searchParams = useSearchParams()
+  const errorCode = searchParams.get("error")
+  const errorMsg = errorCode ? (ERROR_MESSAGES[errorCode] ?? ERROR_MESSAGES.Default) : null
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="mx-auto w-full max-w-sm rounded-xl border border-border bg-card p-8 shadow-sm">
         <div className="mb-6 text-center">
           <h1 className="text-xl font-bold tracking-tight">BIA Conciliación</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Acceso restringido a cuentas <span className="font-medium text-foreground">@bia.app</span>
+            Acceso restringido a cuentas{" "}
+            <span className="font-medium text-foreground">@bia.app</span>
           </p>
         </div>
+
+        {errorMsg && (
+          <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {errorMsg}
+          </div>
+        )}
 
         <button
           onClick={() => signIn("google", { callbackUrl: "/" })}
@@ -27,7 +45,7 @@ export function LoginForm() {
         </button>
 
         <p className="mt-4 text-center text-xs text-muted-foreground">
-          Solo se permite el acceso con cuentas corporativas BIA
+          Solo cuentas corporativas BIA tienen acceso
         </p>
       </div>
     </div>
