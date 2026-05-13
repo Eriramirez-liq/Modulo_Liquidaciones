@@ -297,42 +297,62 @@ function preAire(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const cols = m.columnas!
   const headers = Object.keys(rows[0] ?? {})
 
-  // AIRE file uses non-standard column names — map core fields explicitly
-  const colSic    = resolveCol(headers, "CODIGOSIC")
+  // ── Core columns: AIRE files use non-standard names ─────────────────────
+  const colSic     = resolveCol(headers, "CODIGOSIC")
   const colConsumo = resolveCol(headers, "CONSUMOTOTAL")
-  const colValor  = resolveCol(headers, "TRANSPORTEREGIONAL")
-  const colCli    = resolveCol(headers, "CLIENTE")
-  if (colSic)     cols["codigo_frontera"]   = colSic
-  if (colConsumo) cols["energia_kwh"]       = colConsumo
-  if (colValor)   cols["valor_cop"]         = colValor
-  if (colCli)     cols["nombre_frontera"]   = colCli
+  const colValor   = resolveCol(headers, "TRANSPORTEREGIONAL")
+  const colCli     = resolveCol(headers, "CLIENTE")
+  if (colSic)     cols["codigo_frontera"] = colSic
+  if (colConsumo) cols["energia_kwh"]     = colConsumo
+  if (colValor)   cols["valor_cop"]       = colValor
+  if (colCli)     cols["nombre_frontera"] = colCli
 
-  const colPen = resolveCol(headers, "PENALIZACIONREACTIVA$")
-  const colCap = resolveCol(headers, "REACTIVACAPACITIVA$")
-  if (colPen && colCap) {
+  // ── Energía reactiva (kWh) ──────────────────────────────────────────────
+  // PENALIZACIONREACTIVA  (sin $) = energía reactiva inductiva (kWh)
+  // REACTIVACAPACITIVA    (sin $) = energía reactiva capacitiva (kWh)
+  // Resolución defensiva: usar índice por nombre exacto para evitar que el
+  // substring match agarre "PENALIZACIONREACTIVA$" en vez del kWh.
+  const headerIdx: Record<string, string> = {}
+  for (const h of headers) headerIdx[norm(h)] = h
+  const colKwhInd = headerIdx["PENALIZACIONREACTIVA"] ?? null
+  const colKwhCap = headerIdx["REACTIVACAPACITIVA"]   ?? null
+  if (colKwhInd) cols["energia_reactiva_ind_pen"] = colKwhInd
+  if (colKwhCap) cols["energia_reactiva_cap_pen"] = colKwhCap
+
+  // ── Valor reactiva (COP) = PENALIZACIONREACTIVA$ + REACTIVACAPACITIVA$ ──
+  const colValInd = headerIdx["PENALIZACIONREACTIVA$"] ?? null
+  const colValCap = headerIdx["REACTIVACAPACITIVA$"]   ?? null
+  if (colValInd || colValCap) {
     rows = rows.map(r => ({
       ...r,
       __VALOR_REACTIVA__: String(
-        (toNum(r[colPen]) ?? 0) + (toNum(r[colCap]) ?? 0)
+        (colValInd ? toNum(r[colValInd]) ?? 0 : 0) +
+        (colValCap ? toNum(r[colValCap]) ?? 0 : 0)
       ),
     }))
     cols["valor_reactiva_cop"] = "__VALOR_REACTIVA__"
   }
 
-  const colCopT = resolveCol(headers, "PENALIZACIONREACTIVA$")
-  const colKwh  = resolveCol(headers, "PENALIZACIONREACTIVA")
-  const colM    = resolveCol(headers, "FactorM")
-  if (colCopT && colKwh && colM) {
+  // ── Factor M ────────────────────────────────────────────────────────────
+  const colFactorM = resolveCol(headers, "FactorM") ?? resolveCol(headers, "Factor M")
+  if (colFactorM) cols["factor_m"] = colFactorM
+
+  // ── Tarifa reactiva = PENALIZACIONREACTIVA$ / PENALIZACIONREACTIVA / M ──
+  if (colValInd && colKwhInd && colFactorM) {
     rows = rows.map(r => {
-      const cop = toNum(r[colCopT]) ?? 0
-      const kwh = toNum(r[colKwh])
-      const fm  = toNum(r[colM])
-      const tar = kwh && fm ? cop / kwh / fm : null
+      const cop = toNum(r[colValInd])
+      const kwh = toNum(r[colKwhInd])
+      const fm  = toNum(r[colFactorM])
+      let tar: number | null = null
+      if (cop != null && kwh && kwh !== 0 && fm && fm !== 0) {
+        tar = cop / kwh / fm
+      }
       return { ...r, __TARIFA_REACTIVA__: tar != null ? String(tar) : "" }
     })
     cols["tarifa_reactiva"] = "__TARIFA_REACTIVA__"
   }
 
+  // ── Nivel de tensión: extraer dígitos ("N3" → "3", "N2" → "2") ──────────
   const colNT = resolveCol(headers, "NT")
   if (colNT) {
     rows = rows.map(r => ({
@@ -342,13 +362,27 @@ function preAire(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
     cols["nivel_tension"] = "__NT__"
   }
 
+  // ── Propiedad: NT 2/3 → Usuario; NT 1 → leer columna PROPIETARIO_ACTIVO ─
   const colProp = resolveCol(headers, "PROPIETARIO_ACTIVO")
-  if (colProp) {
+  if (colNT || colProp) {
     rows = rows.map(r => {
-      const v = (r[colProp] ?? "").trim().toUpperCase()
-      const mapped = v.includes("OPERADOR DE RED") ? "OR"
-                   : v.includes("USUARIO") ? "Usuario"
-                   : (r[colProp] ?? "").trim()
+      const ntStr = (r["__NT__"] ?? "").trim()
+      const nt    = parseInt(ntStr, 10)
+      let mapped = ""
+      if (nt === 2 || nt === 3) {
+        mapped = "Usuario"
+      } else if (nt === 1 && colProp) {
+        const v = (r[colProp] ?? "").trim().toUpperCase()
+        if      (v.includes("OPERADOR DE RED")) mapped = "OR"
+        else if (v.includes("USUARIO"))         mapped = "Usuario"
+        else                                     mapped = (r[colProp] ?? "").trim()
+      } else if (colProp) {
+        // NT vacío/ilegible — usar la columna directamente como respaldo
+        const v = (r[colProp] ?? "").trim().toUpperCase()
+        if      (v.includes("OPERADOR DE RED")) mapped = "OR"
+        else if (v.includes("USUARIO"))         mapped = "Usuario"
+        else                                     mapped = (r[colProp] ?? "").trim()
+      }
       return { ...r, __PROPIEDAD__: mapped }
     })
     cols["propiedad_activos"] = "__PROPIEDAD__"
