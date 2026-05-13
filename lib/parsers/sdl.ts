@@ -60,7 +60,33 @@ function resolveColMulti(headers: string[], candidates: string[]): string | null
 
 function toNum(v: string | undefined | null): number | null {
   if (v == null || v === "") return null
-  const n = parseFloat(String(v).replace(/,/g, "").trim())
+  // Strip currency symbols, spaces, and non-numeric chars except . , -
+  let s = String(v).replace(/[^0-9.,\-]/g, "").trim()
+  if (!s) return null
+  if (s.includes(",") && s.includes(".")) {
+    // Both separators: last one is the decimal
+    const lastComma = s.lastIndexOf(",")
+    const lastDot   = s.lastIndexOf(".")
+    if (lastComma > lastDot) {
+      // "1.234.567,89" → European: dots=thousands, comma=decimal
+      s = s.replace(/\./g, "").replace(",", ".")
+    } else {
+      // "1,234,567.89" → US: commas=thousands, dot=decimal
+      s = s.replace(/,/g, "")
+    }
+  } else if (s.includes(",")) {
+    const parts = s.split(",")
+    // "1,56" (2 parts, last ≤2 chars) → decimal comma; else thousands
+    if (parts.length === 2 && (parts[1]?.length ?? 0) <= 2) {
+      s = s.replace(",", ".")
+    } else {
+      s = s.replace(/,/g, "")
+    }
+  } else if ((s.match(/\./g) ?? []).length > 1) {
+    // "1.234.567" → multiple dots = thousands separators
+    s = s.replace(/\./g, "")
+  }
+  const n = parseFloat(s)
   return isNaN(n) ? null : n
 }
 
@@ -93,8 +119,9 @@ function readRows(buffer: Buffer, mapeo: MapeoSDL): Row[] {
     return rows
   }
 
-  // xlsx / xls
-  const wb = XLSX.read(buffer, { type: "buffer", cellText: true, cellDates: false })
+  // xlsx / xls — use raw:true so numeric cells return as numbers, avoiding
+  // locale-formatted strings like "$ 1.234.567,89" that break parseFloat
+  const wb = XLSX.read(buffer, { type: "buffer", cellDates: false })
   const sheetName = typeof hoja === "number" ? wb.SheetNames[hoja] : hoja
   const ws = wb.Sheets[sheetName ?? wb.SheetNames[0] ?? ""]
   if (!ws) return []
@@ -102,9 +129,9 @@ function readRows(buffer: Buffer, mapeo: MapeoSDL): Row[] {
   const raw = XLSX.utils.sheet_to_json<Row>(ws, {
     header: 1,
     defval: "",
-    raw: false,
+    raw: true,
     skipHidden: false,
-  }) as unknown as string[][]
+  }) as unknown as (string | number)[][]
 
   if (raw.length <= skip) return []
   const headers = (raw[skip] ?? []).map(h => String(h ?? "").trim())
