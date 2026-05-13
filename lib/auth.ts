@@ -12,20 +12,21 @@ type AppSession = {
 }
 
 export async function auth(): Promise<AppSession | null> {
-  const user = await db.user.findFirst({
-    orderBy: { createdAt: "asc" },
-    select: { id: true, nombre: true, rol: true },
-  })
-
-  if (user) {
-    return { user }
+  try {
+    const user = await db.user.findFirst({
+      orderBy: { createdAt: "asc" },
+      select: { id: true, nombre: true, rol: true },
+    })
+    if (user) return { user }
+  } catch {
+    // DB no disponible — continuar con sesión de desarrollo
   }
 
   return {
     user: {
       id: "dev-user",
       nombre: "Usuario Desarrollo",
-      rol: "ADMIN",
+      rol: "ADMINISTRADOR",
     },
   }
 }
