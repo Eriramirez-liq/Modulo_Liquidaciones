@@ -9,8 +9,7 @@
 --   (*) AIRE: mapeo_sdl_json=NULL es correcto — usa MAPEO_SDL_DEFAULT +
 --       preprocessor propio (reactiva calculada, NT normalizado, propiedad)
 --   configurado (pendiente prueba): ENEL
---   pendiente validación con archivo: EMCALI, ENERCA, EPM
---   pendiente mapeo SDL: ELECTROHUILA
+--   pendiente mapeo SDL: ELECTROHUILA, EMCALI, ENERCA, EPM
 -- ================================================================
 
 INSERT INTO configuracion_or (id, codigo, nombre, activo, mapeo_sdl_json, mapeo_balance_json)
@@ -43,15 +42,15 @@ VALUES
 (gen_random_uuid()::text, 'EEP_PEREIRA', 'EEP Pereira', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 3, "separador_csv": ",", "columnas": {"codigo_frontera": "SIC", "energia_kwh": "Energía Activa ", "valor_cop": "Valor $ Activa", "periodo": null, "nivel_tension": "Nivel Tension", "propiedad_activos": null, "energia_reactiva_ind_pen": "Energía Reactiva Inductiva", "energia_reactiva_cap_pen": "Energía Reactiva Capacitiva", "valor_reactiva_cop": "Valor $ Reactiva Inductiva", "factor_m": "Factor M"}}'::jsonb, NULL),
 -- ELECTROHUILA: pendiente mapeo SDL
 (gen_random_uuid()::text, 'ELECTROHUILA', 'Electrohuila', true, NULL, NULL),
--- EMCALI: pendiente validacion con archivo
+-- EMCALI: pendiente mapeo SDL
 (gen_random_uuid()::text, 'EMCALI', 'Emcali', true, NULL, NULL),
 -- EMSA: validado con archivo
 (gen_random_uuid()::text, 'EMSA', 'Emsa', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "CODIGO", "energia_kwh": "kWhR", "valor_cop": null, "periodo": null, "nivel_tension": null, "propiedad_activos": null, "energia_reactiva_ind_pen": null, "energia_reactiva_cap_pen": null, "valor_reactiva_cop": null, "tarifa_reactiva": null, "tarifa_sdl": null, "factor_m": null, "codigo_frontera_split": null}, "multi_archivos": true}'::jsonb, NULL),
 -- ENEL: configurado — pendiente cargar archivo de prueba
 (gen_random_uuid()::text, 'ENEL', 'Enel', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "CODIGO SIC", "energia_kwh": "CONSUMO ACTIVA", "valor_cop": "VALOR SDL ACT", "periodo": null, "nivel_tension": "NIVEL TENSION", "propiedad_activos": null, "energia_reactiva_ind_pen": "CONSUMO REACTIVA", "energia_reactiva_cap_pen": null, "valor_reactiva_cop": "VALOR SDL REAC", "factor_m": null}}'::jsonb, NULL),
--- ENERCA: pendiente validacion con archivo
+-- ENERCA: pendiente mapeo SDL
 (gen_random_uuid()::text, 'ENERCA', 'Enerca', true, NULL, NULL),
--- EPM: pendiente validacion con archivo
+-- EPM: pendiente mapeo SDL
 (gen_random_uuid()::text, 'EPM', 'EPM', true, NULL, NULL),
 -- ESSA: validado con archivo
 (gen_random_uuid()::text, 'ESSA', 'ESSA', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 5, "separador_csv": ",", "columnas": {"codigo_frontera": "CODIGO SIC", "energia_kwh": "DEFINITIVO", "valor_cop": "PEAJE ACTIVA", "periodo": null, "nivel_tension": "NIVEL TENSION", "propiedad_activos": "PROPIEDAD", "energia_reactiva_ind_pen": "REACTIVA PENALIZADA", "energia_reactiva_cap_pen": "CAPACITIVA PENALIZADA", "valor_reactiva_cop": "PEAJE INDUCTIVA", "factor_m": "M DIC"}}'::jsonb, NULL),
