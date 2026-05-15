@@ -940,6 +940,16 @@ function preCedenar(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const colActiva  = resolveCol(headers, "Activa")
   const colPenal   = resolveCol(headers, "Penalizada")
   const colTarifaI = resolveCol(headers, "TARIFA I")
+  const colUsuario = resolveCol(headers, "USUARIO")
+
+  // Nombre de frontera: columna USUARIO
+  if (colUsuario) cols["nombre_frontera"] = colUsuario
+
+  // Tarifa SDL (activa): viene directa de "VALOR TARIFA ACTIVA ($)"
+  if (colTarAct) cols["tarifa_sdl"] = colTarAct
+
+  // Tarifa reactiva: viene directa de "VALOR TARIFA REACTIVA ($)"
+  if (colTarReac) cols["tarifa_reactiva"] = colTarReac
 
   // Valor activa = VALOR TARIFA ACTIVA × Activa
   if (colTarAct && colActiva) {
