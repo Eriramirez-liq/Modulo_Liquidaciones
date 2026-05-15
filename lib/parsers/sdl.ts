@@ -106,10 +106,11 @@ function readRows(buffer: Buffer, mapeo: MapeoSDL): Row[] {
 
   if (tipo === "csv") {
     const sep  = mapeo.separador_csv ?? ","
-    const encodings: BufferEncoding[] = ["utf8", "latin1"]
-    let text = ""
-    for (const enc of encodings) {
-      try { text = buffer.toString(enc); break } catch { /* try next */ }
+    // Intento UTF-8 primero; si aparecen caracteres de reemplazo (�),
+    // el archivo es Latin-1 / cp1252 y reintentamos con ese encoding.
+    let text = buffer.toString("utf8")
+    if (text.includes("�")) {
+      text = buffer.toString("latin1")
     }
     const lines = text.split(/\r?\n/)
     const headerLine = lines[skip] ?? ""
@@ -391,21 +392,51 @@ function preAire(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   return { rows, mapeo: m }
 }
 
-// ─── CELSIA_TOLIMA (also CELSIA_VALLE, CETSA) ────────────────────────────────
+// ─── CELSIA_TOLIMA (también CELSIA_VALLE y CETSA — mismo formato) ────────────
 function preCelsiaTolima(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const m = deepCloneMapeo(mapeo)
   const cols = m.columnas!
   const headers = Object.keys(rows[0] ?? {})
+
+  // Mapeo explícito de columnas (el seed tiene caracteres corruptos como
+  // "C?igo SIC" porque se guardó sin UTF-8). El preprocesador resuelve
+  // los nombres correctos directamente desde el archivo decodificado.
+  const colSic     = resolveCol(headers, "Código SIC")  ?? resolveCol(headers, "Codigo SIC")
+  const colNT      = resolveCol(headers, "Nivel Tensión") ?? resolveCol(headers, "Nivel Tension")
+  const colKwh     = resolveCol(headers, "Activa KWh")
+  const colValor   = resolveCol(headers, "$Peaje Activa")
+  const colValReac = resolveCol(headers, "$Peaje Reactiva")
+  const colReacInd = resolveCol(headers, "Reactiva Inductiva Penalizada kVAr")
+  const colReacCap = resolveCol(headers, "Reactiva Capacitiva Penal kVAr")
+  const colFactorM = resolveCol(headers, "Factor M")
+  const colTarAct  = resolveCol(headers, "Tarifa Activa $/KWh")
+  const colTarReac = resolveCol(headers, "Tarifa Reactiva $/kVAr")
+  const colNombre  = resolveCol(headers, "Nombre Facturación")
+                  ?? resolveCol(headers, "Nombre Facturacion")
+
+  if (colSic)     cols["codigo_frontera"]          = colSic
+  if (colNT)      cols["nivel_tension"]            = colNT
+  if (colKwh)     cols["energia_kwh"]              = colKwh
+  if (colValor)   cols["valor_cop"]                = colValor
+  if (colValReac) cols["valor_reactiva_cop"]       = colValReac
+  if (colReacInd) cols["energia_reactiva_ind_pen"] = colReacInd
+  if (colReacCap) cols["energia_reactiva_cap_pen"] = colReacCap
+  if (colFactorM) cols["factor_m"]                 = colFactorM
+  if (colTarAct)  cols["tarifa_sdl"]               = colTarAct
+  if (colTarReac) cols["tarifa_reactiva"]          = colTarReac
+  if (colNombre)  cols["nombre_frontera"]          = colNombre
+
+  // Propiedad: 100% USUARIO/N/A → Usuario, 100% OPERADOR → OR, 50% OPERADOR → Compartido
   const colProp = resolveCol(headers, "Propiedad Activo")
   if (colProp) {
     rows = rows.map(r => {
       const v = (r[colProp] ?? "").trim().toUpperCase()
-      let mapped: string | null
+      let mapped: string
       if (v === "N/A" || v === "" || v.includes("USUARIO")) mapped = "Usuario"
       else if (v.includes("50%") && v.includes("OPERADOR")) mapped = "Compartido"
       else if (v.includes("OPERADOR")) mapped = "OR"
-      else mapped = (r[colProp] ?? "").trim() || null
-      return { ...r, __PROPIEDAD__: mapped ?? "" }
+      else mapped = (r[colProp] ?? "").trim()
+      return { ...r, __PROPIEDAD__: mapped }
     })
     cols["propiedad_activos"] = "__PROPIEDAD__"
   }
