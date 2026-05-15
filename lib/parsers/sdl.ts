@@ -468,17 +468,35 @@ function preCens(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   }
 
   // Valor reactiva = Valor R_Inductiva + Valor R_Capacitiva
-  const colInd = resolveCol(headers, "Valor R_Inductiva")
-  const colCap = resolveCol(headers, "Valor R_Capacitiva")
-  if (colInd || colCap) {
+  const colValInd = resolveCol(headers, "Valor R_Inductiva")
+  const colValCap = resolveCol(headers, "Valor R_Capacitiva")
+  if (colValInd || colValCap) {
     rows = rows.map(r => ({
       ...r,
       __VALOR_REACTIVA__: String(
-        (colInd ? toNum(r[colInd]) ?? 0 : 0) +
-        (colCap ? toNum(r[colCap]) ?? 0 : 0)
+        (colValInd ? toNum(r[colValInd]) ?? 0 : 0) +
+        (colValCap ? toNum(r[colValCap]) ?? 0 : 0)
       ),
     }))
     cols["valor_reactiva_cop"] = "__VALOR_REACTIVA__"
+  }
+
+  // Tarifa reactiva = Valor R_Inductiva / R_Inductiva / Factor M
+  const colKwhInd  = resolveCol(headers, "R_Inductiva")
+  const colFactorM = resolveCol(headers, "Factor M")
+  if (colValInd && colKwhInd && colFactorM) {
+    rows = rows.map(r => {
+      const v = toNum(r[colValInd])
+      const k = toNum(r[colKwhInd])
+      const f = toNum(r[colFactorM])
+      let tar: number | null = null
+      if (v != null && k && k !== 0) {
+        tar = v / k
+        if (f && f !== 0) tar = tar / f
+      }
+      return { ...r, __TARIFA_REACTIVA__: tar != null ? String(tar) : "" }
+    })
+    cols["tarifa_reactiva"] = "__TARIFA_REACTIVA__"
   }
 
   return { rows, mapeo: m }
