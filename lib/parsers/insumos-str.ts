@@ -75,19 +75,41 @@ function toNum(v: unknown): number | null {
   return isNaN(n) ? null : n
 }
 
-// Auto-detecta la fila del header: la primera fila (de las primeras 20)
-// que contenga al menos 3 códigos conocidos de operador. Si no encuentra,
-// usa el default 6 (equivalente al header=6 del script Python).
+// Auto-detecta la fila del header eligiendo aquella con la MAYOR cantidad
+// de celdas individuales que contienen códigos de operador.
+//
+// Esto evita el falso positivo donde una fila descriptiva con todos los
+// códigos en una sola celda (ej. "Reporte ... CMMD CSID CSSD") era elegida
+// en vez del header real donde cada código está en una celda separada.
 function detectarFilaHeader(matrix: (string | number)[][]): number {
   const codigos = Object.keys(HOMOLOGACION)
   const maxScan = Math.min(matrix.length, 20)
+  let best = 6  // default: equivalente a Python header=6
+  let bestScore = 0
   for (let i = 0; i < maxScan; i++) {
     const row = matrix[i] ?? []
-    const text = row.map(v => String(v ?? "")).join(" ").toUpperCase()
-    const hits = codigos.filter(c => text.includes(c)).length
-    if (hits >= 3) return i
+    let cellsWithCode = 0
+    for (const cell of row) {
+      const text = String(cell ?? "").toUpperCase()
+      if (codigos.some(c => text.includes(c))) cellsWithCode++
+    }
+    if (cellsWithCode > bestScore) {
+      best = i
+      bestScore = cellsWithCode
+    }
   }
-  return 6
+  return best
+}
+
+// Busca una pestaña por nombre tolerando diferencias de espacios,
+// underscores y mayúsculas (ej. "BalSTR01_Ajuste" ≡ "BalSTR01 Ajuste").
+function buscarPestana(wb: XLSX.WorkBook, nombre: string): XLSX.WorkSheet | null {
+  const norm = (s: string) => s.replace(/[\s_]+/g, "").toUpperCase()
+  const target = norm(nombre)
+  for (const sheetName of wb.SheetNames) {
+    if (norm(sheetName) === target) return wb.Sheets[sheetName] ?? null
+  }
+  return null
 }
 
 // Búsqueda flexible de la fila BIAC-BIAE:
@@ -136,10 +158,44 @@ export async function parsearInsumosSTR(
     return { filas, alertas, erroresCriticos }
   }
 
+  // ── PASO 1: Determinar mes_consumo del LOTE ─────────────────────────────
+  // Buscamos en el archivo FACTURA (tipofactu) primero. Ese mes se aplica
+  // a TODOS los archivos del upload, incluidas las REFACTURAs — replicando
+  // el comportamiento del script Python original.
+  let mesConsumoNum: number | null = null
+  let mesConsumoSource = ""
+  for (const { nombre } of buffers) {
+    const lower = nombre.toLowerCase()
+    if (lower.includes("tipofactu") && !lower.includes("tiporefactu")) {
+      mesConsumoNum = detectarMesConsumo(nombre)
+      if (mesConsumoNum) { mesConsumoSource = nombre; break }
+    }
+  }
+  // Fallback: si no hay FACTURA, usar el primer archivo con un mes detectable
+  if (mesConsumoNum == null) {
+    for (const { nombre } of buffers) {
+      mesConsumoNum = detectarMesConsumo(nombre)
+      if (mesConsumoNum) { mesConsumoSource = nombre; break }
+    }
+  }
+  if (mesConsumoNum == null) {
+    erroresCriticos.push(
+      "No se pudo determinar el mes de consumo del lote: ningún archivo " +
+      'tiene un mes válido en su nombre (ej. "-ene", "_feb", ...).',
+    )
+    return { filas, alertas, erroresCriticos }
+  }
+  const anioConsumo = mesConsumoNum > mes ? anio - 1 : anio
+  const mesConsumoStr = `${anioConsumo}-${String(mesConsumoNum).padStart(2, "0")}`
+  alertas.push(
+    `Mes de consumo del lote: ${mesConsumoStr} ` +
+    `(detectado de "${mesConsumoSource}").`,
+  )
+
+  // ── PASO 2: Procesar cada archivo con el mes_consumo del lote ───────────
   for (const { buffer, nombre } of buffers) {
     const lower = nombre.toLowerCase()
 
-    // ── 1. Determinar tipo y pestañas a leer ────────────────────────────
     let tipo: "FACTURA" | "REFACTURA"
     let pestanas: string[]
     if (lower.includes("tiporefactu")) {
@@ -152,16 +208,6 @@ export async function parsearInsumosSTR(
       alertas.push(`[${nombre}] omitido — el nombre no contiene "tipofactu" ni "tiporefactu".`)
       continue
     }
-
-    // ── 2. Detectar mes de consumo ──────────────────────────────────────
-    const mesConsumoNum = detectarMesConsumo(nombre)
-    if (mesConsumoNum == null) {
-      alertas.push(`[${nombre}] omitido — no se pudo detectar el mes de consumo (ej. -ene, _feb, ...).`)
-      continue
-    }
-    // Si el mes de consumo es posterior al de facturación, asumimos año anterior
-    const anioConsumo = mesConsumoNum > mes ? anio - 1 : anio
-    const mesConsumoStr = `${anioConsumo}-${String(mesConsumoNum).padStart(2, "0")}`
 
     // ── 3-5. Leer pestañas y acumular ───────────────────────────────────
     const valoresPorOR: Record<string, number> = {}
@@ -177,8 +223,8 @@ export async function parsearInsumosSTR(
     const diagnosticos: string[] = []
 
     for (const tabName of pestanas) {
-      const ws = wb.Sheets[tabName]
-      if (!ws) continue  // pestaña no existe — silencioso (algunos archivos solo tienen una)
+      const ws = buscarPestana(wb, tabName)
+      if (!ws) continue  // pestaña no existe — silencioso
 
       const matrix = XLSX.utils.sheet_to_json<unknown[]>(ws, {
         header: 1,
@@ -191,14 +237,13 @@ export async function parsearInsumosSTR(
         continue
       }
 
-      // Auto-detectar fila del header (busca códigos conocidos en las primeras 20 filas)
+      // Auto-detectar fila del header
       const filaHeader = detectarFilaHeader(matrix)
       const headers = (matrix[filaHeader] ?? []).map(h => String(h ?? "").trim())
 
-      // Buscar fila BIAC-BIAE de forma flexible (cualquiera de las primeras 4 cols)
+      // Buscar fila BIAC-BIAE flexible (primeras 4 columnas, normalizando dashes/espacios)
       const filaBiacIdx = buscarFilaBiac(matrix, filaHeader + 1)
       if (filaBiacIdx < 0) {
-        // Sample de las primeras filas de datos para que el usuario pueda diagnosticar
         const sample: string[] = []
         for (let i = filaHeader + 1; i < Math.min(matrix.length, filaHeader + 8); i++) {
           const cellA = String(matrix[i]?.[0] ?? "").trim()
@@ -214,16 +259,16 @@ export async function parsearInsumosSTR(
       }
       const biacRow = matrix[filaBiacIdx] ?? []
 
-      // Para cada columna, si el header contiene un código → sumar al operador
+      // Match de códigos en headers — case-insensitive vía toUpperCase
       for (let j = 0; j < headers.length; j++) {
-        const header = headers[j] ?? ""
+        const headerUpper = (headers[j] ?? "").toUpperCase()
         for (const [codigo, orCodigo] of Object.entries(HOMOLOGACION)) {
-          if (header.includes(codigo)) {
+          if (headerUpper.includes(codigo)) {
             const val = toNum(biacRow[j])
             if (val != null) {
               valoresPorOR[orCodigo] = (valoresPorOR[orCodigo] ?? 0) + val
             }
-            break  // un código por header
+            break
           }
         }
       }
