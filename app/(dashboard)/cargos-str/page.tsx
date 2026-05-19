@@ -35,10 +35,15 @@ export default function CargosSTRPage() {
   const [filtrado, setFiltrado]     = useState(false)
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/cargos-str/meses").then(r => r.json()),
-      fetch("/api/operadores?tipo=str").then(r => r.json()),
-    ]).then(([ms, ors]) => { setMesesDisp(ms); setOperadores(ors) })
+    fetch("/api/cargos-str/meses")
+      .then(r => r.ok ? r.json() : [])
+      .then((ms) => setMesesDisp(Array.isArray(ms) ? ms : []))
+      .catch(() => setMesesDisp([]))
+
+    fetch("/api/operadores?tipo=str")
+      .then(r => r.ok ? r.json() : [])
+      .then((ors) => setOperadores(Array.isArray(ors) ? ors : []))
+      .catch(() => setOperadores([]))
   }, [])
 
   async function filtrar() {

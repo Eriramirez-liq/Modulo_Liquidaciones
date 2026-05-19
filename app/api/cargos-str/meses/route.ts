@@ -16,20 +16,40 @@ export async function GET() {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
 
-  const [registrosMeses, periodos] = await Promise.all([
-    db.registroSTR.findMany({
+  const set = new Set<string>()
+
+  // Si la tabla registros_str aún no existe (migración pendiente),
+  // simplemente seguimos con los meses de periodos_conciliacion.
+  try {
+    const registrosMeses = await db.registroSTR.findMany({
       select: { mes_consumo: true },
       distinct: ["mes_consumo"],
-    }),
-    db.periodoConciliacion.findMany({
+    })
+    for (const r of registrosMeses) set.add(r.mes_consumo)
+  } catch (e) {
+    console.warn("[cargos-str/meses] registros_str no disponible:", e)
+  }
+
+  // Fallback: meses derivados de los períodos de conciliación existentes.
+  try {
+    const periodos = await db.periodoConciliacion.findMany({
       select: { anio: true, mes: true },
       orderBy: [{ anio: "desc" }, { mes: "desc" }],
-    }),
-  ])
+    })
+    for (const p of periodos) set.add(`${p.anio}-${String(p.mes).padStart(2, "0")}`)
+  } catch (e) {
+    console.warn("[cargos-str/meses] periodos_conciliacion no disponible:", e)
+  }
 
-  const set = new Set<string>()
-  for (const r of registrosMeses) set.add(r.mes_consumo)
-  for (const p of periodos) set.add(`${p.anio}-${String(p.mes).padStart(2, "0")}`)
+  // Si no hay nada en DB, ofrecer los últimos 12 meses como opciones por defecto
+  // (así el usuario puede al menos filtrar aunque aún no haya datos).
+  if (set.size === 0) {
+    const now = new Date()
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      set.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`)
+    }
+  }
 
   const meses = Array.from(set).sort().reverse()
   return NextResponse.json(meses)
