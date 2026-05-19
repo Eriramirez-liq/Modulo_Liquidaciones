@@ -4,41 +4,42 @@ import { useState, useEffect } from "react"
 const MES_NOMBRE = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
 
+type Periodo  = { id: string; anio: number; mes: number; estado: string }
 type Operador = { id: string; codigo: string; nombre: string }
 
 type Resultado = {
-  meses: string[]
-  operadores: { codigo: string; nombre: string; totales: Record<string, number>; total: number }[]
-  totalPorMes: Record<string, number>
-  totalGeneral: number
+  periodos:        { id: string; facturacion: string; consumo: string }[]
+  operadores:      { codigo: string; nombre: string; totales: Record<string, number>; total: number }[]
+  totalPorPeriodo: Record<string, number>
+  totalGeneral:    number
 }
 
 function cop(v: number) {
   return `$ ${v.toLocaleString("es-CO", { maximumFractionDigits: 0 })}`
 }
 
-function mesLabel(mes: string): string {
+function mesLabel(periodoStr: string): string {
   // "2026-02" → "Febrero 2026"
-  const [a, m] = mes.split("-")
+  const [a, m] = periodoStr.split("-")
   const n = parseInt(m ?? "", 10)
-  if (!a || isNaN(n) || n < 1 || n > 12) return mes
+  if (!a || isNaN(n) || n < 1 || n > 12) return periodoStr
   return `${MES_NOMBRE[n]} ${a}`
 }
 
 export default function CargosSTRPage() {
-  const [mesesDisp, setMesesDisp]   = useState<string[]>([])   // AAAA-MM disponibles
+  const [periodos, setPeriodos]     = useState<Periodo[]>([])
   const [operadores, setOperadores] = useState<Operador[]>([])
-  const [mesesSel, setMesesSel]     = useState<string[]>([])   // AAAA-MM
-  const [orSel, setOrSel]           = useState<string[]>([])   // ids
+  const [periodoSel, setPeriodoSel] = useState<string[]>([])
+  const [orSel, setOrSel]           = useState<string[]>([])
   const [data, setData]             = useState<Resultado | null>(null)
   const [loading, setLoading]       = useState(false)
   const [filtrado, setFiltrado]     = useState(false)
 
   useEffect(() => {
-    fetch("/api/cargos-str/meses")
+    fetch("/api/periodos")
       .then(r => r.ok ? r.json() : [])
-      .then((ms) => setMesesDisp(Array.isArray(ms) ? ms : []))
-      .catch(() => setMesesDisp([]))
+      .then((ps) => setPeriodos(Array.isArray(ps) ? ps : []))
+      .catch(() => setPeriodos([]))
 
     fetch("/api/operadores?tipo=str")
       .then(r => r.ok ? r.json() : [])
@@ -50,29 +51,32 @@ export default function CargosSTRPage() {
     setLoading(true)
     setFiltrado(true)
     const params = new URLSearchParams()
-    if (mesesSel.length > 0) params.set("mesesConsumo", mesesSel.join(","))
-    if (orSel.length > 0)    params.set("orIds",        orSel.join(","))
+    if (periodoSel.length > 0) params.set("periodoIds", periodoSel.join(","))
+    if (orSel.length      > 0) params.set("orIds",      orSel.join(","))
     const res = await fetch(`/api/cargos-str?${params}`)
     setData(await res.json())
     setLoading(false)
   }
 
-  function toggleMes(m: string) {
-    setMesesSel(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m])
+  function togglePeriodo(id: string) {
+    setPeriodoSel(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }
   function toggleOR(id: string) {
     setOrSel(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }
-  function selectAllMeses() { setMesesSel(mesesDisp) }
-  function clearMeses()     { setMesesSel([]) }
-  function selectAllORs()   { setOrSel(operadores.map(o => o.id)) }
-  function clearORs()       { setOrSel([]) }
+  function selectAllPeriodos() { setPeriodoSel(periodos.map(p => p.id)) }
+  function clearPeriodos()     { setPeriodoSel([]) }
+  function selectAllORs()      { setOrSel(operadores.map(o => o.id)) }
+  function clearORs()          { setOrSel([]) }
 
-  const mesesSummary = mesesSel.length === 0
-    ? "Todos los meses"
-    : mesesSel.length === 1
-      ? mesLabel(mesesSel[0]!)
-      : `${mesesSel.length} meses`
+  const periodoSummary = periodoSel.length === 0
+    ? "Todos los períodos"
+    : periodoSel.length === 1
+      ? (() => {
+          const p = periodos.find(x => x.id === periodoSel[0])
+          return p ? `${MES_NOMBRE[p.mes]} ${p.anio}` : "1 período"
+        })()
+      : `${periodoSel.length} períodos`
 
   const orSummary = orSel.length === 0
     ? "Todos"
@@ -87,7 +91,7 @@ export default function CargosSTRPage() {
           Cargos STR
         </h1>
         <p style={{ fontSize: "0.875rem", color: "#6b7280", margin: 0 }}>
-          Cargos calculados a partir de los Insumos STR, totalizados por operador y mes de consumo.
+          Cargos calculados a partir de los Insumos STR, totalizados por operador.
         </p>
       </div>
 
@@ -95,13 +99,16 @@ export default function CargosSTRPage() {
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "16px 20px" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
           <MultiSelect
-            label="Período de consumo"
-            summary={mesesSummary}
-            options={mesesDisp.map(m => ({ id: m, label: mesLabel(m) }))}
-            selected={mesesSel}
-            onToggle={toggleMes}
-            onSelectAll={selectAllMeses}
-            onClear={clearMeses}
+            label="Período de facturación"
+            summary={periodoSummary}
+            options={periodos.map(p => ({
+              id:    p.id,
+              label: `${MES_NOMBRE[p.mes]} ${p.anio}`,
+            }))}
+            selected={periodoSel}
+            onToggle={togglePeriodo}
+            onSelectAll={selectAllPeriodos}
+            onClear={clearPeriodos}
           />
           <MultiSelect
             label="Operador de Red"
@@ -136,7 +143,7 @@ export default function CargosSTRPage() {
           <div style={{ padding: "40px", textAlign: "center", color: "#9ca3af", fontSize: "0.9rem" }}>
             Cargando…
           </div>
-        ) : !data || data.operadores.length === 0 ? (
+        ) : !data || data.operadores.length === 0 || data.periodos.length === 0 ? (
           <div style={{ padding: "40px", textAlign: "center", color: "#9ca3af", fontSize: "0.9rem" }}>
             No hay cargos STR para los filtros seleccionados.
           </div>
@@ -149,11 +156,18 @@ export default function CargosSTRPage() {
 }
 
 function ResultsTable({ data }: { data: Resultado }) {
-  const thStyle: React.CSSProperties = {
-    padding: "10px 14px", fontSize: "0.78rem", fontWeight: 600,
-    color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em",
-    textAlign: "left", borderBottom: "1px solid #e5e7eb",
-    background: "#f9fafb", whiteSpace: "nowrap",
+  const multiplePeriodos = data.periodos.length > 1
+  const thTopStyle: React.CSSProperties = {
+    padding: "10px 14px", fontSize: "0.78rem", fontWeight: 700,
+    color: "#1e3a8a", textAlign: "left",
+    background: "#dbeafe", whiteSpace: "nowrap",
+    borderBottom: "1px solid #bfdbfe",
+  }
+  const thSubStyle: React.CSSProperties = {
+    padding: "8px 14px", fontSize: "0.78rem", fontWeight: 600,
+    color: "#1e3a8a", textAlign: "left",
+    background: "#eff6ff", whiteSpace: "nowrap",
+    borderBottom: "2px solid #bfdbfe",
   }
   const tdStyle: React.CSSProperties = {
     padding: "8px 14px", fontSize: "0.875rem", color: "#374151",
@@ -164,28 +178,40 @@ function ResultsTable({ data }: { data: Resultado }) {
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
+          {/* Fila 1: Mes facturación */}
           <tr>
-            <th style={thStyle}>Operador</th>
-            {data.meses.map(m => (
-              <th key={m} style={{ ...thStyle, textAlign: "right" }}>
-                {mesLabel(m)}
+            <th style={thTopStyle}>Mes facturación</th>
+            {data.periodos.map(p => (
+              <th key={`f-${p.id}`} style={{ ...thTopStyle, textAlign: "center" }}>
+                {mesLabel(p.facturacion)}
               </th>
             ))}
-            <th style={{ ...thStyle, textAlign: "right" }}>Total</th>
+            {multiplePeriodos && <th style={{ ...thTopStyle, textAlign: "right" }} rowSpan={2}>Total</th>}
+          </tr>
+          {/* Fila 2: Mes consumo */}
+          <tr>
+            <th style={thSubStyle}>Mes Consumo</th>
+            {data.periodos.map(p => (
+              <th key={`c-${p.id}`} style={{ ...thSubStyle, textAlign: "center" }}>
+                {mesLabel(p.consumo)}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {data.operadores.map(o => (
             <tr key={o.codigo}>
-              <td style={{ ...tdStyle, fontWeight: 500 }}>{o.nombre}</td>
-              {data.meses.map(m => (
-                <td key={m} style={{ ...tdStyle, textAlign: "right", fontFamily: "monospace" }}>
-                  {cop(o.totales[m] ?? 0)}
+              <td style={{ ...tdStyle, fontWeight: 600, textAlign: "center" }}>{o.nombre}</td>
+              {data.periodos.map(p => (
+                <td key={p.id} style={{ ...tdStyle, textAlign: "right", fontFamily: "monospace" }}>
+                  {cop(o.totales[p.id] ?? 0)}
                 </td>
               ))}
-              <td style={{ ...tdStyle, textAlign: "right", fontFamily: "monospace", fontWeight: 600 }}>
-                {cop(o.total)}
-              </td>
+              {multiplePeriodos && (
+                <td style={{ ...tdStyle, textAlign: "right", fontFamily: "monospace", fontWeight: 600 }}>
+                  {cop(o.total)}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -193,26 +219,28 @@ function ResultsTable({ data }: { data: Resultado }) {
           <tr>
             <td style={{
               ...tdStyle, fontWeight: 700, background: "#f0fdf4",
-              color: "#065f46", borderTop: "2px solid #d1fae5",
+              color: "#065f46", borderTop: "2px solid #d1fae5", textAlign: "center",
             }}>
               TOTAL
             </td>
-            {data.meses.map(m => (
-              <td key={m} style={{
+            {data.periodos.map(p => (
+              <td key={p.id} style={{
                 ...tdStyle, textAlign: "right", fontFamily: "monospace",
                 fontWeight: 700, background: "#f0fdf4", color: "#065f46",
                 borderTop: "2px solid #d1fae5",
               }}>
-                {cop(data.totalPorMes[m] ?? 0)}
+                {cop(data.totalPorPeriodo[p.id] ?? 0)}
               </td>
             ))}
-            <td style={{
-              ...tdStyle, textAlign: "right", fontFamily: "monospace",
-              fontWeight: 700, background: "#07c5a8", color: "#fff",
-              borderTop: "2px solid #d1fae5",
-            }}>
-              {cop(data.totalGeneral)}
-            </td>
+            {multiplePeriodos && (
+              <td style={{
+                ...tdStyle, textAlign: "right", fontFamily: "monospace",
+                fontWeight: 700, background: "#07c5a8", color: "#fff",
+                borderTop: "2px solid #d1fae5",
+              }}>
+                {cop(data.totalGeneral)}
+              </td>
+            )}
           </tr>
         </tfoot>
       </table>
