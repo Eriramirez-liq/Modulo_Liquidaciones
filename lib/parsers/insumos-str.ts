@@ -75,6 +75,42 @@ function toNum(v: unknown): number | null {
   return isNaN(n) ? null : n
 }
 
+// Auto-detecta la fila del header: la primera fila (de las primeras 20)
+// que contenga al menos 3 códigos conocidos de operador. Si no encuentra,
+// usa el default 6 (equivalente al header=6 del script Python).
+function detectarFilaHeader(matrix: (string | number)[][]): number {
+  const codigos = Object.keys(HOMOLOGACION)
+  const maxScan = Math.min(matrix.length, 20)
+  for (let i = 0; i < maxScan; i++) {
+    const row = matrix[i] ?? []
+    const text = row.map(v => String(v ?? "")).join(" ").toUpperCase()
+    const hits = codigos.filter(c => text.includes(c)).length
+    if (hits >= 3) return i
+  }
+  return 6
+}
+
+// Búsqueda flexible de la fila BIAC-BIAE:
+//   - Revisa las primeras 4 columnas (no solo la B)
+//   - Normaliza espacios, mayúsculas y cualquier tipo de guión (- – —)
+//   - Sólo requiere que el texto contenga "BIAC" y "BIAE"
+function buscarFilaBiac(matrix: (string | number)[][], desde: number): number {
+  for (let i = desde; i < matrix.length; i++) {
+    const row = matrix[i] ?? []
+    for (let col = 0; col <= 3; col++) {
+      const text = String(row[col] ?? "")
+        .replace(/[–—]/g, "-")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toUpperCase()
+      if (text.includes("BIAC") && text.includes("BIAE")) {
+        return i
+      }
+    }
+  }
+  return -1
+}
+
 /**
  * Parsea uno o varios archivos de Insumos STR (BalanceSTR*.xlsx).
  *
@@ -137,6 +173,9 @@ export async function parsearInsumosSTR(
       continue
     }
 
+    // Acumular diagnósticos por pestaña (para reportar si no se encontró BIAC-BIAE)
+    const diagnosticos: string[] = []
+
     for (const tabName of pestanas) {
       const ws = wb.Sheets[tabName]
       if (!ws) continue  // pestaña no existe — silencioso (algunos archivos solo tienen una)
@@ -147,20 +186,33 @@ export async function parsearInsumosSTR(
         raw: true,
       }) as unknown as (string | number)[][]
 
-      // header=6 en pandas → fila índice 6 (Excel fila 7) es el header
-      if (matrix.length <= 6) continue
-      const headers = (matrix[6] ?? []).map(h => String(h ?? "").trim())
-
-      // Buscar fila con "BIAC - BIAE" en columna B (índice 1)
-      let biacRow: (string | number)[] | null = null
-      for (let i = 7; i < matrix.length; i++) {
-        const cellB = String(matrix[i]?.[1] ?? "").trim()
-        if (cellB.includes("BIAC - BIAE")) {
-          biacRow = matrix[i] ?? null
-          break
-        }
+      if (matrix.length === 0) {
+        diagnosticos.push(`pestaña "${tabName}" vacía`)
+        continue
       }
-      if (!biacRow) continue
+
+      // Auto-detectar fila del header (busca códigos conocidos en las primeras 20 filas)
+      const filaHeader = detectarFilaHeader(matrix)
+      const headers = (matrix[filaHeader] ?? []).map(h => String(h ?? "").trim())
+
+      // Buscar fila BIAC-BIAE de forma flexible (cualquiera de las primeras 4 cols)
+      const filaBiacIdx = buscarFilaBiac(matrix, filaHeader + 1)
+      if (filaBiacIdx < 0) {
+        // Sample de las primeras filas de datos para que el usuario pueda diagnosticar
+        const sample: string[] = []
+        for (let i = filaHeader + 1; i < Math.min(matrix.length, filaHeader + 8); i++) {
+          const cellA = String(matrix[i]?.[0] ?? "").trim()
+          const cellB = String(matrix[i]?.[1] ?? "").trim()
+          const combined = [cellA, cellB].filter(Boolean).join(" | ")
+          if (combined) sample.push(combined)
+        }
+        diagnosticos.push(
+          `pestaña "${tabName}": BIAC-BIAE no encontrado (header detectado fila ${filaHeader + 1}). ` +
+          `Primeras filas: ${sample.slice(0, 3).join("  ·  ") || "(vacías)"}`,
+        )
+        continue
+      }
+      const biacRow = matrix[filaBiacIdx] ?? []
 
       // Para cada columna, si el header contiene un código → sumar al operador
       for (let j = 0; j < headers.length; j++) {
@@ -178,7 +230,8 @@ export async function parsearInsumosSTR(
     }
 
     if (Object.keys(valoresPorOR).length === 0) {
-      alertas.push(`[${nombre}] no se encontró fila "BIAC - BIAE" o no hubo valores para los operadores.`)
+      const diag = diagnosticos.length > 0 ? ` — ${diagnosticos.join(" | ")}` : ""
+      alertas.push(`[${nombre}] no se encontró fila "BIAC - BIAE" o no hubo valores para los operadores${diag}.`)
       continue
     }
 
