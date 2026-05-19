@@ -142,15 +142,56 @@ function readRows(buffer: Buffer, mapeo: MapeoSDL): Row[] {
   }) as unknown as (string | number)[][]
 
   if (raw.length <= skip) return []
-  const headers = (raw[skip] ?? []).map(h => String(h ?? "").trim())
+
+  // Auto-detect header row: si la fila indicada por fila_inicio no parece
+  // contener headers (pocas celdas con texto, ningún término esperado),
+  // escanea las primeras 15 filas y elige la que mejor coincida.
+  const finalSkip = detectHeaderRow(raw, skip)
+
+  const headers = (raw[finalSkip] ?? []).map(h => String(h ?? "").trim())
   const rows: Row[] = []
-  for (let i = skip + 1; i < raw.length; i++) {
+  for (let i = finalSkip + 1; i < raw.length; i++) {
     const vals = raw[i] ?? []
     const row: Row = {}
     headers.forEach((h, j) => { row[h] = String(vals[j] ?? "").trim() })
     rows.push(row)
   }
   return rows
+}
+
+// Detecta la fila de cabecera con score = (matches a términos típicos * 10)
+// + cantidad de celdas con texto no vacío. Las cabeceras suelen tener muchas
+// columnas de texto y contener palabras como SIC, CODIGO, ACTIVA, FRONTERA…
+function detectHeaderRow(raw: (string | number)[][], hint: number): number {
+  const TERMS = [
+    "SIC", "CODIGO", "CÓDIGO", "FRONTERA", "ACTIVA", "REACTIVA",
+    "TENSION", "TENSIÓN", "PEAJE", "FACTOR", "VALOR", "PERIODO",
+    "CONSUMO", "ENERGIA", "ENERGÍA", "NIVEL",
+  ]
+  const score = (row: (string | number)[] | undefined): number => {
+    if (!row) return -1
+    const cells = row.map(v => String(v ?? "").trim())
+    const nonEmpty = cells.filter(c => c.length > 0).length
+    if (nonEmpty < 3) return -1
+    const textCells = cells.filter(c => c.length > 0 && isNaN(Number(c.replace(/,/g, "")))).length
+    const joined = cells.join(" ").toUpperCase()
+    const matches = TERMS.filter(t => joined.includes(t)).length
+    return matches * 100 + textCells * 5 + nonEmpty
+  }
+
+  let best = hint
+  let bestScore = score(raw[hint])
+
+  // Si la fila hint ya tiene buen score (≥1 match a término típico), confiar en ella
+  if (bestScore >= 100) return hint
+
+  // Si no, escanear las primeras 15 filas
+  const maxScan = Math.min(15, raw.length)
+  for (let i = 0; i < maxScan; i++) {
+    const s = score(raw[i])
+    if (s > bestScore) { best = i; bestScore = s }
+  }
+  return best
 }
 
 // ─── Preprocessors ────────────────────────────────────────────────────────────
@@ -507,6 +548,28 @@ function preCeo(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const m = deepCloneMapeo(mapeo)
   const cols = m.columnas!
   const headers = Object.keys(rows[0] ?? {})
+
+  // Mapeo explícito (en caso de que el seed tenga nombres ligeramente
+  // distintos por encoding o variantes del archivo)
+  const colSic     = resolveCol(headers, "Código SIC") ?? resolveCol(headers, "Codigo SIC")
+  const colKwh     = resolveCol(headers, "Activa KWh")
+  const colValor   = resolveCol(headers, "$ Peaje Activa") ?? resolveCol(headers, "$Peaje Activa")
+  const colValReac = resolveCol(headers, "$ Peaje Reactiva") ?? resolveCol(headers, "$Peaje Reactiva")
+  const colReacInd = resolveCol(headers, "Reactiva Inductiva Penal kVAr")
+  const colFactorM = resolveCol(headers, "Factor_m") ?? resolveCol(headers, "Factor M")
+  const colNT      = resolveCol(headers, "Nivel Tensión") ?? resolveCol(headers, "Nivel Tension")
+  const colPer     = resolveCol(headers, "Periodo")
+
+  if (colSic)     cols["codigo_frontera"]          = colSic
+  if (colKwh)     cols["energia_kwh"]              = colKwh
+  if (colValor)   cols["valor_cop"]                = colValor
+  if (colValReac) cols["valor_reactiva_cop"]       = colValReac
+  if (colReacInd) cols["energia_reactiva_ind_pen"] = colReacInd
+  if (colFactorM) cols["factor_m"]                 = colFactorM
+  if (colNT)      cols["nivel_tension"]            = colNT
+  if (colPer)     cols["periodo"]                  = colPer
+
+  // Propiedad: 100% OPERADOR → OR | 100% USUARIO → Usuario
   const colProp = resolveCol(headers, "Propiedad Activo")
   if (colProp) {
     rows = rows.map(r => {
