@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 
 /**
- * GET /api/cargos-str?periodoIds=id1,id2&orIds=id1,id2
+ * GET /api/cargos-str?mesesConsumo=2026-01,2026-02&orIds=id1,id2
  *
  * Devuelve los cargos STR agregados por (operador, mes_consumo) para los
  * filtros indicados.
@@ -23,16 +23,16 @@ export async function GET(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
 
   const { searchParams } = new URL(request.url)
-  const periodoIdsParam = searchParams.get("periodoIds")
-  const orIdsParam      = searchParams.get("orIds")
+  const mesesParam = searchParams.get("mesesConsumo")
+  const orIdsParam = searchParams.get("orIds")
 
-  const periodoIds = periodoIdsParam ? periodoIdsParam.split(",").filter(Boolean) : null
-  const orIds      = orIdsParam      ? orIdsParam.split(",").filter(Boolean)      : null
+  const mesesConsumo = mesesParam ? mesesParam.split(",").filter(Boolean) : null
+  const orIds        = orIdsParam ? orIdsParam.split(",").filter(Boolean) : null
 
   const registros = await db.registroSTR.findMany({
     where: {
-      ...(periodoIds && periodoIds.length > 0 ? { periodo_id: { in: periodoIds } } : {}),
-      ...(orIds      && orIds.length      > 0 ? { or_id:      { in: orIds      } } : {}),
+      ...(mesesConsumo && mesesConsumo.length > 0 ? { mes_consumo: { in: mesesConsumo } } : {}),
+      ...(orIds        && orIds.length        > 0 ? { or_id:       { in: orIds }        } : {}),
     },
     select: {
       mes_consumo: true,

@@ -4,7 +4,6 @@ import { useState, useEffect } from "react"
 const MES_NOMBRE = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
 
-type Periodo  = { id: string; anio: number; mes: number; estado: string }
 type Operador = { id: string; codigo: string; nombre: string }
 
 type Resultado = {
@@ -19,7 +18,7 @@ function cop(v: number) {
 }
 
 function mesLabel(mes: string): string {
-  // "2026-02" → "February 2026" — usamos nombre largo en español
+  // "2026-02" → "Febrero 2026"
   const [a, m] = mes.split("-")
   const n = parseInt(m ?? "", 10)
   if (!a || isNaN(n) || n < 1 || n > 12) return mes
@@ -27,48 +26,48 @@ function mesLabel(mes: string): string {
 }
 
 export default function CargosSTRPage() {
-  const [periodos, setPeriodos]     = useState<Periodo[]>([])
+  const [mesesDisp, setMesesDisp]   = useState<string[]>([])   // AAAA-MM disponibles
   const [operadores, setOperadores] = useState<Operador[]>([])
-  const [periodoSel, setPeriodoSel] = useState<string[]>([])  // ids
-  const [orSel, setOrSel]           = useState<string[]>([])  // ids
+  const [mesesSel, setMesesSel]     = useState<string[]>([])   // AAAA-MM
+  const [orSel, setOrSel]           = useState<string[]>([])   // ids
   const [data, setData]             = useState<Resultado | null>(null)
   const [loading, setLoading]       = useState(false)
   const [filtrado, setFiltrado]     = useState(false)
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/periodos").then(r => r.json()),
-      fetch("/api/operadores").then(r => r.json()),
-    ]).then(([ps, ors]) => { setPeriodos(ps); setOperadores(ors) })
+      fetch("/api/cargos-str/meses").then(r => r.json()),
+      fetch("/api/operadores?tipo=str").then(r => r.json()),
+    ]).then(([ms, ors]) => { setMesesDisp(ms); setOperadores(ors) })
   }, [])
 
   async function filtrar() {
     setLoading(true)
     setFiltrado(true)
     const params = new URLSearchParams()
-    if (periodoSel.length > 0) params.set("periodoIds", periodoSel.join(","))
-    if (orSel.length > 0)      params.set("orIds",      orSel.join(","))
+    if (mesesSel.length > 0) params.set("mesesConsumo", mesesSel.join(","))
+    if (orSel.length > 0)    params.set("orIds",        orSel.join(","))
     const res = await fetch(`/api/cargos-str?${params}`)
     setData(await res.json())
     setLoading(false)
   }
 
-  function togglePeriodo(id: string) {
-    setPeriodoSel(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  function toggleMes(m: string) {
+    setMesesSel(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m])
   }
   function toggleOR(id: string) {
     setOrSel(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }
-  function selectAllPeriodos() { setPeriodoSel(periodos.map(p => p.id)) }
-  function clearPeriodos()     { setPeriodoSel([]) }
-  function selectAllORs()      { setOrSel(operadores.map(o => o.id)) }
-  function clearORs()          { setOrSel([]) }
+  function selectAllMeses() { setMesesSel(mesesDisp) }
+  function clearMeses()     { setMesesSel([]) }
+  function selectAllORs()   { setOrSel(operadores.map(o => o.id)) }
+  function clearORs()       { setOrSel([]) }
 
-  const periodoSummary = periodoSel.length === 0
-    ? "Todos los períodos"
-    : periodoSel.length === 1
-      ? (() => { const p = periodos.find(x => x.id === periodoSel[0]); return p ? `${p.anio}-${String(p.mes).padStart(2, "0")}` : "1 período" })()
-      : `${periodoSel.length} períodos`
+  const mesesSummary = mesesSel.length === 0
+    ? "Todos los meses"
+    : mesesSel.length === 1
+      ? mesLabel(mesesSel[0]!)
+      : `${mesesSel.length} meses`
 
   const orSummary = orSel.length === 0
     ? "Todos"
@@ -91,16 +90,13 @@ export default function CargosSTRPage() {
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "16px 20px" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
           <MultiSelect
-            label="Período"
-            summary={periodoSummary}
-            options={periodos.map(p => ({
-              id: p.id,
-              label: `${p.anio}-${String(p.mes).padStart(2, "0")} — ${p.estado}`,
-            }))}
-            selected={periodoSel}
-            onToggle={togglePeriodo}
-            onSelectAll={selectAllPeriodos}
-            onClear={clearPeriodos}
+            label="Período de consumo"
+            summary={mesesSummary}
+            options={mesesDisp.map(m => ({ id: m, label: mesLabel(m) }))}
+            selected={mesesSel}
+            onToggle={toggleMes}
+            onSelectAll={selectAllMeses}
+            onClear={clearMeses}
           />
           <MultiSelect
             label="Operador de Red"
