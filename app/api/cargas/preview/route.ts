@@ -39,7 +39,9 @@ export async function POST(request: NextRequest) {
   let existeCargaPrevia = false
   let cargaPreviaId: string | undefined
 
-  if (periodoExistente) {
+  // Para INSUMOS_STR no se pide justificación: cada carga sobrescribe la
+  // anterior (siempre vale la última). El delete real ocurre en confirmar.
+  if (periodoExistente && tipoFuente !== "INSUMOS_STR") {
     const cargaPrevia = await db.cargaFuente.findFirst({
       where: {
         periodo_id: periodoExistente.id,

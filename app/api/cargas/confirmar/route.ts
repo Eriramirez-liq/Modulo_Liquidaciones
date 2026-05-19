@@ -151,6 +151,14 @@ export async function POST(request: NextRequest) {
           break
         }
         case "INSUMOS_STR": {
+          // Sobrescritura: cada carga reemplaza a las anteriores del mismo
+          // período. Borramos todos los registros_str del período antes de
+          // insertar los nuevos. Los cargas_fuente previas permanecen como
+          // historial pero quedan con 0 registros efectivos.
+          await tx.registroSTR.deleteMany({
+            where: { periodo_id: periodo.id },
+          })
+
           const filas = filasCompletas as FilaSTR[]
           if (filas.length === 0) break
           // Resolver or_codigo → or_id (cache)
