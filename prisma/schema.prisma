@@ -21,6 +21,7 @@ enum TipoFuente {
   BALANCE
   TC1
   COT
+  INSUMOS_STR
 }
 
 enum EstadoCarga {
@@ -163,6 +164,7 @@ model PeriodoConciliacion {
   provisiones   Provision[]
   contingencias Contingencia[]
   disputas      Disputa[]
+  registros_str RegistroSTR[]
 
   @@unique([anio, mes], name: "uq_periodo_anio_mes")
   @@map("periodos_conciliacion")
@@ -184,6 +186,7 @@ model ConfiguracionOR {
   cargas            CargaFuente[]
   registros_sdl     RegistroSDL[]
   registros_balance RegistroBalance[]
+  registros_str     RegistroSTR[]
   resultados        ResultadoConciliacion[]
   provisiones       Provision[]
   contingencias     Contingencia[]
@@ -321,6 +324,27 @@ model RegistroCOT {
   createdAt       DateTime @default(now())
 
   @@map("registros_cot")
+}
+
+// Insumos STR — registros generados al cargar uno o varios archivos en
+// la fuente INSUMOS_STR. Cada fila representa el cargo de un operador de
+// red para un mes de consumo (mes_consumo) dentro de un mes de facturación
+// (periodo_id apunta al período de facturación). La lógica de análisis se
+// aplica al cargar y los resultados se exponen en el módulo Cargos STR.
+model RegistroSTR {
+  id              String   @id @default(cuid())
+  carga_id        String
+  periodo_id      String   // Periodo de facturación (mes en que se factura)
+  or_id           String
+  mes_consumo     String   // "AAAA-MM" — mes al que corresponde el consumo
+  valor_cop       Decimal  @db.Decimal(18, 2)
+  detalle_json    Json?
+  createdAt       DateTime @default(now())
+
+  periodo      PeriodoConciliacion @relation(fields: [periodo_id], references: [id])
+  operador_red ConfiguracionOR     @relation(fields: [or_id], references: [id])
+
+  @@map("registros_str")
 }
 
 model ResultadoConciliacion {

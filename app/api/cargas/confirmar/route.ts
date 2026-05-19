@@ -8,12 +8,13 @@ import {
   FilaSDL,
   FilaBalance,
 } from "@/lib/parsers/types"
+import type { FilaSTR } from "@/lib/parsers/insumos-str"
 
 interface ConfirmarBody {
   meta: {
     anio: number
     mes: number
-    tipoFuente: "FACTURACION" | "XM" | "SDL" | "BALANCE"
+    tipoFuente: "FACTURACION" | "XM" | "SDL" | "BALANCE" | "INSUMOS_STR"
     orId?: string
     nombreArchivo: string
   }
@@ -29,7 +30,13 @@ export async function POST(request: NextRequest) {
   const body: ConfirmarBody = await request.json()
   const { meta, filasCompletas, justificacion, cargaPreviaId } = body
 
-  if (!meta || !filasCompletas?.length) {
+  // INSUMOS_STR puede confirmarse aunque filasCompletas esté vacío
+  // (la lógica de análisis puede aún no estar implementada y querer registrar
+  // la carga de los archivos para auditoría).
+  if (!meta) {
+    return NextResponse.json({ error: "Datos incompletos" }, { status: 400 })
+  }
+  if (meta.tipoFuente !== "INSUMOS_STR" && !filasCompletas?.length) {
     return NextResponse.json({ error: "Datos incompletos" }, { status: 400 })
   }
 
@@ -141,6 +148,35 @@ export async function POST(request: NextRequest) {
               periodo_tarifa: f.periodo_tarifa,
             })),
           })
+          break
+        }
+        case "INSUMOS_STR": {
+          const filas = filasCompletas as FilaSTR[]
+          if (filas.length === 0) break
+          // Resolver or_codigo → or_id (cache)
+          const codigos = Array.from(new Set(filas.map(f => f.or_codigo).filter(Boolean)))
+          const ors = await tx.configuracionOR.findMany({
+            where: { codigo: { in: codigos } },
+            select: { id: true, codigo: true },
+          })
+          const codigoToId = new Map(ors.map(o => [o.codigo, o.id]))
+          const datos = filas
+            .map((f) => {
+              const orId = codigoToId.get(f.or_codigo)
+              if (!orId) return null
+              return {
+                carga_id: carga.id,
+                periodo_id: periodo.id,
+                or_id: orId,
+                mes_consumo: f.mes_consumo,
+                valor_cop: f.valor_cop,
+                detalle_json: f.detalle as Prisma.InputJsonValue ?? Prisma.JsonNull,
+              }
+            })
+            .filter((d): d is NonNullable<typeof d> => d !== null)
+          if (datos.length > 0) {
+            await tx.registroSTR.createMany({ data: datos })
+          }
           break
         }
       }

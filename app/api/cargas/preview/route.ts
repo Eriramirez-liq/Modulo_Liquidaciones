@@ -5,6 +5,7 @@ import { parsearFacturacion } from "@/lib/parsers/facturacion"
 import { parsearXM } from "@/lib/parsers/xm"
 import { parsearSDL } from "@/lib/parsers/sdl"
 import { parsearBalance } from "@/lib/parsers/balance"
+import { parsearInsumosSTR } from "@/lib/parsers/insumos-str"
 
 import { TipoFuente } from "@prisma/client"
 
@@ -13,17 +14,20 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
 
   const formData = await request.formData()
-  const file      = formData.get("file") as File | null
-  const anio      = Number(formData.get("anio"))
-  const mes       = Number(formData.get("mes"))
+  const file       = formData.get("file") as File | null
+  const filesMulti = formData.getAll("files") as File[]
+  const anio       = Number(formData.get("anio"))
+  const mes        = Number(formData.get("mes"))
   const tipoFuente = formData.get("tipoFuente") as string
-  const orId      = formData.get("orId") as string | null
+  const orId       = formData.get("orId") as string | null
 
-  if (!file || !anio || !mes || !tipoFuente) {
+  const hasAnyFile = (file != null) || (filesMulti.length > 0)
+  if (!hasAnyFile || !anio || !mes || !tipoFuente) {
     return NextResponse.json({ error: "Parámetros incompletos" }, { status: 400 })
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer())
+  // Buffer del archivo principal (single-file mode). Para INSUMOS_STR usamos filesMulti.
+  const buffer = file ? Buffer.from(await file.arrayBuffer()) : Buffer.alloc(0)
   const periodo = `${anio}-${String(mes).padStart(2, "0")}`
 
   // Verificar si ya existe carga para este período+fuente+OR
@@ -89,6 +93,22 @@ export async function POST(request: NextRequest) {
           buffer,
           or?.mapeo_balance_json as Record<string, string> | null,
         )
+        break
+      }
+      case "INSUMOS_STR": {
+        if (filesMulti.length === 0) {
+          return NextResponse.json(
+            { error: "Insumos STR requiere al menos un archivo" },
+            { status: 400 }
+          )
+        }
+        const buffers = await Promise.all(
+          filesMulti.map(async (f) => ({
+            buffer: Buffer.from(await f.arrayBuffer()),
+            nombre: f.name,
+          }))
+        )
+        result = await parsearInsumosSTR(buffers, anio, mes)
         break
       }
       default:

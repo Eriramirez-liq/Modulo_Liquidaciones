@@ -10,13 +10,14 @@ const MESES = [
   "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
 ]
 
-type TipoFuente = "FACTURACION" | "XM" | "SDL" | "BALANCE" | "TC1" | "COT"
+type TipoFuente = "FACTURACION" | "XM" | "SDL" | "BALANCE" | "TC1" | "COT" | "INSUMOS_STR"
 
 interface FuenteCard {
   tipo: TipoFuente
   label: string
   desc: string
   requiresOR: boolean
+  multiFile?: boolean
   icon: string
 }
 
@@ -51,6 +52,11 @@ const FUENTES: FuenteCard[] = [
     desc: "Cargo por Otros Trámites enviado por el OR.",
     icon: "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
   },
+  {
+    tipo: "INSUMOS_STR", label: "Insumos STR", requiresOR: false, multiFile: true,
+    desc: "Múltiples archivos de insumos para el cálculo de cargos STR.",
+    icon: "M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z",
+  },
 ]
 
 interface Operador { id: string; codigo: string; nombre: string }
@@ -69,6 +75,7 @@ export function WizardCarga() {
   const [orId, setOrId]                 = useState("")
   const [operadores, setOperadores]     = useState<Operador[]>([])
   const [file, setFile]                 = useState<File | null>(null)
+  const [files, setFiles]               = useState<File[]>([])
   const [dragOver, setDragOver]         = useState(false)
   const [loading, setLoading]           = useState(false)
   const [error, setError]               = useState<string | null>(null)
@@ -91,21 +98,42 @@ export function WizardCarga() {
 
   const fuenteActual = FUENTES.find((f) => f.tipo === tipoFuente)
   const requiereOR  = fuenteActual?.requiresOR ?? false
+  const isMultiFile = fuenteActual?.multiFile ?? false
   const paso1Ok     = tipoFuente !== null && (!requiereOR || orId !== "")
+  const hasFiles    = isMultiFile ? files.length > 0 : file !== null
 
   // ── Dropzone handlers ──────────────────────────────────────────────────────
 
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0] ?? null
-    setFile(f)
+    const list = Array.from(e.target.files ?? [])
+    if (isMultiFile) {
+      // Append to existing list (deduplicate by name+size)
+      const map = new Map(files.map(f => [`${f.name}|${f.size}`, f]))
+      for (const f of list) map.set(`${f.name}|${f.size}`, f)
+      setFiles(Array.from(map.values()))
+    } else {
+      setFile(list[0] ?? null)
+    }
     setError(null)
   }
 
   function onDrop(e: React.DragEvent) {
     e.preventDefault()
     setDragOver(false)
-    const f = e.dataTransfer.files?.[0] ?? null
-    if (f) { setFile(f); setError(null) }
+    const list = Array.from(e.dataTransfer.files ?? [])
+    if (list.length === 0) return
+    if (isMultiFile) {
+      const map = new Map(files.map(f => [`${f.name}|${f.size}`, f]))
+      for (const f of list) map.set(`${f.name}|${f.size}`, f)
+      setFiles(Array.from(map.values()))
+    } else {
+      setFile(list[0] ?? null)
+    }
+    setError(null)
+  }
+
+  function removeFile(idx: number) {
+    setFiles(files.filter((_, i) => i !== idx))
   }
 
   // ── Step navigation ───────────────────────────────────────────────────────
@@ -116,12 +144,20 @@ export function WizardCarga() {
   }
 
   async function handleSiguienteStep2() {
-    if (!file) { setError("Seleccioná un archivo."); return }
+    if (isMultiFile) {
+      if (files.length === 0) { setError("Seleccioná al menos un archivo."); return }
+    } else {
+      if (!file) { setError("Seleccioná un archivo."); return }
+    }
     setLoading(true)
     setError(null)
     try {
       const fd = new FormData()
-      fd.append("file", file)
+      if (isMultiFile) {
+        files.forEach((f) => fd.append("files", f))
+      } else {
+        fd.append("file", file!)
+      }
       fd.append("anio", String(anio))
       fd.append("mes", String(mes))
       fd.append("tipoFuente", tipoFuente!)
@@ -154,11 +190,14 @@ export function WizardCarga() {
     setLoading(true)
     setError(null)
     try {
+      const nombreArchivo = isMultiFile
+        ? (files.length === 1 ? files[0]!.name : `${files.length} archivos`)
+        : (file?.name ?? "")
       const res = await fetch("/api/cargas/confirmar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          meta: { anio, mes, tipoFuente, orId: orId || undefined, nombreArchivo: file?.name ?? "" },
+          meta: { anio, mes, tipoFuente, orId: orId || undefined, nombreArchivo },
           filasCompletas,
           justificacion: justificacion || undefined,
           cargaPreviaId,
@@ -389,37 +428,90 @@ export function WizardCarga() {
               onDragLeave={() => setDragOver(false)}
               onDrop={onDrop}
               style={{
-                border: `2px dashed ${dragOver ? ACCENT : file ? ACCENT : "#d1d5db"}`,
+                border: `2px dashed ${dragOver ? ACCENT : hasFiles ? ACCENT : "#d1d5db"}`,
                 borderRadius: "10px", padding: "40px 24px",
                 display: "flex", flexDirection: "column", alignItems: "center", gap: "10px",
-                cursor: "pointer", backgroundColor: dragOver ? `${ACCENT}08` : file ? `${ACCENT}06` : "#fafafa",
+                cursor: "pointer", backgroundColor: dragOver ? `${ACCENT}08` : hasFiles ? `${ACCENT}06` : "#fafafa",
                 transition: "border-color 0.15s, background-color 0.15s",
               }}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"
-                   fill="none" stroke={file ? ACCENT : "#9ca3af"}
+                   fill="none" stroke={hasFiles ? ACCENT : "#9ca3af"}
                    strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
               </svg>
-              <div style={{ fontSize: "0.9rem", fontWeight: 500, color: file ? ACCENT : "#374151" }}>
-                {file ? file.name : "Haz clic o arrastra tu archivo aquí"}
+              <div style={{ fontSize: "0.9rem", fontWeight: 500, color: hasFiles ? ACCENT : "#374151" }}>
+                {isMultiFile
+                  ? (files.length > 0
+                      ? `${files.length} archivo${files.length > 1 ? "s" : ""} seleccionado${files.length > 1 ? "s" : ""}`
+                      : "Haz clic o arrastra los archivos aquí")
+                  : (file ? file.name : "Haz clic o arrastra tu archivo aquí")}
               </div>
-              {!file && (
-                <div style={{ fontSize: "0.8rem", color: "#9ca3af" }}>.xlsx, .xls, .csv — máx. 32 MB</div>
+              {!hasFiles && (
+                <div style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
+                  .xlsx, .xls, .csv — máx. 32 MB {isMultiFile && "por archivo"}
+                </div>
               )}
-              {file && (
+              {!isMultiFile && file && (
                 <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
                   {(file.size / 1024).toFixed(1)} KB — haz clic para cambiar
+                </div>
+              )}
+              {isMultiFile && files.length > 0 && (
+                <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+                  Haz clic para agregar más archivos
                 </div>
               )}
               <input
                 ref={fileInputRef}
                 type="file"
                 accept=".xlsx,.xls,.csv"
+                multiple={isMultiFile}
                 style={{ display: "none" }}
                 onChange={onFileChange}
               />
             </div>
+
+            {/* Lista de archivos (multi-file mode) */}
+            {isMultiFile && files.length > 0 && (
+              <div style={{
+                border: "1px solid #e5e7eb", borderRadius: "8px",
+                backgroundColor: "#ffffff", overflow: "hidden",
+              }}>
+                <div style={{
+                  padding: "8px 14px", backgroundColor: "#f9fafb",
+                  fontSize: "0.75rem", fontWeight: 600, color: "#6b7280",
+                  borderBottom: "1px solid #e5e7eb", textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}>
+                  Archivos a cargar
+                </div>
+                <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                  {files.map((f, i) => (
+                    <li key={`${f.name}-${i}`} style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "8px 14px", borderBottom: i < files.length - 1 ? "1px solid #f3f4f6" : "none",
+                      fontSize: "0.85rem",
+                    }}>
+                      <span style={{ color: "#374151", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {f.name} <span style={{ color: "#9ca3af", fontSize: "0.78rem" }}>({(f.size / 1024).toFixed(1)} KB)</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); removeFile(i) }}
+                        style={{
+                          background: "none", border: "none", cursor: "pointer",
+                          color: "#dc2626", fontSize: "0.78rem", fontWeight: 500,
+                          padding: "2px 6px",
+                        }}
+                      >
+                        Quitar
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {error && (
               <div style={{
@@ -435,7 +527,7 @@ export function WizardCarga() {
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <button
                 type="button"
-                onClick={() => { setStep(0); setFile(null); setError(null) }}
+                onClick={() => { setStep(0); setFile(null); setFiles([]); setError(null) }}
                 style={{
                   padding: "9px 20px", borderRadius: "7px",
                   border: "1px solid #e5e7eb", backgroundColor: "#ffffff",
@@ -446,15 +538,15 @@ export function WizardCarga() {
               </button>
               <button
                 type="button"
-                disabled={!file || loading}
+                disabled={!hasFiles || loading}
                 onClick={handleSiguienteStep2}
                 style={{
                   display: "flex", alignItems: "center", gap: "6px",
                   padding: "9px 20px", borderRadius: "7px", border: "none",
                   fontSize: "0.875rem", fontWeight: 600,
-                  cursor: file && !loading ? "pointer" : "not-allowed",
-                  backgroundColor: file && !loading ? ACCENT : "#e5e7eb",
-                  color: file && !loading ? "#050f0d" : "#9ca3af",
+                  cursor: hasFiles && !loading ? "pointer" : "not-allowed",
+                  backgroundColor: hasFiles && !loading ? ACCENT : "#e5e7eb",
+                  color: hasFiles && !loading ? "#050f0d" : "#9ca3af",
                 }}
               >
                 {loading ? "Procesando…" : "Vista previa →"}
