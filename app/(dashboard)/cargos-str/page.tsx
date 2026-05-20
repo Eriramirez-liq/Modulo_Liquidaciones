@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 
 const MES_NOMBRE = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
@@ -26,10 +26,16 @@ function mesLabel(periodoStr: string): string {
   return `${MES_NOMBRE[n]} ${a}`
 }
 
+// Mes de consumo derivado de un mes de facturación: una unidad menos.
+function consumoDe(anio: number, mes: number): { anio: number; mes: number } {
+  if (mes === 1) return { anio: anio - 1, mes: 12 }
+  return { anio, mes: mes - 1 }
+}
+
 export default function CargosSTRPage() {
   const [periodos, setPeriodos]     = useState<Periodo[]>([])
   const [operadores, setOperadores] = useState<Operador[]>([])
-  const [periodoSel, setPeriodoSel] = useState<string[]>([])
+  const [periodoSel, setPeriodoSel] = useState<string[]>([])  // periodo_id (facturación)
   const [orSel, setOrSel]           = useState<string[]>([])
   const [data, setData]             = useState<Resultado | null>(null)
   const [loading, setLoading]       = useState(false)
@@ -46,6 +52,22 @@ export default function CargosSTRPage() {
       .then((ors) => setOperadores(Array.isArray(ors) ? ors : []))
       .catch(() => setOperadores([]))
   }, [])
+
+  // Para cada período de facturación calculamos su mes de consumo y armamos
+  // un solo modelo de opciones — los dos selectores comparten el mismo
+  // periodo_id, pero muestran etiquetas distintas (facturación vs consumo).
+  const periodosConConsumo = useMemo(() => {
+    return periodos.map(p => {
+      const c = consumoDe(p.anio, p.mes)
+      return {
+        id:               p.id,
+        anio:             p.anio,
+        mes:              p.mes,
+        facturacionLabel: `${MES_NOMBRE[p.mes]} ${p.anio}`,
+        consumoLabel:     `${MES_NOMBRE[c.mes]} ${c.anio}`,
+      }
+    })
+  }, [periodos])
 
   async function filtrar() {
     setLoading(true)
@@ -69,14 +91,17 @@ export default function CargosSTRPage() {
   function selectAllORs()      { setOrSel(operadores.map(o => o.id)) }
   function clearORs()          { setOrSel([]) }
 
-  const periodoSummary = periodoSel.length === 0
+  const facturacionSummary = periodoSel.length === 0
     ? "Todos los períodos"
     : periodoSel.length === 1
-      ? (() => {
-          const p = periodos.find(x => x.id === periodoSel[0])
-          return p ? `${MES_NOMBRE[p.mes]} ${p.anio}` : "1 período"
-        })()
+      ? (periodosConConsumo.find(p => p.id === periodoSel[0])?.facturacionLabel ?? "1 período")
       : `${periodoSel.length} períodos`
+
+  const consumoSummary = periodoSel.length === 0
+    ? "Todos los meses"
+    : periodoSel.length === 1
+      ? (periodosConConsumo.find(p => p.id === periodoSel[0])?.consumoLabel ?? "1 mes")
+      : `${periodoSel.length} meses`
 
   const orSummary = orSel.length === 0
     ? "Todos"
@@ -99,12 +124,18 @@ export default function CargosSTRPage() {
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "16px 20px" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
           <MultiSelect
-            label="Período de facturación"
-            summary={periodoSummary}
-            options={periodos.map(p => ({
-              id:    p.id,
-              label: `${MES_NOMBRE[p.mes]} ${p.anio}`,
-            }))}
+            label="Período facturación"
+            summary={facturacionSummary}
+            options={periodosConConsumo.map(p => ({ id: p.id, label: p.facturacionLabel }))}
+            selected={periodoSel}
+            onToggle={togglePeriodo}
+            onSelectAll={selectAllPeriodos}
+            onClear={clearPeriodos}
+          />
+          <MultiSelect
+            label="Período consumo"
+            summary={consumoSummary}
+            options={periodosConConsumo.map(p => ({ id: p.id, label: p.consumoLabel }))}
             selected={periodoSel}
             onToggle={togglePeriodo}
             onSelectAll={selectAllPeriodos}
