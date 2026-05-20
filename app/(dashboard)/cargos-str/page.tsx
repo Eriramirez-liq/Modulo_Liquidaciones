@@ -26,10 +26,11 @@ function mesLabel(periodoStr: string): string {
   return `${MES_NOMBRE[n]} ${a}`
 }
 
-// Mes de consumo derivado de un mes de facturación: una unidad menos.
-function consumoDe(anio: number, mes: number): { anio: number; mes: number } {
-  if (mes === 1) return { anio: anio - 1, mes: 12 }
-  return { anio, mes: mes - 1 }
+// El período guardado en la base es el de CONSUMO (lo que selecciona el
+// usuario en el wizard al cargar Insumos STR). La facturación es +1 mes.
+function facturacionDe(anio: number, mes: number): { anio: number; mes: number } {
+  if (mes === 12) return { anio: anio + 1, mes: 1 }
+  return { anio, mes: mes + 1 }
 }
 
 export default function CargosSTRPage() {
@@ -53,18 +54,19 @@ export default function CargosSTRPage() {
       .catch(() => setOperadores([]))
   }, [])
 
-  // Para cada período de facturación calculamos su mes de consumo y armamos
-  // un solo modelo de opciones — los dos selectores comparten el mismo
-  // periodo_id, pero muestran etiquetas distintas (facturación vs consumo).
+  // Cada periodo en la base representa el mes de CONSUMO. Calculamos la
+  // facturación derivada (+1 mes) para mostrarla en el dropdown gemelo —
+  // ambos selectores comparten el mismo periodo_id pero con etiquetas
+  // distintas (consumo vs facturación).
   const periodosConConsumo = useMemo(() => {
     return periodos.map(p => {
-      const c = consumoDe(p.anio, p.mes)
+      const f = facturacionDe(p.anio, p.mes)
       return {
         id:               p.id,
         anio:             p.anio,
         mes:              p.mes,
-        facturacionLabel: `${MES_NOMBRE[p.mes]} ${p.anio}`,
-        consumoLabel:     `${MES_NOMBRE[c.mes]} ${c.anio}`,
+        consumoLabel:     `${MES_NOMBRE[p.mes]} ${p.anio}`,
+        facturacionLabel: `${MES_NOMBRE[f.mes]} ${f.anio}`,
       }
     })
   }, [periodos])

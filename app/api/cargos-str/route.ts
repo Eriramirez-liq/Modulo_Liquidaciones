@@ -63,21 +63,22 @@ export async function GET(request: NextRequest) {
     byOR.get(codigo)!.totales.set(pId, (byOR.get(codigo)!.totales.get(pId) ?? 0) + valor)
   }
 
-  // Computar facturación + consumo (= facturación - 1 mes) por período
-  // Sólo incluimos períodos con datos, o los explícitamente seleccionados.
-  function consumoDe(anio: number, mes: number): { anio: number; mes: number } {
-    if (mes === 1) return { anio: anio - 1, mes: 12 }
-    return { anio, mes: mes - 1 }
+  // El período guardado en registros_str.periodo_id es el de CONSUMO
+  // (lo que selecciona el usuario al cargar Insumos STR). La facturación
+  // se deriva como consumo + 1 mes.
+  function facturacionDe(anio: number, mes: number): { anio: number; mes: number } {
+    if (mes === 12) return { anio: anio + 1, mes: 1 }
+    return { anio, mes: mes + 1 }
   }
   const incluirSinDatos = !!(periodoIds && periodoIds.length > 0)
   const periodos = periodosRaw
     .filter(p => incluirSinDatos || (porPer.get(p.id) ?? 0) !== 0)
     .map(p => {
-      const c = consumoDe(p.anio, p.mes)
+      const f = facturacionDe(p.anio, p.mes)
       return {
         id:          p.id,
-        facturacion: `${p.anio}-${String(p.mes).padStart(2, "0")}`,
-        consumo:     `${c.anio}-${String(c.mes).padStart(2, "0")}`,
+        consumo:     `${p.anio}-${String(p.mes).padStart(2, "0")}`,
+        facturacion: `${f.anio}-${String(f.mes).padStart(2, "0")}`,
       }
     })
 
