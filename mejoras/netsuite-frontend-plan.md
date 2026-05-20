@@ -1,16 +1,166 @@
 # Plan de Desarrollo Frontend — Integración Cargos STR + Oracle NetSuite
 
 > **Modo:** Implementacion UI + Documentacion
-> **Fecha:** 2026-05-20
+> **Fecha:** 2026-05-20 (actualizado 2026-05-20 con correcciones de lógica de selección)
 > **Alcance:** `app/(dashboard)/cargos-str/page.tsx` + carpeta nueva `components/cargos-str/`
 > **Input:** `mejoras/netsuite-integration-plan.md` (Arquitecto de Soluciones)
 > **Autor:** Frontend Specialist
 
 ---
 
+## ⚠️ ADDENDUM 2026-05-20 — Corrección de lógica de selección
+
+**El cliente clarificó la lógica de selección antes de arrancar el desarrollo. Estos puntos sobreescriben las decisiones anteriores del documento en lo que respecta a selección, validación de duplicados y UI multi-período. El resto del plan (componentes, polling, máquina de estados, modales) sigue aplicando.**
+
+### Reglas de negocio actualizadas
+
+1. **Una OC por (OR, mes de facturación)**: cuando un cargo `(periodoId, orId)` tiene un envío en estado `PROCESADO`, NO se puede crear una OC nueva para ese mismo par. El sistema debe rechazar la inclusión de ese cargo en cualquier lote nuevo. Solo los cargos en estado `ERROR` o sin envío previo son elegibles.
+
+2. **El lote sigue al lote de Insumos STR**: cuando se cargan los archivos en el módulo Insumos STR para un período, se generan ~23 registros (uno por operador). Ese conjunto se trata como un lote lógico: el usuario lo visualiza completo en Cargos STR y, en condiciones normales, los 23 se envían juntos a NetSuite en el mismo mes de carga.
+
+3. **Selección por fila, no por celda**: el checkbox vive en la columna del operador (extremo izquierdo de cada fila), no en cada celda de monto. Razón: la celda representa el dato monetario de ese OR en ese mes; el envío a NetSuite es del OR completo del período filtrado, no de un valor numérico individual.
+
+4. **"Crear OC" requiere un solo período de facturación filtrado**: la operación de creación de OC solo es válida cuando hay UN período de facturación seleccionado en el filtro. Con múltiples períodos seleccionados, los checkboxes y el botón "Crear OC" quedan deshabilitados — la vista pasa a modo solo-lectura para auditoría histórica.
+
+5. **Modo multi-período = visualización**: cuando el usuario filtra varios meses para revisar histórico:
+   - Cada celda muestra el color de su estado (amarillo/verde/rojo)
+   - Al pasar el mouse sobre el monto, aparece tooltip con el **número de OC** (si está procesado) o el error (si falló)
+   - El layout visual sigue siendo limpio: período facturación, período consumo, operador, monto. Nada más visible — el estado vive en el color y el OC en el tooltip.
+
+6. **Procesamiento secuencial uno por uno**: cuando se confirma el envío, el sistema procesa los registros del lote de manera secuencial — registro 1 espera a respuesta de NetSuite → marca PROCESADO o ERROR → continúa con registro 2 → etc. La UI refleja el avance en tiempo real vía polling.
+
+7. **Botón "Crear OC"** (no "Generar OC"): el botón aparece al lado del botón Filtrar y muestra el contador de filas seleccionadas. Disabled cuando: (a) hay 0 ó múltiples períodos de facturación seleccionados, (b) cantidad de seleccionados = 0, o (c) hay un lote en curso.
+
+### Cambios concretos al plan original
+
+| Sección del plan | Estado |
+|---|---|
+| §1.1 `CeldaCargo` — checkbox dentro de la celda | ❌ **OBSOLETO**. Reemplazado por §1.6 `FilaOperador` (ver más abajo). Las celdas pasan a ser `CeldaMonto` (presentacional pura, sin checkbox, solo badge + tooltip). |
+| §1.2 `BotonGenerarOC` | ✅ Sigue válido pero **renombrar** a `BotonCrearOC` con `label = "Crear OC"`. Habilitación: requiere `periodoSel.length === 1` además de los criterios originales. |
+| §6 Diseño de tabla — 5 estados de celda con checkbox | ❌ **OBSOLETO**. La celda solo muestra monto + color de fondo + tooltip. El checkbox se mueve a la columna del operador. Ver §6-bis abajo. |
+| Selección masiva — checkbox en header de columna | ❌ **OBSOLETO** (la columna ya no tiene selección). |
+| **Nuevo** | "Seleccionar todos" aparece como checkbox maestro en el header de la columna **Operador**, no en cada celda numérica. |
+| Validación pre-envío | **NUEVO**: cliente debe filtrar de la selección cualquier fila cuyo estado actual sea PROCESADO antes de habilitar el envío. El backend tiene la validación dura, pero el front evita pedir un POST que sabe que va a fallar. |
+
+### §1.6 NUEVO COMPONENTE — `FilaOperador.tsx`
+
+**Path:** `components/cargos-str/FilaOperador.tsx`
+
+Renderiza una fila completa de la tabla (nombre del operador + N celdas de monto + total opcional). Contiene el checkbox de selección a la izquierda del nombre.
+
+```tsx
+interface FilaOperadorProps {
+  // Identidad
+  orId: string
+  orCodigo: string
+  orNombre: string
+
+  // Datos por período visible
+  periodos: { id: string; facturacion: string; consumo: string }[]
+  totalesPorPeriodo: Record<string, number>  // monto por periodoId
+  totalFila: number                          // suma de todos los períodos visibles
+
+  // Estado de envío por (periodoId, orId) — para colorear cada celda
+  estadosPorPeriodo: Record<string, EstadoEnvio | null>
+
+  // Selección (solo aplica cuando hay 1 solo período filtrado)
+  seleccionable: boolean      // false si multi-período O si la única fila/celda ya está PROCESADA
+  seleccionado: boolean
+  onToggleSeleccion: (orId: string) => void
+
+  // Visualización
+  mostrarColumnaTotal: boolean   // true cuando hay >1 período
+  onClickCeldaConEnvio: (envioId: string) => void  // abre DetalleEnvioModal
+}
+```
+
+**Estado interno:** ninguno.
+
+**Regla de habilitación del checkbox:**
+- `seleccionable === false` → checkbox disabled (multi-período o ya procesado)
+- `seleccionable === true` → checkbox enabled
+- Si la fila tiene estado `PROCESADO` en el período filtrado, `seleccionable` debe ser false desde el padre
+
+**Click en una celda con `estadoEnvio !== null`** → emite `onClickCeldaConEnvio(envioId)` para que el padre abra `DetalleEnvioModal`. Esto reemplaza el comportamiento que antes tenía `CeldaCargo`.
+
+### §1.7 NUEVO COMPONENTE — `CeldaMonto.tsx` (reemplaza `CeldaCargo`)
+
+**Path:** `components/cargos-str/CeldaMonto.tsx`
+
+Presentacional puro. Solo se ocupa del aspecto monetario + color de estado + tooltip.
+
+```tsx
+interface CeldaMontoProps {
+  monto: number
+  estadoEnvio: EstadoEnvio | null   // null = sin envío previo
+  onClick?: () => void              // disparado solo si estadoEnvio !== null
+}
+```
+
+**Reglas visuales:**
+- `estadoEnvio === null` → fondo blanco/transparente, cursor default
+- `estadoEnvio.estado === "PENDIENTE"` o `"PROCESANDO"` → fondo amarillo (`#fff7ed`), texto `#b45309`, cursor pointer, tooltip = "En proceso..."
+- `estadoEnvio.estado === "PROCESADO"` → fondo verde (`#f0fdf4`), texto `#15803d`, cursor pointer, tooltip = `OC: ${numeroOc}`
+- `estadoEnvio.estado === "ERROR"` → fondo rojo (`#fef2f2`), texto `#b91c1c`, cursor pointer, tooltip = primeros 80 chars del error
+
+**Tooltip:** atributo `title=""` nativo en el `<td>` — sin componente custom. Razón: cumple el requisito ("paso el mouse sobre el monto y veo el número de OC") con cero código extra y compatibilidad universal.
+
+### §6-bis Diseño visual de la tabla (corregido)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  [Filtros: Facturación] [Consumo] [Operador]   [Filtrar]         │
+│                                              [Crear OC (3)] ◀──── Solo activo si periodoSel.length === 1
+├──────────────────────────────────────────────────────────────────┤
+│ ☑ Operador       │ Mes facturación │ Mar 2026 │ Total            │   ← row 1 header
+│                  │ Mes Consumo     │ Feb 2026 │                  │   ← row 2 header
+├─────────────────────────────────────────────────────────────────┤
+│ ☐ AFINIA         │                 │ $1.2M    │ —                │
+│ ☑ AIRE           │                 │ $0.9M    │ —                │
+│ ☐ BAJO PUTUMAYO  │                 │  $1.1M   │ —                │   ← celda verde con OC en tooltip
+│ ☐ CEDENAR        │                 │ $1.5M    │ —                │   ← celda roja con error en tooltip
+│ ...              │                 │          │                  │
+│ TOTAL            │                 │$1,325,910│ —                │
+└─────────────────────────────────────────────────────────────────┘
+
+Cuando periodoSel.length > 1 (modo histórico, sin selección):
+┌──────────────────────────────────────────────────────────────────┐
+│  [Filtros con 2+ periodos] [Filtrar]   [Crear OC]  ← disabled    │
+├──────────────────────────────────────────────────────────────────┤
+│ Operador         │ Mar 2026 │ Abr 2026 │ Total                   │
+│                  │ Feb 2026 │ Mar 2026 │                         │
+├──────────────────┼──────────┼──────────┼─────────────────────────┤
+│ AFINIA           │ $1.2M ✓  │ $1.3M ●  │ $2.5M                   │
+│ AIRE             │ $0.9M ✓  │ $0.8M ✗  │ $1.7M                   │
+│ ...              │          │          │                          │
+└──────────────────────────────────────────────────────────────────┘
+   ↑ Sin columna de checkboxes — vista solo-lectura
+   ↑ Color de fondo en cada celda según estado
+   ↑ Tooltip on hover muestra OC o error
+```
+
+### Validaciones del cliente antes de enviar
+
+Antes de hacer POST a `/api/cargos-str/netsuite/lote`, el front filtra/valida:
+1. **`periodoSel.length === 1`** — si no, botón "Crear OC" está disabled (no debería llegar acá)
+2. **Para cada `orId` seleccionado**: revisar `estadosPorPeriodo[periodoId][orId]`. Si el estado es `PROCESADO`, removerlo silenciosamente de la selección y mostrar warning toast "X cargos ya tenían OC y fueron omitidos"
+3. **Selección final no vacía** — si todos los seleccionados estaban procesados, cancelar el envío con mensaje "No hay cargos elegibles. Verifica que no estén ya procesados."
+
+### Implicancia para el backend (notificar al Arquitecto)
+
+El plan del Arquitecto en §B.2 endpoint `POST /api/cargos-str/netsuite/lote` ya tiene un error `400 SIN_DATOS`. Hay que **agregar** un nuevo error:
+
+- `422 CARGO_YA_PROCESADO` — al menos uno de los `(periodoId, orId)` ya tiene un envío en estado `PROCESADO` para ese mismo período. Body: `{ error, conflictos: [{periodoId, orId, numeroOc, loteId}] }`.
+
+Esto debe validarse dentro de la transacción del `crearLote`, después del advisory lock, para evitar TOCTOU.
+
+---
+
 ## Resumen ejecutivo
 
 La UI requiere cinco componentes nuevos y modificaciones quirurgicas a la pagina existente. El cambio mas significativo es convertir cada celda de la tabla pivot de un `<td>` simple a un componente interactivo con tres capas: estado de envio (badge), capacidad de seleccion (checkbox) y acceso al detalle (click). Todo el estado del lote se maneja localmente en `page.tsx` con `useState` — no se justifica un Context para este modulo de alcance acotado. El polling usa `setInterval` raw con cleanup en `useEffect` — no se introduce TanStack Query porque el repo no lo tiene y el beneficio no justifica la dependencia para un solo endpoint que se polea.
+
+> ⚠️ **Nota**: el resumen ejecutivo arriba refleja la versión original con selección por celda. Las reglas válidas para arrancar el desarrollo son las del **ADDENDUM 2026-05-20** al inicio del documento. En particular: la "tabla pivot con celda interactiva" se convierte en "tabla con fila interactiva + celdas presentacionales".
 
 ---
 
