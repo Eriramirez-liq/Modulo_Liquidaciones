@@ -26,6 +26,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Parámetros incompletos" }, { status: 400 })
   }
 
+  // No permitir cargas para períodos futuros
+  const ahora = new Date()
+  const anioActual = ahora.getFullYear()
+  const mesActual  = ahora.getMonth() + 1
+  if (anio > anioActual || (anio === anioActual && mes > mesActual)) {
+    return NextResponse.json(
+      { error: "No se pueden cargar archivos para períodos futuros." },
+      { status: 400 }
+    )
+  }
+
   // Buffer del archivo principal (single-file mode). Para INSUMOS_STR usamos filesMulti.
   const buffer = file ? Buffer.from(await file.arrayBuffer()) : Buffer.alloc(0)
   const periodo = `${anio}-${String(mes).padStart(2, "0")}`
@@ -39,9 +50,7 @@ export async function POST(request: NextRequest) {
   let existeCargaPrevia = false
   let cargaPreviaId: string | undefined
 
-  // Para INSUMOS_STR no se pide justificación: cada carga sobrescribe la
-  // anterior (siempre vale la última). El delete real ocurre en confirmar.
-  if (periodoExistente && tipoFuente !== "INSUMOS_STR") {
+  if (periodoExistente) {
     const cargaPrevia = await db.cargaFuente.findFirst({
       where: {
         periodo_id: periodoExistente.id,

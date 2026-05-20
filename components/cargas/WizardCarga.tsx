@@ -96,6 +96,14 @@ export function WizardCarga() {
       .catch(() => {})
   }, [])
 
+  // Si el usuario cambia el año y el mes seleccionado quedó en el futuro,
+  // lo clamp al mes actual para que la selección sea siempre válida.
+  useEffect(() => {
+    if (anio === CURRENT_YEAR && mes > CURRENT_MONTH) {
+      setMes(CURRENT_MONTH)
+    }
+  }, [anio, mes])
+
   const fuenteActual = FUENTES.find((f) => f.tipo === tipoFuente)
   const requiereOR  = fuenteActual?.requiresOR ?? false
   const isMultiFile = fuenteActual?.multiFile ?? false
@@ -294,9 +302,9 @@ export function WizardCarga() {
                     onChange={(e) => setAnio(Number(e.target.value))}
                     style={{ width: "100px", padding: "7px 10px", borderRadius: "7px", border: "1px solid #d1d5db", fontSize: "0.875rem" }}
                   >
+                    <option value={CURRENT_YEAR - 2}>{CURRENT_YEAR - 2}</option>
                     <option value={CURRENT_YEAR - 1}>{CURRENT_YEAR - 1}</option>
                     <option value={CURRENT_YEAR}>{CURRENT_YEAR}</option>
-                    <option value={CURRENT_YEAR + 1}>{CURRENT_YEAR + 1}</option>
                   </select>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
@@ -306,12 +314,18 @@ export function WizardCarga() {
                     onChange={(e) => setMes(Number(e.target.value))}
                     style={{ width: "160px", padding: "7px 10px", borderRadius: "7px", border: "1px solid #d1d5db", fontSize: "0.875rem" }}
                   >
-                    {MESES.map((m, i) => (
-                      <option key={i + 1} value={i + 1}>{m}</option>
-                    ))}
+                    {MESES.map((m, i) => {
+                      // Si el año seleccionado es el actual, sólo permitir meses hasta el actual
+                      const futuro = anio === CURRENT_YEAR && i + 1 > CURRENT_MONTH
+                      if (futuro) return null
+                      return <option key={i + 1} value={i + 1}>{m}</option>
+                    })}
                   </select>
                 </div>
               </div>
+              <p style={{ fontSize: "0.72rem", color: "#9ca3af", marginTop: "6px" }}>
+                No se permiten cargas para períodos futuros.
+              </p>
             </div>
 
             {/* Tipo de fuente */}

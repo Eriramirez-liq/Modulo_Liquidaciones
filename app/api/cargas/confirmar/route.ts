@@ -40,6 +40,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Datos incompletos" }, { status: 400 })
   }
 
+  // No permitir cargas para períodos futuros (safety net si llaman a confirmar directo)
+  const ahora = new Date()
+  const anioActual = ahora.getFullYear()
+  const mesActual  = ahora.getMonth() + 1
+  if (meta.anio > anioActual || (meta.anio === anioActual && meta.mes > mesActual)) {
+    return NextResponse.json(
+      { error: "No se pueden cargar archivos para períodos futuros." },
+      { status: 400 }
+    )
+  }
+
   if (cargaPreviaId && !justificacion?.trim()) {
     return NextResponse.json(
       { error: "Se requiere justificación para reemplazar una carga existente" },
