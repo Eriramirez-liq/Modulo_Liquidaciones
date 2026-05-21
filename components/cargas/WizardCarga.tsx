@@ -172,19 +172,37 @@ export function WizardCarga() {
       if (orId) fd.append("orId", orId)
 
       const res = await fetch("/api/cargas/preview", { method: "POST", body: fd })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error ?? "Error al procesar el archivo."); return }
-
-      setPreview(data.preview ?? [])
-      setFilasCompletas(data.filasCompletas ?? [])
-      setTotal(data.total ?? 0)
-      setAlertas(data.alertas ?? [])
-      setErroresCriticos(data.erroresCriticos ?? [])
-      setExisteCargaPrevia(data.existeCargaPrevia ?? false)
-      setCargaPreviaId(data.cargaPreviaId)
+      // Intentar JSON; si falla, leer como texto para que el mensaje sea util
+      let data: Record<string, unknown> | null = null
+      let rawText = ""
+      try {
+        rawText = await res.text()
+        data = rawText ? JSON.parse(rawText) : null
+      } catch {
+        // La respuesta no fue JSON valido (timeout, 413, 500 HTML, etc.)
+        const status = `HTTP ${res.status} ${res.statusText}`
+        const preview = rawText.length > 200 ? rawText.slice(0, 200) + "..." : rawText
+        setError(`${status} — respuesta no-JSON del servidor. ${preview ? "Body: " + preview : "Body vacio."}`)
+        return
+      }
+      if (!res.ok) {
+        const detalle = data && typeof data === "object" && "detalle" in data ? ` (${data.detalle})` : ""
+        const msg = data && typeof data === "object" && "error" in data ? String(data.error) : "Error al procesar el archivo."
+        setError(`${msg}${detalle}`)
+        return
+      }
+      const d = data as Record<string, unknown>
+      setPreview((d.preview as Record<string, unknown>[]) ?? [])
+      setFilasCompletas((d.filasCompletas as unknown[]) ?? [])
+      setTotal((d.total as number) ?? 0)
+      setAlertas((d.alertas as string[]) ?? [])
+      setErroresCriticos((d.erroresCriticos as string[]) ?? [])
+      setExisteCargaPrevia((d.existeCargaPrevia as boolean) ?? false)
+      setCargaPreviaId(d.cargaPreviaId as string | undefined)
       setStep(2)
-    } catch {
-      setError("Error de red al procesar el archivo.")
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setError(`Error de red al procesar el archivo: ${msg}`)
     } finally {
       setLoading(false)
     }

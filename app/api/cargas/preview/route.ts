@@ -9,6 +9,12 @@ import { parsearInsumosSTR } from "@/lib/parsers/insumos-str"
 
 import { TipoFuente } from "@prisma/client"
 
+// Vercel runtime config: forzar Node.js (no Edge) y permitir hasta 60s
+// para procesar archivos grandes como XM. Edge limita a 30s y algunos
+// modulos de xlsx no funcionan ahi.
+export const runtime    = "nodejs"
+export const maxDuration = 60
+
 export async function POST(request: NextRequest) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
