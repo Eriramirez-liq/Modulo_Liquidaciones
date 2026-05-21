@@ -119,11 +119,11 @@ export async function POST(request: NextRequest) {
           const filas = filasCompletas as FilaXM[]
           await tx.registroXM.createMany({
             data: filas.map((f) => ({
-              carga_id: carga.id,
-              periodo_id: periodoStr,
-              codigo_frontera: f.codigo_frontera,
-              nombre_frontera: f.nombre_frontera ?? null,
-              energia_xm_kwh: f.energia_xm_kwh,
+              carga_id:        carga.id,
+              periodo_id:      periodoStr,
+              codigo_frontera: f.SIC,
+              nombre_frontera: f.Nombre ?? null,
+              energia_xm_kwh:  f["Activa XM"],
             })),
           })
           break

@@ -14,10 +14,13 @@ export type FilaFacturacion = {
   tarifa_total_bia: number
 }
 
+// Etiquetas en formato amigable porque las claves se usan directamente como
+// headers de la tabla de preview (Object.keys del primer registro).
 export type FilaXM = {
-  codigo_frontera: string
-  nombre_frontera?: string
-  energia_xm_kwh: number
+  SIC:           string
+  Nombre:        string | null
+  Periodo:       string         // "AAAA-MM" derivado de la columna FECHA del archivo
+  "Activa XM":   number         // suma de Total por frontera
 }
 
 export type FilaSDL = {
