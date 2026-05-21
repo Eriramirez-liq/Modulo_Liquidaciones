@@ -36,6 +36,16 @@ function toNum(v: unknown): number | null {
   return isNaN(n) ? null : n
 }
 
+// Convierte un serial de Excel (días desde 1899-12-30) a Date UTC.
+// No depende de XLSX.SSF (que a veces no está disponible en runtime).
+function excelSerialToDate(serial: number): Date | null {
+  if (typeof serial !== "number" || !isFinite(serial)) return null
+  // Excel "epoch": 1899-12-30 (compensa el bug del año bisiesto 1900)
+  const epochMs = Date.UTC(1899, 11, 30)
+  const d = new Date(epochMs + serial * 86400 * 1000)
+  return isNaN(d.getTime()) ? null : d
+}
+
 // Convierte el valor de la columna FECHA a "AAAA-MM".
 // Acepta: serial de Excel (número), ISO yyyy-mm-dd, dd/mm/yyyy, dd-mm-yyyy.
 function fechaAPeriodo(v: unknown): string | null {
@@ -43,10 +53,10 @@ function fechaAPeriodo(v: unknown): string | null {
 
   // Serial de Excel
   if (typeof v === "number") {
-    try {
-      const d = XLSX.SSF.parse_date_code(v)
-      if (d && d.y && d.m) return `${d.y}-${String(d.m).padStart(2, "0")}`
-    } catch { /* sigue al fallback */ }
+    const d = excelSerialToDate(v)
+    if (d) {
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`
+    }
   }
 
   const s = String(v).trim()
@@ -90,6 +100,25 @@ export async function parsearXM(
   mes: number
 ): Promise<ResultadoParser<FilaXM>> {
   void _periodoId
+  try {
+    return await parsearXMInternal(buffer, anio, mes)
+  } catch (e) {
+    // Cualquier error inesperado se devuelve como erroreCritico para que la
+    // API responda JSON limpio en vez de un 500 que el wizard ve como "error de red".
+    const msg = e instanceof Error ? `${e.message}\n${e.stack ?? ""}` : String(e)
+    return {
+      filas: [],
+      alertas: [],
+      erroresCriticos: [`Error inesperado en el parser XM: ${msg}`],
+    }
+  }
+}
+
+async function parsearXMInternal(
+  buffer: Buffer,
+  anio: number,
+  mes: number,
+): Promise<ResultadoParser<FilaXM>> {
   const alertas: string[]         = []
   const erroresCriticos: string[] = []
 
