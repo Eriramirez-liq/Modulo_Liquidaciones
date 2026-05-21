@@ -93,15 +93,17 @@ function fechaAPeriodo(v: unknown): string | null {
  *   El archivo trae registros por día. Agregamos sumando "Total" por
  *   (CODIGO SIC, AAAA-MM) y devolvemos una fila consolidada por frontera.
  */
+// Acepta Buffer (Node) o Uint8Array (navegador). Buffer extiende Uint8Array,
+// asi que ambos funcionan con XLSX.read({ type: "array" }).
 export async function parsearXM(
-  buffer: Buffer,
+  data: Uint8Array | Buffer,
   _periodoId: string | null,
   anio: number,
   mes: number
 ): Promise<ResultadoParser<FilaXM>> {
   void _periodoId
   try {
-    return await parsearXMInternal(buffer, anio, mes)
+    return await parsearXMInternal(data, anio, mes)
   } catch (e) {
     // Cualquier error inesperado se devuelve como erroreCritico para que la
     // API responda JSON limpio en vez de un 500 que el wizard ve como "error de red".
@@ -115,7 +117,7 @@ export async function parsearXM(
 }
 
 async function parsearXMInternal(
-  buffer: Buffer,
+  data: Uint8Array | Buffer,
   anio: number,
   mes: number,
 ): Promise<ResultadoParser<FilaXM>> {
@@ -124,7 +126,8 @@ async function parsearXMInternal(
 
   let wb: XLSX.WorkBook
   try {
-    wb = XLSX.read(buffer, { type: "buffer", cellDates: false })
+    // type: "array" funciona con Buffer (Node) y Uint8Array (navegador)
+    wb = XLSX.read(data, { type: "array", cellDates: false })
   } catch (e) {
     erroresCriticos.push(`No se pudo leer el archivo: ${e}`)
     return { filas: [], alertas, erroresCriticos }

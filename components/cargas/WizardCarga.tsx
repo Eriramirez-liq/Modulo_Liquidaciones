@@ -159,6 +159,46 @@ export function WizardCarga() {
     }
     setLoading(true)
     setError(null)
+
+    // ── XM: parsear en el navegador para evitar el limite de 4.5 MB de Vercel
+    // (los archivos XM con datos diarios suelen superarlo).
+    if (tipoFuente === "XM" && file) {
+      try {
+        const [{ parsearXM }, checkRes] = await Promise.all([
+          import("@/lib/parsers/xm"),
+          fetch("/api/cargas/check-previa", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ anio, mes, tipoFuente, orId: orId || undefined }),
+          }),
+        ])
+        if (!checkRes.ok) {
+          const t = await checkRes.text()
+          let msg = "Error al validar el periodo."
+          try { const j = JSON.parse(t); msg = j.error ?? msg } catch { /* keep default */ }
+          setError(msg); return
+        }
+        const checkData = await checkRes.json()
+        const ab = await file.arrayBuffer()
+        const u8 = new Uint8Array(ab)
+        const result = await parsearXM(u8, null, anio, mes)
+        setPreview((result.filas as unknown as Record<string, unknown>[]).slice(0, 20))
+        setFilasCompletas(result.filas)
+        setTotal(result.filas.length)
+        setAlertas(result.alertas)
+        setErroresCriticos(result.erroresCriticos)
+        setExisteCargaPrevia(checkData.existeCargaPrevia ?? false)
+        setCargaPreviaId(checkData.cargaPreviaId)
+        setStep(2)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        setError(`Error al parsear el archivo XM en el navegador: ${msg}`)
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+
     try {
       const fd = new FormData()
       if (isMultiFile) {
