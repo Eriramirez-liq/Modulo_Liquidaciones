@@ -89,6 +89,11 @@ export function FilaOperador({
         const estadoEnvio = estadosEnvio[key] ?? null
         const monto = valoresPorPeriodo[periodo.id] ?? 0
 
+        // Solo PROCESADO y ERROR abren el DetalleEnvioModal.
+        // PENDIENTE y PROCESANDO no tienen detalle útil que mostrar.
+        const puedeAbrirDetalle =
+          estadoEnvio?.estado === "PROCESADO" || estadoEnvio?.estado === "ERROR"
+
         return (
           <CeldaMonto
             key={periodo.id}
@@ -97,7 +102,7 @@ export function FilaOperador({
             monto={monto}
             estadoEnvio={estadoEnvio}
             onClick={
-              estadoEnvio
+              puedeAbrirDetalle
                 ? () => onClickCeldaConEnvio(estadoEnvio.ultimoEnvioId)
                 : undefined
             }

@@ -2,8 +2,9 @@
 import { useState, useEffect, useMemo } from "react"
 import { FilaOperador } from "@/components/cargos-str/FilaOperador"
 import { BotonCrearOC } from "@/components/cargos-str/BotonCrearOC"
-import type { EstadoEnvioKey, EstadoEnvioUI } from "@/components/cargos-str/types"
-import { MOCK_ESTADOS_ENVIO } from "@/_dev/mocks/netsuite"
+import DetalleEnvioModal from "@/components/cargos-str/DetalleEnvioModal"
+import type { EstadoEnvioKey, EstadoEnvioUI, DetalleEnvio } from "@/components/cargos-str/types"
+import { MOCK_ESTADOS_ENVIO, MOCK_DETALLE_ENVIO_OK, MOCK_DETALLE_ENVIO_ERROR } from "@/_dev/mocks/netsuite"
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -68,6 +69,11 @@ export default function CargosSTRPage() {
   // -- Estado NetSuite --
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set())
   const [estadosEnvio, setEstadosEnvio] = useState<Record<EstadoEnvioKey, EstadoEnvioUI>>({})
+
+  // -- Estado DetalleEnvioModal (FE-3) --
+  const [detalleEnvioId, setDetalleEnvioId] = useState<string | null>(null)
+  const [detalleEnvio, setDetalleEnvio] = useState<DetalleEnvio | null>(null)
+  const [cargandoDetalle, setCargandoDetalle] = useState(false)
 
   // -- Variables derivadas --
   const modoSeleccion   = periodoSel.length === 1
@@ -151,6 +157,66 @@ export default function CargosSTRPage() {
   function clearPeriodos()     { setPeriodoSel([]) }
   function selectAllORs()      { setOrSel(operadores.map(o => o.id)) }
   function clearORs()          { setOrSel([]) }
+
+  // -- Handlers DetalleEnvioModal (FE-3) --
+
+  function handleVerDetalle(envioId: string) {
+    // Buscar el estadoEnvio correspondiente al envioId en el mapa actual
+    const estadoEnvioEntrada = Object.values(estadosEnvio).find(
+      e => e.ultimoEnvioId === envioId
+    )
+
+    // No abrir modal para estados sin detalle útil (PENDIENTE/PROCESANDO)
+    // Nota: FilaOperador ya filtra el click, pero esta es una segunda línea de defensa
+    if (
+      !estadoEnvioEntrada ||
+      estadoEnvioEntrada.estado === "PENDIENTE" ||
+      estadoEnvioEntrada.estado === "PROCESANDO"
+    ) {
+      return
+    }
+
+    setDetalleEnvioId(envioId)
+    setCargandoDetalle(true)
+    setDetalleEnvio(null)
+
+    // TODO FE-6: reemplazar por fetch a /api/cargos-str/netsuite/envio/:id
+    // Mock temporal: seleccionar el mock según el estado del envío
+    const mockDetalle: DetalleEnvio =
+      estadoEnvioEntrada.estado === "PROCESADO"
+        ? {
+            ...MOCK_DETALLE_ENVIO_OK,
+            id: envioId,
+            numeroOc: estadoEnvioEntrada.numeroOc ?? MOCK_DETALLE_ENVIO_OK.numeroOc,
+          }
+        : {
+            ...MOCK_DETALLE_ENVIO_ERROR,
+            id: envioId,
+            errorMensaje:
+              estadoEnvioEntrada.errorMensaje ?? MOCK_DETALLE_ENVIO_ERROR.errorMensaje,
+          }
+
+    const timer = setTimeout(() => {
+      setDetalleEnvio(mockDetalle)
+      setCargandoDetalle(false)
+    }, 300)
+
+    // Guardar el timer en una variable local no es necesario para cleanup
+    // ya que el modal se desmonta si se cierra antes; el setState es no-op en ese caso.
+    // Si en FE-6 se usa fetch, cancelar con AbortController.
+    void timer
+  }
+
+  function handleCerrarDetalle() {
+    setDetalleEnvioId(null)
+    setDetalleEnvio(null)
+    setCargandoDetalle(false)
+  }
+
+  function handleReenviar() {
+    // eslint-disable-next-line no-alert
+    alert("Reenviar disponible cuando FE-4/Backend estén listos. Funcionalidad pendiente.")
+  }
 
   // -- Helpers de selección --
 
@@ -340,9 +406,7 @@ export default function CargosSTRPage() {
             estadosEnvio={estadosEnvio}
             seleccion={seleccion}
             onToggleSeleccion={toggleSeleccion}
-            onClickCeldaConEnvio={(_envioId) => {
-              // TODO FE-3: abrir DetalleEnvioModal con envioId
-            }}
+            onClickCeldaConEnvio={handleVerDetalle}
             modoSeleccion={modoSeleccion}
             onToggleSeleccionarTodos={toggleSeleccionarTodos}
             maestroChecked={maestroState.checked}
@@ -350,6 +414,15 @@ export default function CargosSTRPage() {
           />
         )}
       </div>
+
+      {/* DetalleEnvioModal — FE-3 */}
+      <DetalleEnvioModal
+        abierto={detalleEnvioId !== null}
+        envio={detalleEnvio}
+        cargando={cargandoDetalle}
+        onCerrar={handleCerrarDetalle}
+        onReenviar={detalleEnvio?.estado === "ERROR" ? handleReenviar : undefined}
+      />
     </div>
   )
 }

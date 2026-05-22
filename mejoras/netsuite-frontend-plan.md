@@ -28,7 +28,7 @@ Las siguientes decisiones bloqueantes han sido confirmadas por la usuaria y sobr
 | Paso 1 — Consolidar documento | Completado | 2026-05-22 | Secciones obsoletas marcadas, indice de versiones agregado |
 | FE-1 — Skeleton de componentes + tipos | Completado | 2026-05-22 | 8 archivos creados, `tsc --noEmit` pasa sin errores, 0 errores ESLint (3 warnings esperados en stubs) |
 | FE-2 — Tabla con checkboxes + seleccion | Completado | 2026-05-22 | Tabla con seleccion por fila, BotonCrearOC integrado, estados mockeados desde _dev. FilaOperador + CeldaMonto implementados completos. |
-| FE-3 — BadgeCelda + DetalleEnvioModal | Pendiente | — | |
+| FE-3 — BadgeCelda + DetalleEnvioModal | Completado | 2026-05-23 | DetalleEnvioModal con layouts PROCESADO y ERROR; BadgeCelda no extraido (trivial, sin reutilizacion externa). Mock de detalle desde _dev/mocks con setTimeout 300ms. Wiring completo en page.tsx. FilaOperador filtra clicks: solo PROCESADO/ERROR abren modal. tsc + ESLint 0 errores. |
 | FE-4 — ModalConfirmarLote + creacion lote | Pendiente | — | Requiere POST /lote del backend |
 | FE-5 — PanelLoteEnCurso + polling | Pendiente | — | Requiere GET /lote/:id |
 | FE-6 — Integracion real (quitar mocks) | Pendiente | — | |
