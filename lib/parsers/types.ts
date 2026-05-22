@@ -1,17 +1,27 @@
 export type MapeoColumnas = Record<string, string>
 
+// FilaFacturacion ahora refleja la data que viene de Metabase + los derivados
+// del NT. Campos opcionales son los que no estan garantizados por la query.
 export type FilaFacturacion = {
-  codigo_frontera: string
-  nombre_usuario: string
-  operador_red: string
-  energia_kwh: number
-  g_bia: number
-  t_bia: number
-  d_bia: number
-  pr_bia: number
-  r_bia: number
-  c_bia: number
-  tarifa_total_bia: number
+  codigo_frontera:          string
+  periodo:                  string                  // "AAAA-MM" desde la columna Period
+  nombre_usuario:           string | null
+  operador_red:             string | null
+  energia_kwh:              number
+  nt_raw:                   string | null           // valor original de la columna NT
+  nivel_tension:            string | null           // "1", "2" o "3"
+  propiedad_activos:        string | null           // "OR" | "Usuario" | "Compartido"
+  energia_reactiva_ind_pen: number | null
+  energia_reactiva_cap_pen: number | null
+  factor_m:                 number | null
+  // Tarifas BIA (para conciliacion de balance, no para SDL)
+  g_bia:                    number | null
+  t_bia:                    number | null
+  d_bia:                    number | null
+  pr_bia:                   number | null
+  r_bia:                    number | null
+  c_bia:                    number | null
+  tarifa_total_bia:         number | null
 }
 
 // Etiquetas en formato amigable porque las claves se usan directamente como

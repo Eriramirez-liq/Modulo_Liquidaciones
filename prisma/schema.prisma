@@ -224,16 +224,34 @@ model RegistroFacturacion {
   carga_id         String
   periodo_id       String
   codigo_frontera  String
-  nombre_usuario   String
-  operador_red     String
+  // Campos opcionales — pueden no venir de Metabase
+  nombre_usuario   String?
+  operador_red     String?
+
+  // Energia activa de la frontera
   energia_kwh      Decimal  @db.Decimal(18, 6)
-  g_bia            Decimal  @db.Decimal(18, 6)
-  t_bia            Decimal  @db.Decimal(18, 6)
-  d_bia            Decimal  @db.Decimal(18, 6)
-  pr_bia           Decimal  @db.Decimal(18, 6)
-  r_bia            Decimal  @db.Decimal(18, 6)
-  c_bia            Decimal  @db.Decimal(18, 6)
-  tarifa_total_bia Decimal  @db.Decimal(18, 6)
+
+  // Nivel de tension y propiedad — derivados de la columna NT del archivo
+  // de Facturacion BIA. NT codifica ambos: 1/11=NT1/OR, 12=NT1/Usuario,
+  // 13=NT1/Compartido, 20=NT2/Usuario, 30=NT3/Usuario.
+  nt_raw                   String?  @db.VarChar(10)
+  nivel_tension            String?  @db.VarChar(5)
+  propiedad_activos        String?  @db.VarChar(20)
+
+  // Energia reactiva penalizada (para conciliacion SDL)
+  energia_reactiva_ind_pen Decimal? @db.Decimal(18, 6)
+  energia_reactiva_cap_pen Decimal? @db.Decimal(18, 6)
+  factor_m                 Decimal? @db.Decimal(10, 4)
+
+  // Componentes de la tarifa BIA — para conciliacion de balance (NO para SDL)
+  // Ahora opcionales porque algunos flujos no las traen.
+  g_bia            Decimal? @db.Decimal(18, 6)
+  t_bia            Decimal? @db.Decimal(18, 6)
+  d_bia            Decimal? @db.Decimal(18, 6)
+  pr_bia           Decimal? @db.Decimal(18, 6)
+  r_bia            Decimal? @db.Decimal(18, 6)
+  c_bia            Decimal? @db.Decimal(18, 6)
+  tarifa_total_bia Decimal? @db.Decimal(18, 6)
   createdAt        DateTime @default(now())
 
   @@map("registros_facturacion")

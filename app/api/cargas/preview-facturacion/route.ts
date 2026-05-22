@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { ejecutarCardMetabase, MetabaseError } from "@/lib/integrations/metabase"
+import { mapearFilasMetabase } from "@/lib/parsers/facturacion-metabase"
 
 /**
  * POST /api/cargas/preview-facturacion
@@ -63,19 +64,15 @@ export async function POST(request: NextRequest) {
 
   const alertas: string[]         = []
   const erroresCriticos: string[] = []
-  const todasFilas = resultado.rows
-
-  // 2. Filtrar por la columna "period" usando el periodo seleccionado en el
-  //    wizard. La columna puede venir como "period", "Period", "PERIOD"
-  //    (busqueda case-insensitive).
   const periodoStr = `${anio}-${String(mes).padStart(2, "0")}`
 
-  const colPeriod = resultado.columnas.find(c => c.toLowerCase() === "period")
-  if (!colPeriod) {
-    erroresCriticos.push(
-      `La query de Metabase no devolvio una columna "period". ` +
-      `Columnas disponibles: [${resultado.columnas.join(", ")}]`,
-    )
+  // 2. Mapear las filas crudas de Metabase al shape FilaFacturacion
+  //    (deriva nivel_tension + propiedad_activos del NT, normaliza periodo,
+  //    valida columnas requeridas).
+  const mapeo = mapearFilasMetabase(resultado.rows, resultado.columnas)
+  alertas.push(...mapeo.alertas)
+  erroresCriticos.push(...mapeo.erroresCriticos)
+  if (mapeo.erroresCriticos.length > 0) {
     return NextResponse.json({
       preview: [], filasCompletas: [], total: 0,
       columnas: resultado.columnas,
@@ -84,28 +81,11 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // Normaliza un valor de la columna "period" a "AAAA-MM".
-  // Acepta formatos:
-  //   - "2026-04", "2026-04-01", "2026-04-01T..."  → YYYY-MM[-...]
-  //   - "2026/04", "2026/04/01"                    → YYYY/MM[/...]
-  //   - "04-2026", "04/2026"                       → MM-YYYY o MM/YYYY (formato Metabase)
-  function normalizarPeriodo(v: unknown): string | null {
-    if (v == null) return null
-    const s = String(v).trim()
-    if (!s) return null
-    // YYYY-MM o YYYY/MM (año primero, 4 digitos)
-    let m = s.match(/^(\d{4})[-/](\d{1,2})/)
-    if (m) return `${m[1]}-${(m[2] ?? "").padStart(2, "0")}`
-    // MM-YYYY o MM/YYYY (mes primero, 1-2 digitos; año 4 digitos)
-    m = s.match(/^(\d{1,2})[-/](\d{4})/)
-    if (m) return `${m[2]}-${(m[1] ?? "").padStart(2, "0")}`
-    return null
-  }
-
-  const filtradas = todasFilas.filter(r => normalizarPeriodo(r[colPeriod]) === periodoStr)
+  // 3. Filtrar por periodo seleccionado en el wizard
+  const filtradas = mapeo.filas.filter(f => f.periodo === periodoStr)
 
   alertas.push(
-    `Metabase: ${todasFilas.length} filas totales, ${filtradas.length} coinciden con period = ${periodoStr}.`,
+    `Metabase: ${resultado.rows.length} filas totales, ${filtradas.length} coinciden con period = ${periodoStr}.`,
   )
 
   if (filtradas.length === 0) {
