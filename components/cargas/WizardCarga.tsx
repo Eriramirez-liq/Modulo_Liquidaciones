@@ -24,7 +24,7 @@ interface FuenteCard {
 const FUENTES: FuenteCard[] = [
   {
     tipo: "FACTURACION", label: "Facturación BIA", requiresOR: false,
-    desc: "Fuente maestra del período. Define el universo de fronteras.",
+    desc: "Se consulta directo desde Metabase (sin carga de archivo).",
     icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
   },
   {
@@ -148,6 +148,53 @@ export function WizardCarga() {
 
   async function handleSiguienteStep1() {
     if (!paso1Ok) return
+
+    // FACTURACION: no se sube archivo, se consulta directo a Metabase y se
+    // salta al paso 2 con el preview.
+    if (tipoFuente === "FACTURACION") {
+      setLoading(true)
+      setError(null)
+      try {
+        const res = await fetch("/api/cargas/preview-facturacion", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ anio, mes }),
+        })
+        let data: Record<string, unknown> | null = null
+        let rawText = ""
+        try {
+          rawText = await res.text()
+          data = rawText ? JSON.parse(rawText) : null
+        } catch {
+          const status = `HTTP ${res.status} ${res.statusText}`
+          const preview = rawText.length > 200 ? rawText.slice(0, 200) + "..." : rawText
+          setError(`${status} — respuesta no-JSON del servidor. ${preview ? "Body: " + preview : "Body vacio."}`)
+          return
+        }
+        if (!res.ok) {
+          const detalle = data && typeof data === "object" && "detalle" in data ? ` (${data.detalle})` : ""
+          const msg = data && typeof data === "object" && "error" in data ? String(data.error) : "Error al consultar Metabase."
+          setError(`${msg}${detalle}`)
+          return
+        }
+        const d = data as Record<string, unknown>
+        setPreview((d.preview as Record<string, unknown>[]) ?? [])
+        setFilasCompletas((d.filasCompletas as unknown[]) ?? [])
+        setTotal((d.total as number) ?? 0)
+        setAlertas((d.alertas as string[]) ?? [])
+        setErroresCriticos((d.erroresCriticos as string[]) ?? [])
+        setExisteCargaPrevia((d.existeCargaPrevia as boolean) ?? false)
+        setCargaPreviaId(d.cargaPreviaId as string | undefined)
+        setStep(2)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        setError(`Error de red al consultar Metabase: ${msg}`)
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+
     setStep(1)
   }
 
@@ -461,17 +508,19 @@ export function WizardCarga() {
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <button
                 type="button"
-                disabled={!paso1Ok}
+                disabled={!paso1Ok || loading}
                 onClick={handleSiguienteStep1}
                 style={{
                   display: "flex", alignItems: "center", gap: "6px",
                   padding: "9px 20px", borderRadius: "7px", border: "none",
-                  fontSize: "0.875rem", fontWeight: 600, cursor: paso1Ok ? "pointer" : "not-allowed",
-                  backgroundColor: paso1Ok ? ACCENT : "#e5e7eb",
-                  color: paso1Ok ? "#050f0d" : "#9ca3af",
+                  fontSize: "0.875rem", fontWeight: 600, cursor: paso1Ok && !loading ? "pointer" : "not-allowed",
+                  backgroundColor: paso1Ok && !loading ? ACCENT : "#e5e7eb",
+                  color: paso1Ok && !loading ? "#050f0d" : "#9ca3af",
                 }}
               >
-                Siguiente
+                {loading
+                  ? (tipoFuente === "FACTURACION" ? "Consultando Metabase…" : "Procesando…")
+                  : (tipoFuente === "FACTURACION" ? "Consultar Metabase" : "Siguiente")}
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
                      fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="9 18 15 12 9 6"/>
