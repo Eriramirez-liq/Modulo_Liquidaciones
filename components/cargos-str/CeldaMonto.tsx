@@ -13,22 +13,25 @@ interface CeldaMontoProps {
 }
 
 // Configuración visual por estado
+// - PENDIENTE: amarillo con punto (único estado "envío pendiente")
+// - PROCESANDO/PROCESADO: azul sin badge (enviado a NetSuite, OC pendiente o emitida)
+// - ERROR: rojo con ✗
 type EstadoConfig = {
   bg: string
-  badgeColor: string
-  badgeSymbol: string
-  cursor: string
+  textColor: string
+  badgeColor: string | null
+  badgeSymbol: string | null
 }
 
 function getEstadoConfig(estado: EstadoEnvioUI["estado"]): EstadoConfig {
   switch (estado) {
     case "PENDIENTE":
+      return { bg: "#fef3c7", textColor: "#374151", badgeColor: "#b45309", badgeSymbol: "●" }
     case "PROCESANDO":
-      return { bg: "#fef3c7", badgeColor: "#b45309", badgeSymbol: "●", cursor: "default" }
     case "PROCESADO":
-      return { bg: "#d1fae5", badgeColor: "#065f46", badgeSymbol: "✓", cursor: "pointer" }
+      return { bg: "#dbeafe", textColor: "#1e3a8a", badgeColor: null, badgeSymbol: null }
     case "ERROR":
-      return { bg: "#fee2e2", badgeColor: "#b91c1c", badgeSymbol: "✗", cursor: "pointer" }
+      return { bg: "#fee2e2", textColor: "#374151", badgeColor: "#b91c1c", badgeSymbol: "✗" }
   }
 }
 
@@ -54,7 +57,9 @@ function formatCurrency(v: number): string {
 export function CeldaMonto({ monto, estadoEnvio, onClick }: CeldaMontoProps) {
   const esVacio = monto === 0 || monto == null
 
-  const bg = estadoEnvio ? getEstadoConfig(estadoEnvio.estado).bg : "#ffffff"
+  const config = estadoEnvio ? getEstadoConfig(estadoEnvio.estado) : null
+  const bg = config?.bg ?? "#ffffff"
+  const textColor = config?.textColor ?? "#374151"
   const cursor = onClick ? "pointer" : "default"
   const tooltipTitle = estadoEnvio ? buildTooltip(estadoEnvio) : undefined
 
@@ -78,18 +83,18 @@ export function CeldaMonto({ monto, estadoEnvio, onClick }: CeldaMontoProps) {
         <span style={{ color: "#d1d5db" }}>-</span>
       ) : (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
-          <span style={{ color: "#374151" }}>{formatCurrency(monto)}</span>
-          {estadoEnvio && (
+          <span style={{ color: textColor }}>{formatCurrency(monto)}</span>
+          {config?.badgeSymbol && (
             <span
               style={{
-                color: getEstadoConfig(estadoEnvio.estado).badgeColor,
+                color: config.badgeColor ?? "inherit",
                 fontSize: 12,
                 fontWeight: 700,
                 lineHeight: 1,
               }}
               aria-hidden="true"
             >
-              {getEstadoConfig(estadoEnvio.estado).badgeSymbol}
+              {config.badgeSymbol}
             </span>
           )}
         </span>
