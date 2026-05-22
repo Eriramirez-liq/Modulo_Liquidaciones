@@ -5,6 +5,12 @@ import { Play } from "lucide-react"
 type Periodo = { id: string; anio: number; mes: number; estado: string }
 type Operador = { id: string; codigo: string; nombre: string }
 
+interface DetalleFrontera {
+  codigo_frontera: string
+  caso:            string
+  motivo:          string
+}
+
 interface ResumenConciliacion {
   periodoStr: string
   totalFronteras: number
@@ -15,6 +21,8 @@ interface ResumenConciliacion {
   alertasManual: number
   incompletas:   number
   fronterasNoEnFacturacion: { xm: number; sdl: number }
+  detalleIncompletas:    DetalleFrontera[]
+  detalleAlertaManual:   DetalleFrontera[]
 }
 
 function cop(v: number) {
@@ -226,6 +234,22 @@ export default function ConciliacionesPage() {
             </div>
           </div>
 
+          {/* Listas de detalle: incompletas y alertas manuales */}
+          {resumen.detalleIncompletas.length > 0 && (
+            <DetalleFronteras
+              titulo={`Fronteras incompletas (${resumen.detalleIncompletas.length})`}
+              filas={resumen.detalleIncompletas}
+              bg="#fffbeb" borderColor="#fde68a" textColor="#92400e"
+            />
+          )}
+          {resumen.detalleAlertaManual.length > 0 && (
+            <DetalleFronteras
+              titulo={`Fronteras con alerta manual (${resumen.detalleAlertaManual.length})`}
+              filas={resumen.detalleAlertaManual}
+              bg="#fef2f2" borderColor="#fecaca" textColor="#991b1b"
+            />
+          )}
+
           {/* Fronteras huérfanas */}
           {(resumen.fronterasNoEnFacturacion.xm > 0 || resumen.fronterasNoEnFacturacion.sdl > 0) && (
             <div style={{
@@ -241,6 +265,45 @@ export default function ConciliacionesPage() {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function DetalleFronteras({
+  titulo, filas, bg, borderColor, textColor,
+}: {
+  titulo: string
+  filas: DetalleFrontera[]
+  bg: string; borderColor: string; textColor: string
+}) {
+  return (
+    <div style={{
+      background: bg, border: `1px solid ${borderColor}`, borderRadius: 8,
+      padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8,
+    }}>
+      <div style={{ fontSize: "0.85rem", fontWeight: 600, color: textColor }}>
+        {titulo}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 240, overflowY: "auto" }}>
+        {filas.map((f, i) => (
+          <div key={`${f.codigo_frontera}-${i}`} style={{
+            display: "flex", gap: 12, alignItems: "flex-start",
+            padding: "6px 8px", background: "rgba(255,255,255,0.6)",
+            borderRadius: 6, fontSize: "0.78rem",
+          }}>
+            <span style={{ fontFamily: "monospace", fontWeight: 600, color: "#111827", minWidth: 90 }}>
+              {f.codigo_frontera}
+            </span>
+            <span style={{ fontSize: "0.7rem", fontWeight: 600, color: textColor,
+              background: "rgba(255,255,255,0.8)", padding: "1px 6px", borderRadius: 4,
+              border: `1px solid ${borderColor}`, alignSelf: "flex-start",
+            }}>
+              {f.caso}
+            </span>
+            <span style={{ color: "#374151", flex: 1 }}>{f.motivo}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

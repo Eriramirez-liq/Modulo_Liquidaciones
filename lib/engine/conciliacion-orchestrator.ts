@@ -28,6 +28,12 @@ export interface OpcionesEjecucion {
   userId:  string         // para auditoría
 }
 
+export interface DetalleFrontera {
+  codigo_frontera: string
+  caso:            CasoConciliacion
+  motivo:          string
+}
+
 export interface ResumenConciliacion {
   periodoId:              string
   periodoStr:             string         // "AAAA-MM"
@@ -39,6 +45,9 @@ export interface ResumenConciliacion {
   alertasManual:          number
   incompletas:            number
   fronterasNoEnFacturacion: { xm: number; sdl: number }
+  // Detalle de fronteras que requieren atencion
+  detalleIncompletas:    DetalleFrontera[]
+  detalleAlertaManual:   DetalleFrontera[]
 }
 
 export async function ejecutarConciliacion(
@@ -111,6 +120,8 @@ export async function ejecutarConciliacion(
   }
   let alertasManual = 0
   let incompletas   = 0
+  const detalleIncompletas:  DetalleFrontera[] = []
+  const detalleAlertaManual: DetalleFrontera[] = []
 
   for (const f of facturacion) {
     const xmRec  = xmByFrontera.get(f.codigo_frontera)
@@ -134,8 +145,22 @@ export async function ejecutarConciliacion(
     })
 
     porCaso[r.caso] += 1
-    if (r.requiere_alerta_manual) alertasManual++
-    if (r.caso === "INCOMPLETA") incompletas++
+    if (r.requiere_alerta_manual) {
+      alertasManual++
+      detalleAlertaManual.push({
+        codigo_frontera: f.codigo_frontera,
+        caso:            r.caso,
+        motivo:          r.observaciones.length > 0 ? r.observaciones.join("; ") : "Caso requiere revisión manual",
+      })
+    }
+    if (r.caso === "INCOMPLETA") {
+      incompletas++
+      detalleIncompletas.push({
+        codigo_frontera: f.codigo_frontera,
+        caso:            "INCOMPLETA",
+        motivo:          r.observaciones.length > 0 ? r.observaciones.join("; ") : "Datos faltantes",
+      })
+    }
 
     // ResultadoConciliacion (uno por frontera)
     resultadosToCreate.push({
@@ -341,5 +366,7 @@ export async function ejecutarConciliacion(
     alertasManual,
     incompletas,
     fronterasNoEnFacturacion: { xm: xmHuerfanas, sdl: sdlHuerfanas },
+    detalleIncompletas,
+    detalleAlertaManual,
   }
 }
