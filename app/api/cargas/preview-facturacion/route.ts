@@ -65,13 +65,45 @@ export async function POST(request: NextRequest) {
   const erroresCriticos: string[] = []
   const todasFilas = resultado.rows
 
-  // 2. (Pendiente confirmar con el usuario) Filtrar por periodo si la query
-  //    retorna multiples meses. Por ahora se devuelve todo; si el usuario
-  //    confirma como columna se filtra, se ajusta aqui.
+  // 2. Filtrar por la columna "period" usando el periodo seleccionado en el
+  //    wizard. La columna puede venir como "period", "Period", "PERIOD"
+  //    (busqueda case-insensitive).
+  const periodoStr = `${anio}-${String(mes).padStart(2, "0")}`
+
+  const colPeriod = resultado.columnas.find(c => c.toLowerCase() === "period")
+  if (!colPeriod) {
+    erroresCriticos.push(
+      `La query de Metabase no devolvio una columna "period". ` +
+      `Columnas disponibles: [${resultado.columnas.join(", ")}]`,
+    )
+    return NextResponse.json({
+      preview: [], filasCompletas: [], total: 0,
+      columnas: resultado.columnas,
+      alertas, erroresCriticos,
+      existeCargaPrevia: false, cargaPreviaId: undefined,
+    })
+  }
+
+  function matchPeriodo(v: unknown, target: string): boolean {
+    if (v == null) return false
+    const s = String(v).trim()
+    if (!s) return false
+    // Acepta: "2026-04", "2026-04-01", "2026-04-01T...", "2026/04", "2026/04/01"
+    const normalized = s.slice(0, 7).replace("/", "-")
+    return normalized === target
+  }
+
+  const filtradas = todasFilas.filter(r => matchPeriodo(r[colPeriod], periodoStr))
+
   alertas.push(
-    `Metabase devolvio ${todasFilas.length} filas con ${resultado.columnas.length} columnas. ` +
-    `Si la query no esta filtrada por periodo (${anio}-${String(mes).padStart(2, "0")}), avisame que columna usar.`,
+    `Metabase: ${todasFilas.length} filas totales, ${filtradas.length} coinciden con period = ${periodoStr}.`,
   )
+
+  if (filtradas.length === 0) {
+    alertas.push(
+      `No hay registros para el periodo ${periodoStr}. Verifica que la query de Metabase tenga datos cargados para ese mes.`,
+    )
+  }
 
   // 3. Verificar carga previa
   let existeCargaPrevia = false
@@ -96,9 +128,9 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({
-    preview:          todasFilas.slice(0, 20),
-    filasCompletas:   todasFilas,
-    total:            todasFilas.length,
+    preview:          filtradas.slice(0, 20),
+    filasCompletas:   filtradas,
+    total:            filtradas.length,
     columnas:         resultado.columnas,
     alertas,
     erroresCriticos,
