@@ -226,34 +226,44 @@ export async function ejecutarConciliacion(
   }
 
   // 5. Transaction: limpiar previos + insertar nuevos
+  //
+  // Borrado idempotente: filtramos por las fronteras que vamos a re-conciliar
+  // (no por or_id) porque ResultadoConciliacion puede tener or_id=null cuando
+  // la frontera no tuvo match en SDL — si filtraramos por or_id, esas filas
+  // sobrevivirian al DELETE y luego romperian el @@unique al re-insertar.
+  const fronterasACincoliar = facturacion.map(f => f.codigo_frontera)
+  const whereDerivados = {
+    periodo_id:      periodo.id,
+    codigo_frontera: { in: fronterasACincoliar },
+  }
+
   await db.$transaction(async (tx) => {
-    // Borrar cruces_balance que apunten a provisiones/contingencias del período
+    // Borrar cruces_balance que apunten a provisiones/contingencias afectadas
     await tx.cruceBalance.deleteMany({
       where: {
         OR: [
-          { provision:    { periodo_id: periodo.id, ...(orId ? { or_id: orId } : {}) } },
-          { contingencia: { periodo_id: periodo.id, ...(orId ? { or_id: orId } : {}) } },
+          { provision:    whereDerivados },
+          { contingencia: whereDerivados },
         ],
       },
     })
-    // Borrar derivados
-    const whereDerivados = { periodo_id: periodo.id, ...(orId ? { or_id: orId } : {}) }
-    await tx.disputa.deleteMany({ where: whereDerivados })
-    await tx.contingencia.deleteMany({ where: whereDerivados })
-    await tx.provision.deleteMany({ where: whereDerivados })
+    // Borrar derivados en orden FK
+    await tx.disputa.deleteMany({       where: whereDerivados })
+    await tx.contingencia.deleteMany({  where: whereDerivados })
+    await tx.provision.deleteMany({     where: whereDerivados })
     // Borrar ResultadoConciliacion (FK origen)
-    await tx.resultadoConciliacion.deleteMany({
-      where: { periodo_id: periodo.id, ...(orId ? { or_id: orId } : {}) },
-    })
+    await tx.resultadoConciliacion.deleteMany({ where: whereDerivados })
 
     // Insertar resultados
     if (resultadosToCreate.length > 0) {
       await tx.resultadoConciliacion.createMany({ data: resultadosToCreate })
     }
 
-    // Lookup id por (periodo_id, codigo_frontera) para resolver resultado_id
+    // Lookup id por (periodo_id, codigo_frontera) para resolver resultado_id.
+    // Solo las fronteras que recien insertamos (no las de otros ORs en el
+    // mismo periodo si la corrida fue filtrada por OR).
     const creados = await tx.resultadoConciliacion.findMany({
-      where: { periodo_id: periodo.id },
+      where: whereDerivados,
       select: { id: true, codigo_frontera: true },
     })
     const idByFrontera = new Map(creados.map(c => [c.codigo_frontera, c.id]))
