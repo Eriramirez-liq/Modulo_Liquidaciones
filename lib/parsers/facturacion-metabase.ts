@@ -2,13 +2,35 @@ import type { FilaFacturacion, ResultadoParser } from "@/lib/parsers/types"
 
 // ─── Helpers internos ───────────────────────────────────────────────────────
 
+// Normaliza un texto: lowercase, sin espacios, underscores ni caracteres
+// no alfanumericos (incluye el arrow "→" que Metabase usa para columnas joineadas).
+function normalizarCol(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "")
+}
+
 function construirFindCol(columnas: string[]) {
-  const lookup: Record<string, string> = {}
-  for (const c of columnas) lookup[c.toLowerCase().replace(/[\s_]+/g, "")] = c
+  // Pre-calcular ambos: la columna entera Y la parte despues del "→"
+  // (Metabase muestra columnas joineadas como "Table - Other → field").
+  const variantes = columnas.map(c => {
+    const partes = c.split("→")
+    const sufijo = partes.length > 1 ? partes[partes.length - 1] ?? c : c
+    return {
+      orig:   c,
+      norm:   normalizarCol(c),
+      sufijo: normalizarCol(sufijo),  // ej. "Contract → sic" => "sic"
+    }
+  })
+
   return (...candidatos: string[]): string | null => {
     for (const cand of candidatos) {
-      const key = cand.toLowerCase().replace(/[\s_]+/g, "")
-      if (lookup[key]) return lookup[key]
+      const key = normalizarCol(cand)
+      if (!key) continue
+      // 1. Match exacto sobre el nombre completo
+      const exacto = variantes.find(v => v.norm === key)
+      if (exacto) return exacto.orig
+      // 2. Match exacto sobre el sufijo despues del arrow (joined column)
+      const porSufijo = variantes.find(v => v.sufijo === key)
+      if (porSufijo) return porSufijo.orig
     }
     return null
   }
@@ -85,26 +107,48 @@ export function mapearFilasMetabase(
 
   const findCol = construirFindCol(columnas)
 
-  // Columnas requeridas
-  const colSic      = findCol("SIC", "codigo_sic", "codigo_frontera", "frontera")
-  const colPeriod   = findCol("Period", "periodo")
-  const colEnergia  = findCol("Active Energy", "active_energy", "energia_activa", "energia_kwh")
-  const colNT          = findCol("NT", "nivel_tension")
-  const colReactIndTot = findCol("Reactive Inductive Total", "reactive_inductive_total", "energia_reactiva_ind_tot")
-  const colReactCapTot = findCol("Reactive Capacitive Total", "reactive_capacitive_total", "energia_reactiva_cap_tot")
-  const colReactIndPen = findCol("Reactive Inductive Pen", "reactive_inductive_pen", "energia_reactiva_ind")
-  const colReactCapPen = findCol("Reactive Capacitive Pen", "reactive_capacitive_pen", "energia_reactiva_cap")
+  // Columnas requeridas (incluyen aliases por el sufijo despues del "→"
+  // y por los nombres reales que devuelve la query actual)
+  const colSic         = findCol("SIC", "sic", "codigo_sic", "codigo_frontera", "frontera")
+  const colPeriod      = findCol("Period", "periodo")
+  const colEnergia     = findCol("Active Energy", "active_energy", "energia_activa", "energia_kwh")
+  const colNT          = findCol("NT", "level_tension", "leveltension", "nivel_tension")
+  // Reactiva total (sin penalizar)
+  const colReactIndTot = findCol(
+    "Reactive Inductive Energy Total", "reactive_inductive_energy_total",
+    "Reactive Inductive Total", "reactive_inductive_total",
+    "energia_reactiva_ind_tot",
+  )
+  const colReactCapTot = findCol(
+    "Reactive Capacitive Energy Total", "reactive_capacitive_energy_total",
+    "Reactive Capacitive Total", "reactive_capacitive_total",
+    "Reactive Energy", "reactive_energy",        // fallback: la query nueva usa este nombre
+    "energia_reactiva_cap_tot",
+  )
+  // Reactiva penalizada (usadas para SDL)
+  const colReactIndPen = findCol(
+    "Reactive Inductive Energy Penalized", "reactive_inductive_energy_penalized",
+    "Reactive Inductive Energy", "reactive_inductive_energy",  // nombre actual de la query
+    "Reactive Inductive Pen", "reactive_inductive_pen",
+    "energia_reactiva_ind_pen", "energia_reactiva_ind",
+  )
+  const colReactCapPen = findCol(
+    "Reactive Capacitive Energy Penalized", "reactive_capacitive_energy_penalized",
+    "Reactive Energy Penalized", "reactive_energy_penalized",  // nombre actual de la query
+    "Reactive Capacitive Pen", "reactive_capacitive_pen",
+    "energia_reactiva_cap_pen", "energia_reactiva_cap",
+  )
   const colFactor      = findCol("Factor", "factor_m")
 
-  // Columnas opcionales (para conciliacion balance)
+  // Columnas opcionales (para conciliacion balance + visualizacion)
   const colNombre   = findCol("Cliente", "Client", "Nombre", "Usuario", "nombre_usuario")
-  const colOR       = findCol("Operador", "OR", "operador_red")
-  const colG        = findCol("G", "Tarifa G", "g_bia")
-  const colT        = findCol("T", "Tarifa T", "t_bia")
-  const colD        = findCol("D", "Tarifa D", "d_bia")
-  const colPR       = findCol("PR", "Tarifa PR", "pr_bia")
-  const colR        = findCol("R", "Tarifa R", "r_bia")
-  const colC        = findCol("C", "Tarifa C", "c_bia")
+  const colOR       = findCol("Operador", "OR", "last_operator", "lastoperator", "operador_red")
+  const colG        = findCol("Tarifa G", "tarifa_g", "g_bia", "g")
+  const colT        = findCol("Tarifa T", "tarifa_t", "t_bia", "t")
+  const colD        = findCol("Tarifa D", "tarifa_d", "d_bia", "d")
+  const colPR       = findCol("Tarifa PR", "tarifa_pr", "pr_bia", "pr")
+  const colR        = findCol("Tarifa R", "tarifa_r", "r_bia", "r")
+  const colC        = findCol("Tarifa C", "tarifa_c", "c_bia")
   const colTarTotal = findCol("Tarifa Total", "tarifa_total_bia", "tarifa_total")
 
   // Validar columnas requeridas
