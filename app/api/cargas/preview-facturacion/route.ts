@@ -84,16 +84,25 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  function matchPeriodo(v: unknown, target: string): boolean {
-    if (v == null) return false
+  // Normaliza un valor de la columna "period" a "AAAA-MM".
+  // Acepta formatos:
+  //   - "2026-04", "2026-04-01", "2026-04-01T..."  → YYYY-MM[-...]
+  //   - "2026/04", "2026/04/01"                    → YYYY/MM[/...]
+  //   - "04-2026", "04/2026"                       → MM-YYYY o MM/YYYY (formato Metabase)
+  function normalizarPeriodo(v: unknown): string | null {
+    if (v == null) return null
     const s = String(v).trim()
-    if (!s) return false
-    // Acepta: "2026-04", "2026-04-01", "2026-04-01T...", "2026/04", "2026/04/01"
-    const normalized = s.slice(0, 7).replace("/", "-")
-    return normalized === target
+    if (!s) return null
+    // YYYY-MM o YYYY/MM (año primero, 4 digitos)
+    let m = s.match(/^(\d{4})[-/](\d{1,2})/)
+    if (m) return `${m[1]}-${(m[2] ?? "").padStart(2, "0")}`
+    // MM-YYYY o MM/YYYY (mes primero, 1-2 digitos; año 4 digitos)
+    m = s.match(/^(\d{1,2})[-/](\d{4})/)
+    if (m) return `${m[2]}-${(m[1] ?? "").padStart(2, "0")}`
+    return null
   }
 
-  const filtradas = todasFilas.filter(r => matchPeriodo(r[colPeriod], periodoStr))
+  const filtradas = todasFilas.filter(r => normalizarPeriodo(r[colPeriod]) === periodoStr)
 
   alertas.push(
     `Metabase: ${todasFilas.length} filas totales, ${filtradas.length} coinciden con period = ${periodoStr}.`,
