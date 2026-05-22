@@ -112,6 +112,8 @@ export async function POST(request: NextRequest) {
               nt_raw:                   f.nt_raw,
               nivel_tension:            f.nivel_tension,
               propiedad_activos:        f.propiedad_activos,
+              energia_reactiva_ind_tot: f.energia_reactiva_ind_tot,
+              energia_reactiva_cap_tot: f.energia_reactiva_cap_tot,
               energia_reactiva_ind_pen: f.energia_reactiva_ind_pen,
               energia_reactiva_cap_pen: f.energia_reactiva_cap_pen,
               factor_m:                 f.factor_m,

@@ -24,6 +24,8 @@ ALTER TABLE registros_facturacion
   ADD COLUMN IF NOT EXISTS nt_raw                   VARCHAR(10),
   ADD COLUMN IF NOT EXISTS nivel_tension            VARCHAR(5),
   ADD COLUMN IF NOT EXISTS propiedad_activos        VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS energia_reactiva_ind_tot DECIMAL(18, 6),
+  ADD COLUMN IF NOT EXISTS energia_reactiva_cap_tot DECIMAL(18, 6),
   ADD COLUMN IF NOT EXISTS energia_reactiva_ind_pen DECIMAL(18, 6),
   ADD COLUMN IF NOT EXISTS energia_reactiva_cap_pen DECIMAL(18, 6),
   ADD COLUMN IF NOT EXISTS factor_m                 DECIMAL(10, 4);

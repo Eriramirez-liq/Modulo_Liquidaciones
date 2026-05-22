@@ -238,6 +238,12 @@ model RegistroFacturacion {
   nivel_tension            String?  @db.VarChar(5)
   propiedad_activos        String?  @db.VarChar(20)
 
+  // Energia reactiva total (sin penalizar) — Reactive Inductive/Capacitive Total
+  // de la query de Metabase. Se almacena por si se necesita en futuras
+  // conciliaciones aunque hoy SDL/TC1 solo usan las penalizadas.
+  energia_reactiva_ind_tot Decimal? @db.Decimal(18, 6)
+  energia_reactiva_cap_tot Decimal? @db.Decimal(18, 6)
+
   // Energia reactiva penalizada (para conciliacion SDL)
   energia_reactiva_ind_pen Decimal? @db.Decimal(18, 6)
   energia_reactiva_cap_pen Decimal? @db.Decimal(18, 6)

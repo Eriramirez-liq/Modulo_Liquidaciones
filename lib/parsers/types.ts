@@ -11,6 +11,10 @@ export type FilaFacturacion = {
   nt_raw:                   string | null           // valor original de la columna NT
   nivel_tension:            string | null           // "1", "2" o "3"
   propiedad_activos:        string | null           // "OR" | "Usuario" | "Compartido"
+  // Reactiva total (sin penalizar) — Metabase Reactive Inductive/Capacitive Total
+  energia_reactiva_ind_tot: number | null
+  energia_reactiva_cap_tot: number | null
+  // Reactiva penalizada (Metabase Reactive Inductive/Capacitive Pen) — usadas para SDL
   energia_reactiva_ind_pen: number | null
   energia_reactiva_cap_pen: number | null
   factor_m:                 number | null

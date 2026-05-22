@@ -89,10 +89,12 @@ export function mapearFilasMetabase(
   const colSic      = findCol("SIC", "codigo_sic", "codigo_frontera", "frontera")
   const colPeriod   = findCol("Period", "periodo")
   const colEnergia  = findCol("Active Energy", "active_energy", "energia_activa", "energia_kwh")
-  const colNT       = findCol("NT", "nivel_tension")
-  const colReactInd = findCol("Reactive Inductive Pen", "reactive_inductive_pen", "energia_reactiva_ind")
-  const colReactCap = findCol("Reactive Capacitive Pen", "reactive_capacitive_pen", "energia_reactiva_cap")
-  const colFactor   = findCol("Factor", "factor_m")
+  const colNT          = findCol("NT", "nivel_tension")
+  const colReactIndTot = findCol("Reactive Inductive Total", "reactive_inductive_total", "energia_reactiva_ind_tot")
+  const colReactCapTot = findCol("Reactive Capacitive Total", "reactive_capacitive_total", "energia_reactiva_cap_tot")
+  const colReactIndPen = findCol("Reactive Inductive Pen", "reactive_inductive_pen", "energia_reactiva_ind")
+  const colReactCapPen = findCol("Reactive Capacitive Pen", "reactive_capacitive_pen", "energia_reactiva_cap")
+  const colFactor      = findCol("Factor", "factor_m")
 
   // Columnas opcionales (para conciliacion balance)
   const colNombre   = findCol("Cliente", "Client", "Nombre", "Usuario", "nombre_usuario")
@@ -107,13 +109,13 @@ export function mapearFilasMetabase(
 
   // Validar columnas requeridas
   const faltantes: string[] = []
-  if (!colSic)      faltantes.push("SIC")
-  if (!colPeriod)   faltantes.push("Period")
-  if (!colEnergia)  faltantes.push("Active Energy")
-  if (!colNT)       faltantes.push("NT")
-  if (!colReactInd) faltantes.push("Reactive Inductive Pen")
-  if (!colReactCap) faltantes.push("Reactive Capacitive Pen")
-  if (!colFactor)   faltantes.push("Factor")
+  if (!colSic)         faltantes.push("SIC")
+  if (!colPeriod)      faltantes.push("Period")
+  if (!colEnergia)     faltantes.push("Active Energy")
+  if (!colNT)          faltantes.push("NT")
+  if (!colReactIndPen) faltantes.push("Reactive Inductive Pen")
+  if (!colReactCapPen) faltantes.push("Reactive Capacitive Pen")
+  if (!colFactor)      faltantes.push("Factor")
 
   if (faltantes.length > 0) {
     erroresCriticos.push(
@@ -145,8 +147,10 @@ export function mapearFilasMetabase(
       nt_raw:                   ntRaw,
       nivel_tension:            nivel,
       propiedad_activos:        propiedad,
-      energia_reactiva_ind_pen: toNum(r[colReactInd!]),
-      energia_reactiva_cap_pen: toNum(r[colReactCap!]),
+      energia_reactiva_ind_tot: colReactIndTot ? toNum(r[colReactIndTot]) : null,
+      energia_reactiva_cap_tot: colReactCapTot ? toNum(r[colReactCapTot]) : null,
+      energia_reactiva_ind_pen: toNum(r[colReactIndPen!]),
+      energia_reactiva_cap_pen: toNum(r[colReactCapPen!]),
       factor_m:                 toNum(r[colFactor!]),
       g_bia:            colG        ? toNum(r[colG])        : null,
       t_bia:            colT        ? toNum(r[colT])        : null,
