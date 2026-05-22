@@ -67,3 +67,6 @@ env/
 
 # Claude Code local config
 .claude/settings.local.json
+
+# Mock data de desarrollo — no va a producción
+_dev/

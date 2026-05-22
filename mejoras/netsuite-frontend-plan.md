@@ -1,10 +1,50 @@
 # Plan de Desarrollo Frontend — Integración Cargos STR + Oracle NetSuite
 
 > **Modo:** Implementacion UI + Documentacion
-> **Fecha:** 2026-05-20 (actualizado 2026-05-20 con correcciones de lógica de selección)
+> **Fecha:** 2026-05-20 (actualizado 2026-05-22 con decisiones resueltas y consolidacion de ambiguedades)
 > **Alcance:** `app/(dashboard)/cargos-str/page.tsx` + carpeta nueva `components/cargos-str/`
 > **Input:** `mejoras/netsuite-integration-plan.md` (Arquitecto de Soluciones)
 > **Autor:** Frontend Specialist
+
+---
+
+## Decisiones resueltas (2026-05-22)
+
+Las siguientes decisiones bloqueantes han sido confirmadas por la usuaria y sobreescriben cualquier ambiguedad anterior en el documento:
+
+| ID | Decision | Detalle |
+|----|----------|---------|
+| D1 | `/estados` usa `codigo` | El endpoint `GET /api/cargos-str/netsuite/estados?orIds=` acepta el campo `codigo` (string tipo "OR-AFINIA"), no el UUID interno. Las keys del mapa de estados se arman como `${periodoId}|${codigo}`. |
+| D4 | Endpoint de detalle de envio individual | Se asume que existira `GET /api/cargos-str/netsuite/envio/:id` (Opcion A). El Arquitecto debe confirmar o pedir fallback a Opcion B (extraer del lote completo) antes de FE-6. |
+| Nombre del boton | `BotonCrearOC` con label "Crear OC" | El componente se llama `BotonCrearOC.tsx` y el texto visible del boton es "Crear OC". Cualquier mencion de `BotonGenerarOC` o "Generar OC" en este documento es obsoleta. |
+
+---
+
+## Progreso de ejecucion
+
+| Tarea | Estado | Fecha | Notas |
+|-------|--------|-------|-------|
+| Paso 0 — Decisiones bloqueantes | Completado | 2026-05-22 | D1, D4 y nombre del boton resueltos (defaults aceptados) |
+| Paso 1 — Consolidar documento | Completado | 2026-05-22 | Secciones obsoletas marcadas, indice de versiones agregado |
+| FE-1 — Skeleton de componentes + tipos | Completado | 2026-05-22 | 8 archivos creados, `tsc --noEmit` pasa sin errores, 0 errores ESLint (3 warnings esperados en stubs) |
+| FE-2 — Tabla con checkboxes + seleccion | Completado | 2026-05-22 | Tabla con seleccion por fila, BotonCrearOC integrado, estados mockeados desde _dev. FilaOperador + CeldaMonto implementados completos. |
+| FE-3 — BadgeCelda + DetalleEnvioModal | Pendiente | — | |
+| FE-4 — ModalConfirmarLote + creacion lote | Pendiente | — | Requiere POST /lote del backend |
+| FE-5 — PanelLoteEnCurso + polling | Pendiente | — | Requiere GET /lote/:id |
+| FE-6 — Integracion real (quitar mocks) | Pendiente | — | |
+| FE-7 — Pulido + accesibilidad | Pendiente | — | |
+
+---
+
+## Indice de versiones del documento
+
+| Version | Fecha | Descripcion | Estado |
+|---------|-------|-------------|--------|
+| Cuerpo principal | 2026-05-20 | Diseno inicial: `CeldaCargo`, seleccion por celda, checkbox dentro de cada `<td>` | **OBSOLETO** — ver Addendum 2026-05-20 |
+| Addendum 2026-05-20 | 2026-05-20 | Diseno actual: `FilaOperador` + `CeldaMonto`, seleccion por fila, checkbox en columna Operador | **VALIDO** |
+| Decisiones 2026-05-22 | 2026-05-22 | D1 (codigo vs id), D4 (endpoint envio individual), nombre del boton `BotonCrearOC` | **VALIDO** |
+
+> **Regla de lectura:** si hay conflicto entre el cuerpo principal y el Addendum 2026-05-20, el Addendum prevalece. Las secciones del cuerpo marcadas como `[OBSOLETO]` se conservan por historial pero NO deben implementarse.
 
 ---
 
@@ -168,7 +208,9 @@ La UI requiere cinco componentes nuevos y modificaciones quirurgicas a la pagina
 
 Todos van en la carpeta `components/cargos-str/`. Esta carpeta no existe hoy — crearla es parte de PR FE-1.
 
-### 1.1 `CeldaCargo.tsx`
+### 1.1 `CeldaCargo.tsx` — [OBSOLETO — ver Addendum 2026-05-20]
+
+> **Este componente NO debe implementarse.** Ha sido reemplazado por el par `FilaOperador.tsx` (§1.6) + `CeldaMonto.tsx` (§1.7) definidos en el Addendum. Se conserva el texto original por historial.
 
 **Path:** `components/cargos-str/CeldaCargo.tsx`
 
@@ -221,16 +263,20 @@ interface CeldaCargoProps {
 
 ---
 
-### 1.2 `BotonGenerarOC.tsx`
+### 1.2 `BotonCrearOC.tsx` (antes llamado `BotonGenerarOC` — [OBSOLETO el nombre anterior])
 
-**Path:** `components/cargos-str/BotonGenerarOC.tsx`
+> **Nombre correcto del archivo y componente:** `BotonCrearOC.tsx`. El label visible es "Crear OC". Cualquier referencia a `BotonGenerarOC` o "Generar OC" en este documento es obsoleta (decision resuelta 2026-05-22).
+>
+> **Condicion de habilitacion actualizada:** ademas de los criterios originales, el boton requiere `periodoSel.length === 1` para estar habilitado. Con multiples periodos seleccionados, permanece disabled. Ver §2.5 para el JSX actualizado.
+
+**Path:** `components/cargos-str/BotonCrearOC.tsx`
 
 Boton en la barra de filtros que muestra el contador de cargos seleccionados y abre el modal de confirmacion.
 
 ```tsx
-interface BotonGenerarOCProps {
+interface BotonCrearOCProps {
   cantidadSeleccionados: number   // size del Set de seleccion
-  disabled: boolean               // true si hay lote en curso o si cantidadSeleccionados === 0
+  disabled: boolean               // true si: lote en curso, cantidadSeleccionados === 0, o periodoSel.length !== 1
   onAbrir: () => void             // abre ModalConfirmarLote
 }
 ```
@@ -518,6 +564,10 @@ useEffect(() => {
 
 ### 2.4 Helpers nuevos
 
+> **Actualizacion 2026-05-22:** la firma de `toggleSeleccion` ha cambiado. La seleccion es **por fila (operador)**, no por celda. El `orId` es suficiente porque solo puede haber un periodo seleccionado en el filtro cuando los checkboxes estan habilitados (regla del Addendum 2026-05-20). La firma anterior `toggleSeleccion(periodoId, orId)` es obsoleta.
+>
+> La firma original `toggleSeleccion(periodoId: string, orId: string)` que aparece en §2.7 y §6 de este documento es **[OBSOLETO — ver Addendum 2026-05-20]**. Usar la firma actualizada `toggleSeleccion(orId: string)` de abajo.
+
 ```tsx
 // Clave unica para el mapa de estados y el Set de seleccion
 function cargoKey(periodoId: string, orId: string): EstadoEnvioKey {
@@ -525,7 +575,10 @@ function cargoKey(periodoId: string, orId: string): EstadoEnvioKey {
 }
 
 // Toggle de seleccion con validaciones
-function toggleSeleccion(periodoId: string, orId: string) {
+// Firma actualizada: solo recibe orId (la seleccion es por fila/operador sobre el unico periodo filtrado)
+// El periodoId se deriva de periodoSel[0] — que es el unico periodo valido cuando los checkboxes estan habilitados
+function toggleSeleccion(orId: string) {
+  const periodoId = periodoSel[0]  // garantizado por la condicion de habilitacion del boton
   const key = cargoKey(periodoId, orId)
   const estado = estadosEnvio[key]
 
@@ -626,16 +679,22 @@ async function handleVerDetalle(envioId: string) {
 }
 ```
 
-### 2.5 Modificacion del bloque de filtros (donde va `BotonGenerarOC`)
+### 2.5 Modificacion del bloque de filtros (donde va `BotonCrearOC`)
+
+> **Actualizado 2026-05-22:** el componente se renombro de `BotonGenerarOC` a `BotonCrearOC` y se agrego la condicion `periodoSel.length !== 1` a `disabled`.
 
 En el JSX del bloque de filtros, despues del boton Filtrar:
 
 ```tsx
-{/* BotonGenerarOC — aparece siempre que haya datos filtrados */}
+{/* BotonCrearOC — aparece siempre que haya datos filtrados */}
 {filtrado && !loading && data && data.operadores.length > 0 && (
-  <BotonGenerarOC
+  <BotonCrearOC
     cantidadSeleccionados={seleccion.size}
-    disabled={seleccion.size === 0 || loteEnCurso?.estado === "EN_PROGRESO"}
+    disabled={
+      seleccion.size === 0 ||
+      loteEnCurso?.estado === "EN_PROGRESO" ||
+      periodoSel.length !== 1   // multiples periodos = modo solo-lectura, boton disabled
+    }
     onAbrir={() => setModalConfirmarAbierto(true)}
   />
 )}
@@ -662,19 +721,24 @@ En el JSX del bloque de filtros, despues del boton Filtrar:
 
 ### 2.7 Modificacion de `ResultsTable`
 
+> **Actualizacion 2026-05-22:** la firma de `onToggleSeleccion` cambio. La interface de abajo usa la firma del cuerpo original `(periodoId, orId)` — [OBSOLETO]. La firma vigente es `(orId: string)` (ver §2.4 actualizado).
+>
+> Tambien: el `<CeldaCargo />` en el codigo de ejemplo de abajo es [OBSOLETO]. En FE-2 se usara `<FilaOperador />` por fila, no un componente por `<td>`.
+
 `ResultsTable` necesita recibir los props de NetSuite:
 
 ```tsx
+// NOTA: onToggleSeleccion debe usar la firma actualizada (orId: string) — ver §2.4
 interface ResultsTableProps {
   data: Resultado
   estadosEnvio: Record<EstadoEnvioKey, EstadoEnvioUI>
   seleccion: Set<EstadoEnvioKey>
-  onToggleSeleccion: (periodoId: string, orId: string) => void
+  onToggleSeleccion: (orId: string) => void   // firma actualizada 2026-05-22: solo orId
   onVerDetalle: (envioId: string) => void
 }
 ```
 
-En el cuerpo de la tabla, reemplazar el `<td>` de datos por `<CeldaCargo />`:
+En el cuerpo de la tabla, reemplazar el `<tr>` por `<FilaOperador />` (no por `<CeldaCargo />` — obsoleto):
 
 ```tsx
 // Antes:
@@ -863,9 +927,13 @@ Antes de confirmar (dentro del modal, al click en "Confirmar envio"):
 
 ---
 
-## 6. Diseño de la tabla con badges y checkboxes
+## 6. Diseño de la tabla con badges y checkboxes — [OBSOLETO — ver Addendum 2026-05-20]
 
-### Layout de una celda — los 5 estados
+> **Esta seccion describe el diseno original con seleccion por celda y `CeldaCargo`. NO debe implementarse.** El diseno vigente esta en §6-bis del Addendum 2026-05-20 (al inicio del documento): seleccion por fila con `FilaOperador` + `CeldaMonto`, checkbox en columna Operador.
+>
+> Se conserva la seccion completa por historial.
+
+### Layout de una celda — los 5 estados — [OBSOLETO]
 
 Cada `<td>` del cuerpo de la tabla se convierte en un contenedor flex con dos zonas:
 
@@ -997,20 +1065,24 @@ Contenido del tooltip segun estado:
 - **Click en `<td>`:** solo activo si `tieneEnvio === true`. Abre `DetalleEnvioModal`.
 - **Click en celda sin envio:** no hace nada (el click en el checkbox ya maneja la seleccion).
 
-### Seleccion masiva (checkboxes de fila y columna)
+### Seleccion masiva (checkboxes de fila y columna) — [OBSOLETO — ver Addendum 2026-05-20]
 
-**Recomendacion: checkbox de fila solamente (en la primera columna, al lado del nombre del operador).**
+> **El mecanismo de seleccion masiva vigente es el checkbox maestro en el header de la columna Operador** (definido en el Addendum 2026-05-20, tabla de cambios). El link "Seleccionar todos los elegibles" descrito abajo esta obsoleto y no debe implementarse.
+
+**Recomendacion original (OBSOLETA):** checkbox de fila solamente (en la primera columna, al lado del nombre del operador).
 
 - **Checkbox de fila** selecciona todos los periodos visibles de ese operador que sean seleccionables (excluyendo los PROCESADOS y PROCESANDO).
 - **No implementar checkbox de columna** (encabezado de periodo) en Fase 1. Razon: la seleccion por columna es menos intuitiva en este dominio (un usuario quiere enviar todos los cargos de AFINIA, no todos los cargos de Febrero). Puede agregarse en Fase 2 si el usuario lo pide.
-- **"Seleccionar todos"** como link debajo del boton "Generar OC": `[Seleccionar todos los elegibles]` que hace `setSeleccion(new Set(todosLosCargosSinEnvioOConError))`.
+- **"Seleccionar todos" como link** — [OBSOLETO]: `[Seleccionar todos los elegibles]` debajo del boton. Reemplazado por el checkbox maestro en el header de la columna Operador (Addendum 2026-05-20).
 
-### Contador en `BotonGenerarOC`
+### Contador en `BotonCrearOC` (antes `BotonGenerarOC` — [OBSOLETO el nombre anterior])
+
+> **Nombre actualizado:** el componente es `BotonCrearOC` con label "Crear OC" (decision resuelta 2026-05-22). El codigo de ejemplo abajo usa el nombre y label obsoletos — se conserva por historial del patron de animacion.
 
 ```tsx
-// Estructura del boton
+// Estructura del boton (nombre y label son obsoletos — ver BotonCrearOC en §1.2)
 <button ...>
-  Generar OC
+  Crear OC
   {cantidadSeleccionados > 0 && (
     <span
       key={cantidadSeleccionados}  // key cambia → React re-anima el elemento
@@ -1392,29 +1464,34 @@ Usar `<details>` / `<summary>` HTML nativo:
 
 ### PR FE-2 — Tabla con checkboxes y seleccion
 
+> **Actualizado 2026-05-22:** los componentes de esta entrega son los del Addendum 2026-05-20, no los del cuerpo original. `CeldaCargo` y `BotonGenerarOC` han sido reemplazados.
+
 **Entrega:**
-- `CeldaCargo.tsx` implementado completamente (los 5 estados visuales).
-- `BotonGenerarOC.tsx` implementado.
-- `page.tsx` modificado: nuevos state de seleccion, `toggleSeleccion`, integracion de `CeldaCargo` en `ResultsTable`, integracion de `BotonGenerarOC` en la barra de filtros.
-- Checkpoint de fila (selector de OR completo).
-- Seleccion masiva "todos los elegibles".
+- `FilaOperador.tsx` implementado completamente (§1.6 del Addendum): checkbox en columna Operador, N celdas de monto, total de fila.
+- `CeldaMonto.tsx` implementado completamente (§1.7 del Addendum): presentacional puro, color de fondo segun estado, tooltip nativo.
+- `BotonCrearOC.tsx` implementado (§1.2 actualizado): label "Crear OC", disabled cuando `periodoSel.length !== 1`.
+- `page.tsx` modificado: nuevos state de seleccion, `toggleSeleccion(orId)` (firma actualizada), integracion de `FilaOperador` en `ResultsTable`, integracion de `BotonCrearOC` en la barra de filtros.
+- Checkbox maestro en header de columna Operador para seleccion masiva (reemplaza el link "Seleccionar todos los elegibles").
 
 **Prerequisitos de backend:** datos mock hardcodeados en `page.tsx` para simular `estadosEnvio`. Ejemplo:
 ```tsx
 // _dev: datos mock para FE-2
+// Nota: las keys usan codigo (string "OR-AFINIA"), no UUID — decision D1 resuelta 2026-05-22
 const MOCK_ESTADOS: Record<EstadoEnvioKey, EstadoEnvioUI> = {
   "periodo-x|OR-AFINIA": { ultimoEnvioId: "e1", estado: "PROCESADO", numeroOc: "OC-2026-00123", ... },
   "periodo-x|OR-AIRE":   { ultimoEnvioId: "e2", estado: "ERROR", errorMensaje: "Timeout", ... },
 }
 ```
 
-**Como testearlo sin backend:** reemplazar `estadosEnvio` con `MOCK_ESTADOS` y verificar que los 5 estados de celda se renderizan correctamente.
+**Como testearlo sin backend:** reemplazar `estadosEnvio` con `MOCK_ESTADOS` y verificar que los 4 estados de celda (sin envio / PENDIENTE-PROCESANDO / PROCESADO / ERROR) se renderizan con el color de fondo correcto y el tooltip correcto. Verificar que con 1 periodo seleccionado los checkboxes aparecen y con 2+ periodos desaparecen.
 
 **DoD:**
-- Los 5 estados de celda se distinguen visualmente.
-- Click en checkbox alterna la seleccion.
-- Celdas PROCESADAS/PROCESANDO tienen checkbox deshabilitado.
-- El contador de `BotonGenerarOC` refleja `seleccion.size`.
+- Los 4 estados de celda se distinguen por color de fondo.
+- Click en checkbox de fila alterna la seleccion del operador completo.
+- Filas con estado PROCESADO tienen checkbox deshabilitado.
+- El checkbox maestro del header selecciona/deselecciona todos los elegibles.
+- El contador de `BotonCrearOC` refleja `seleccion.size`.
+- Con `periodoSel.length > 1`: los checkboxes no aparecen y `BotonCrearOC` esta disabled.
 - La tabla no pierde su alineacion existente.
 - Funciona en mobile (320px de ancho minimo).
 
@@ -1553,7 +1630,7 @@ Para optimizar: agregar `tabIndex={-1}` al `<td>` y dejar solo el checkbox como 
 **Atajos sugeridos (Fase 7):**
 - `Space` sobre checkbox: toggle (ya comportamiento nativo).
 - `Escape`: cerrar cualquier modal abierto.
-- `Enter` sobre `BotonGenerarOC` cuando tiene foco: abrir modal de confirmacion (ya comportamiento nativo de `<button>`).
+- `Enter` sobre `BotonCrearOC` cuando tiene foco: abrir modal de confirmacion (ya comportamiento nativo de `<button>`). [nombre anterior `BotonGenerarOC` — obsoleto]
 
 ### ARIA labels
 
@@ -1580,8 +1657,8 @@ Para optimizar: agregar `tabIndex={-1}` al `<td>` y dejar solo el checkbox como 
   {/* actualiza el status en el arbol de accesibilidad cuando cambian los totales */}
 </div>
 
-// BotonGenerarOC
-<button aria-label={`Generar ordenes de compra para ${cantidadSeleccionados} cargos seleccionados`}>
+// BotonCrearOC (nombre anterior BotonGenerarOC — obsoleto)
+<button aria-label={`Crear ordenes de compra para ${cantidadSeleccionados} cargos seleccionados`}>
 
 // DetalleEnvioModal / ModalConfirmarLote
 <div role="dialog" aria-modal="true" aria-labelledby="modal-title">
@@ -1685,14 +1762,21 @@ El frontend de Fase 1 puede completarse con datos mock hasta PR FE-5. Para FE-6 
 
 ## Archivos a crear/modificar
 
+> **Actualizado 2026-05-22:** la lista refleja los componentes del Addendum 2026-05-20 + la decision de nombre resuelta.
+
 ### Crear (carpeta nueva):
-- `components/cargos-str/CeldaCargo.tsx`
-- `components/cargos-str/BotonGenerarOC.tsx`
+- `components/cargos-str/FilaOperador.tsx` — fila completa con checkbox (reemplaza `CeldaCargo.tsx`)
+- `components/cargos-str/CeldaMonto.tsx` — celda presentacional de monto (reemplaza `CeldaCargo.tsx`)
+- `components/cargos-str/BotonCrearOC.tsx` — boton con label "Crear OC" (reemplaza `BotonGenerarOC.tsx`)
 - `components/cargos-str/ModalConfirmarLote.tsx`
 - `components/cargos-str/PanelLoteEnCurso.tsx`
 - `components/cargos-str/DetalleEnvioModal.tsx`
 - `components/cargos-str/types.ts`
 - `_dev/mocks/netsuite.ts`
+
+### Archivos del cuerpo original que NO deben crearse:
+- ~~`components/cargos-str/CeldaCargo.tsx`~~ — obsoleto, reemplazado por `FilaOperador` + `CeldaMonto`
+- ~~`components/cargos-str/BotonGenerarOC.tsx`~~ — obsoleto, reemplazado por `BotonCrearOC`
 
 ### Modificar:
 - `app/(dashboard)/cargos-str/page.tsx` (state, effects, helpers, integracion de componentes)
@@ -1707,8 +1791,11 @@ El frontend de Fase 1 puede completarse con datos mock hasta PR FE-5. Para FE-6 
 
 ## Proximos pasos inmediatos
 
-- [ ] **Confirmar D1** (id vs codigo en el endpoint de estados) con el backend antes de arrancar FE-2.
+> **Actualizado 2026-05-22:** D1 ya esta resuelta (usar `codigo`). Los proximos pasos pendientes son:
+
+- [x] ~~**Confirmar D1**~~ — resuelto 2026-05-22: usar `codigo` (string "OR-AFINIA") en el endpoint de estados.
+- [ ] **Confirmar D4** con el Arquitecto: validar si `GET /api/cargos-str/netsuite/envio/:id` existira (Opcion A) o si hay que extraer el detalle del lote completo (Opcion B). Pendiente antes de FE-6.
 - [ ] Crear carpeta `components/cargos-str/` y el archivo `types.ts` como primer commit de FE-1.
 - [ ] Agregar en `globals.css` los keyframes `badge-pop` y `shimmer` que varios componentes usan.
 - [ ] Acordar con el Arquitecto si el endpoint `GET /lote/activo` se incluye en Fase 1 o se deja para Fase 3.
-- [ ] Verificar que el patron de color teal sobre blanco en los botones es acceptable para accesibilidad o definir el color de texto alternativo.
+- [ ] Verificar que el patron de color teal sobre blanco en los botones es aceptable para accesibilidad o definir el color de texto alternativo.
