@@ -12,10 +12,10 @@ interface CeldaMontoProps {
   onClick?: () => void
 }
 
-// Configuración visual por estado
-// - PENDIENTE: amarillo con punto (único estado "envío pendiente")
-// - PROCESANDO/PROCESADO: azul sin badge (enviado a NetSuite, OC pendiente o emitida)
-// - ERROR: rojo con ✗
+// Configuración visual por estado (3 estados UI agrupando los 4 backend)
+// - "Enviado a NetSuite" (PENDIENTE + PROCESANDO): azul sin badge
+// - "Creado exitoso" (PROCESADO): verde con ✓
+// - "Error" (ERROR): rojo con ✗
 type EstadoConfig = {
   bg: string
   textColor: string
@@ -26,10 +26,10 @@ type EstadoConfig = {
 function getEstadoConfig(estado: EstadoEnvioUI["estado"]): EstadoConfig {
   switch (estado) {
     case "PENDIENTE":
-      return { bg: "#fef3c7", textColor: "#374151", badgeColor: "#b45309", badgeSymbol: "●" }
     case "PROCESANDO":
-    case "PROCESADO":
       return { bg: "#dbeafe", textColor: "#1e3a8a", badgeColor: null, badgeSymbol: null }
+    case "PROCESADO":
+      return { bg: "#d1fae5", textColor: "#065f46", badgeColor: "#065f46", badgeSymbol: "✓" }
     case "ERROR":
       return { bg: "#fee2e2", textColor: "#374151", badgeColor: "#b91c1c", badgeSymbol: "✗" }
   }
@@ -38,11 +38,10 @@ function getEstadoConfig(estado: EstadoEnvioUI["estado"]): EstadoConfig {
 function buildTooltip(estadoEnvio: EstadoEnvioUI): string {
   switch (estadoEnvio.estado) {
     case "PENDIENTE":
-      return "Envío pendiente..."
     case "PROCESANDO":
-      return "Enviando a NetSuite..."
+      return "Procesando"
     case "PROCESADO":
-      return estadoEnvio.numeroOc ? `OC: ${estadoEnvio.numeroOc}` : "Procesado"
+      return estadoEnvio.numeroOc ? `OC: ${estadoEnvio.numeroOc}` : "Creado exitoso"
     case "ERROR": {
       const msg = estadoEnvio.errorMensaje ?? "Error desconocido"
       return `Error: ${msg.slice(0, 80)}${msg.length > 80 ? "…" : ""}`
