@@ -1,12 +1,13 @@
 "use client"
 import { useState, useEffect, useCallback } from "react"
 import { RefreshCw } from "lucide-react"
+import Link from "next/link"
 
 type Periodo = { id: string; anio: number; mes: number; estado: string }
 type DashData = {
   totalFronteras: number; sinDiferencia: number
   provisiones: number; valorProvisiones: number
-  contingenciasAbiertas: number
+  contingenciasAbiertas: number; valorContingencias: number
   disputas: number; valorDisputas: number
   alertasManuales: number; incompletas: number; errores: number
   impactoEstimado: number
@@ -127,13 +128,20 @@ export default function InicioPage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12 }}>
             <KPI label="TOTAL FRONTERAS" main={d?.totalFronteras ?? 0} sub={periodoLabel.split(" — ")[0] ?? ""} />
             <KPI label="SIN DIFERENCIA (A1)" main={d?.sinDiferencia ?? 0} color="#07c5a8" sub={`${pct}%`} />
-            <KPI label="PROVISIONES" main={d?.provisiones ?? 0} color="#3b82f6" sub={cop(d?.valorProvisiones ?? 0)} />
+            <KPI label="PROVISIONES" main={d?.provisiones ?? 0} color="#3b82f6"
+              sub={cop(d?.valorProvisiones ?? 0)}
+              href={periodoId ? `/gestiones?tab=provisiones&periodoId=${periodoId}` : undefined} />
             <KPI label="CONTINGENCIAS L1" main={d?.contingenciasAbiertas ?? 0} color="#f59e0b"
-              sub={`${d?.contingenciasAbiertas ?? 0} abiertas`} />
-            <KPI label="DISPUTAS L2" main={d?.disputas ?? 0} color="#3b82f6" sub={cop(d?.valorDisputas ?? 0)} />
-            <KPI label="ALERTAS MANUALES" main={d?.alertasManuales ?? 0} />
+              sub={cop(d?.valorContingencias ?? 0)}
+              href={periodoId ? `/gestiones?tab=contingencias&periodoId=${periodoId}` : undefined} />
+            <KPI label="DISPUTAS L2" main={d?.disputas ?? 0} color="#3b82f6"
+              sub={cop(d?.valorDisputas ?? 0)}
+              href={periodoId ? `/gestiones?tab=disputas&periodoId=${periodoId}` : undefined} />
+            <KPI label="ALERTAS MANUALES" main={d?.alertasManuales ?? 0} color="#9333ea"
+              href={periodoId ? `/gestiones?tab=alertas-manuales&periodoId=${periodoId}` : undefined} />
             <KPI label="INCOMPLETAS / ERRORES"
-              main={`${d?.incompletas ?? 0} / ${d?.errores ?? 0}`} color="#ef4444" />
+              main={`${d?.incompletas ?? 0} / ${d?.errores ?? 0}`} color="#ef4444"
+              href={periodoId ? `/gestiones?tab=incompletas&periodoId=${periodoId}` : undefined} />
           </div>
 
           {/* KPI row 2 — impacto */}
@@ -183,14 +191,12 @@ export default function InicioPage() {
   )
 }
 
-function KPI({ label, main, color, sub }: {
+function KPI({ label, main, color, sub, href }: {
   label: string; main: string | number; color?: string; sub?: string
+  href?: string
 }) {
-  return (
-    <div style={{
-      background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10,
-      padding: "14px 16px", display: "flex", flexDirection: "column", gap: 4,
-    }}>
+  const content = (
+    <>
       <span style={{
         fontSize: "0.65rem", fontWeight: 600, color: "#9ca3af",
         textTransform: "uppercase", letterSpacing: "0.06em",
@@ -201,8 +207,26 @@ function KPI({ label, main, color, sub }: {
         {main}
       </span>
       {sub && <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>{sub}</span>}
-    </div>
+    </>
   )
+  const baseStyle: React.CSSProperties = {
+    background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10,
+    padding: "14px 16px", display: "flex", flexDirection: "column", gap: 4,
+    textDecoration: "none",
+  }
+  if (href) {
+    return (
+      <Link href={href} style={{
+        ...baseStyle, cursor: "pointer", transition: "border-color 0.15s, transform 0.1s",
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#9ca3af" }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e5e7eb" }}
+      >
+        {content}
+      </Link>
+    )
+  }
+  return <div style={baseStyle}>{content}</div>
 }
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {

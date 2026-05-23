@@ -40,7 +40,7 @@ export interface ResumenConciliacion {
   totalFronteras:         number
   porCaso:                Record<CasoConciliacion, number>
   provisiones:            { cantidad: number; valor_total: number }
-  contingencias:          { cantidad: number; energia_total: number }
+  contingencias:          { cantidad: number; energia_total: number; valor_estimado_total: number }
   disputas:               { cantidad: number; valor_total: number }
   alertasManual:          number
   incompletas:            number
@@ -206,11 +206,18 @@ export async function ejecutarConciliacion(
         creado_por_id: userId,
       })
     } else if (r.resultado_l1 === "CONTINGENCIA_L1") {
+      // Estimacion del valor a cobrar al OR: energia × tarifa_sdl.
+      // Si no hay tarifa_sdl en el SDL de esta frontera, queda null.
+      const energia = Math.abs(r.delta_l1)
+      const estimado = tarifa.tarifa_sdl != null
+        ? new Prisma.Decimal(energia * tarifa.tarifa_sdl)
+        : null
       contingenciasPorFrontera.set(f.codigo_frontera, {
         periodo_id:           periodo.id,
         codigo_frontera:      f.codigo_frontera,
         or_id:                sdlRec?.or_id ?? null,
-        energia_kwh:          new Prisma.Decimal(Math.abs(r.delta_l1)),
+        energia_kwh:          new Prisma.Decimal(energia),
+        costo_estimado_cop:   estimado,
         costo_calculado_cop:  null, // se valoriza al recibir cobro del OR
         estado:               "PENDIENTE",
         resultado_tipo:       "PENDIENTE",
@@ -352,6 +359,8 @@ export async function ejecutarConciliacion(
     .reduce((s, p) => s + Number(p.valor_provisionado_cop), 0)
   const energiaContingencias = Array.from(contingenciasPorFrontera.values())
     .reduce((s, c) => s + Number(c.energia_kwh), 0)
+  const valorEstimadoContingencias = Array.from(contingenciasPorFrontera.values())
+    .reduce((s, c) => s + (c.costo_estimado_cop != null ? Number(c.costo_estimado_cop) : 0), 0)
   const valorDisputas = Array.from(disputasPorFrontera.values())
     .reduce((s, d) => s + Number(d.valor_disputa_cop), 0)
 
@@ -361,7 +370,11 @@ export async function ejecutarConciliacion(
     totalFronteras: facturacion.length,
     porCaso,
     provisiones:   { cantidad: provisionesPorFrontera.size,   valor_total: valorProvisiones },
-    contingencias: { cantidad: contingenciasPorFrontera.size, energia_total: energiaContingencias },
+    contingencias: {
+      cantidad:             contingenciasPorFrontera.size,
+      energia_total:        energiaContingencias,
+      valor_estimado_total: valorEstimadoContingencias,
+    },
     disputas:      { cantidad: disputasPorFrontera.size,      valor_total: valorDisputas },
     alertasManual,
     incompletas,

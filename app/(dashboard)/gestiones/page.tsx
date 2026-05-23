@@ -1,5 +1,6 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, Suspense } from "react"
+import { useSearchParams } from "next/navigation"
 
 type Periodo  = { id: string; anio: number; mes: number; estado: string }
 type Operador = { id: string; codigo: string; nombre: string }
@@ -13,7 +14,10 @@ type Provision = {
 }
 type Contingencia = {
   id: string; codigo_frontera: string
-  energia_kwh: string; costo_calculado_cop: string | null; estado: string
+  energia_kwh: string
+  costo_estimado_cop:  string | null
+  costo_calculado_cop: string | null
+  estado: string
   createdAt: string
   periodo: { anio: number; mes: number }
   operador_red: { codigo: string; nombre: string } | null
@@ -25,8 +29,19 @@ type Disputa = {
   periodo: { anio: number; mes: number }
   operador_red: { codigo: string; nombre: string }
 }
+type ResultadoFila = {
+  id: string; codigo_frontera: string
+  caso: string
+  e_fac: string | null; e_xm: string | null; e_sdl: string | null
+  delta_l1: string | null; delta_l2: string | null
+  requiere_alerta_manual: boolean
+  observaciones: string | null
+  createdAt: string
+  periodo: { anio: number; mes: number }
+  or_obj: { codigo: string; nombre: string } | null
+}
 
-type Tab = "provisiones" | "contingencias" | "disputas"
+type Tab = "provisiones" | "contingencias" | "disputas" | "alertas-manuales" | "incompletas"
 
 const ESTADO_PROV: Record<string, [string, string]> = {
   PENDIENTE:       ["#fff7ed", "#b45309"],
@@ -59,11 +74,24 @@ function dias(created: string) {
 }
 
 export default function GestionesPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 24, color: "#9ca3af" }}>Cargando...</div>}>
+      <GestionesContent />
+    </Suspense>
+  )
+}
+
+function GestionesContent() {
+  const searchParams = useSearchParams()
+  const tabUrl       = searchParams.get("tab")       as Tab | null
+  const periodoIdUrl = searchParams.get("periodoId") ?? ""
+  const orIdUrl      = searchParams.get("orId")      ?? ""
+
   const [periodos, setPeriodos]     = useState<Periodo[]>([])
   const [operadores, setOperadores] = useState<Operador[]>([])
-  const [periodoId, setPeriodoId]   = useState("")
-  const [orId, setOrId]             = useState("")
-  const [tab, setTab]               = useState<Tab>("provisiones")
+  const [periodoId, setPeriodoId]   = useState(periodoIdUrl)
+  const [orId, setOrId]             = useState(orIdUrl)
+  const [tab, setTab]               = useState<Tab>(tabUrl ?? "provisiones")
   const [estadoFiltro, setEstadoFiltro] = useState("")
   const [rows, setRows]             = useState<unknown[]>([])
   const [loading, setLoading]       = useState(false)
@@ -76,7 +104,7 @@ export default function GestionesPage() {
     ]).then(([ps, ors]) => { setPeriodos(ps); setOperadores(ors) })
   }, [])
 
-  async function filtrar() {
+  const filtrar = useCallback(async () => {
     setLoading(true)
     setFiltrado(true)
     const params = new URLSearchParams({ tipo: tab })
@@ -85,12 +113,20 @@ export default function GestionesPage() {
     const res = await fetch(`/api/gestiones?${params}`)
     setRows(await res.json())
     setLoading(false)
-  }
+  }, [tab, periodoId, orId])
 
   useEffect(() => {
     if (filtrado) filtrar()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab])
+
+  // Auto-aplicar filtros si vienen del URL (click en KPI del dashboard)
+  useEffect(() => {
+    if (tabUrl && periodoIdUrl) {
+      filtrar()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabUrl, periodoIdUrl])
 
   const selectStyle: React.CSSProperties = {
     border: "1px solid #d1d5db", borderRadius: 8, padding: "7px 12px",
@@ -162,8 +198,14 @@ export default function GestionesPage() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: "flex", borderBottom: "1px solid #e5e7eb" }}>
-        {([["provisiones","Provisiones"],["contingencias","Contingencias"],["disputas","Disputas"]] as const).map(([k, l]) => (
+      <div style={{ display: "flex", borderBottom: "1px solid #e5e7eb", flexWrap: "wrap" }}>
+        {([
+          ["provisiones",      "Provisiones"],
+          ["contingencias",    "Contingencias"],
+          ["disputas",         "Disputas"],
+          ["alertas-manuales", "Alertas manuales"],
+          ["incompletas",      "Incompletas / Errores"],
+        ] as const).map(([k, l]) => (
           <button
             key={k}
             onClick={() => setTab(k)}
@@ -181,106 +223,180 @@ export default function GestionesPage() {
         ))}
       </div>
 
-      {/* Sub-filter + Table */}
+      {/* Sub-filter (solo para tabs con estado) + Table */}
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid #f3f4f6" }}>
-          <select
-            value={estadoFiltro}
-            onChange={e => setEstadoFiltro(e.target.value)}
-            style={{ ...selectStyle, fontSize: "0.8rem", padding: "5px 10px" }}
-          >
-            <option value="">Todos los estados</option>
-            {tab === "provisiones" && <>
-              <option>PENDIENTE</option>
-              <option>CRUZADO_PARCIAL</option>
-              <option>CRUZADO_TOTAL</option>
-            </>}
-            {tab === "contingencias" && <>
-              <option>PENDIENTE</option><option>COBRADO</option><option>CERRADO</option>
-            </>}
-            {tab === "disputas" && <>
-              <option>ABIERTA</option><option>EN_GESTION</option>
-              <option>RESUELTA</option><option>CERRADA_SIN_AJUSTE</option>
-            </>}
-          </select>
-        </div>
+        {(tab === "provisiones" || tab === "contingencias" || tab === "disputas") && (
+          <div style={{ padding: "12px 16px", borderBottom: "1px solid #f3f4f6" }}>
+            <select
+              value={estadoFiltro}
+              onChange={e => setEstadoFiltro(e.target.value)}
+              style={{ ...selectStyle, fontSize: "0.8rem", padding: "5px 10px" }}
+            >
+              <option value="">Todos los estados</option>
+              {tab === "provisiones" && <>
+                <option>PENDIENTE</option>
+                <option>CRUZADO_PARCIAL</option>
+                <option>CRUZADO_TOTAL</option>
+              </>}
+              {tab === "contingencias" && <>
+                <option>PENDIENTE</option><option>COBRADO</option><option>CERRADO</option>
+              </>}
+              {tab === "disputas" && <>
+                <option>ABIERTA</option><option>EN_GESTION</option>
+                <option>RESUELTA</option><option>CERRADA_SIN_AJUSTE</option>
+              </>}
+            </select>
+          </div>
+        )}
 
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead style={{ background: "#f9fafb" }}>
-              <tr>
-                <th style={thStyle}>Frontera</th>
-                <th style={thStyle}>Operador de Red</th>
-                <th style={thStyle}>Período</th>
-                <th style={thStyle}>Tipo</th>
-                <th style={{ ...thStyle, textAlign: "right" }}>Energía (kWh)</th>
-                <th style={{ ...thStyle, textAlign: "right" }}>
-                  {tab === "provisiones" ? "Provisionado (COP)" : tab === "disputas" ? "Valor (COP)" : "Costo (COP)"}
-                </th>
-                <th style={thStyle}>Estado</th>
-                <th style={{ ...thStyle, textAlign: "right" }}>Días</th>
-                <th style={thStyle}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={9} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>Cargando...</td></tr>
-              ) : !filtrado ? (
-                <tr><td colSpan={9} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>Selecciona un período y pulsa Filtrar.</td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={9} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>No hay registros para los filtros seleccionados.</td></tr>
-              ) : tab === "provisiones" ? (
-                (rows as Provision[])
-                  .filter(r => !estadoFiltro || r.estado === estadoFiltro)
-                  .map(r => (
-                  <tr key={r.id}>
-                    <td style={{ ...tdStyle, fontWeight: 500 }}>{r.codigo_frontera}</td>
-                    <td style={tdStyle}>{r.operador_red?.nombre ?? "—"}</td>
-                    <td style={tdStyle}>{r.periodo.anio}-{String(r.periodo.mes).padStart(2,"0")}</td>
-                    <td style={tdStyle}>{r.tipo}</td>
-                    <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.energia_kwh)}</td>
-                    <td style={{ ...tdStyle, textAlign: "right" }}>{cop(r.valor_provisionado_cop)}</td>
-                    <td style={tdStyle}><StatusBadge estado={r.estado} map={ESTADO_PROV} /></td>
-                    <td style={{ ...tdStyle, textAlign: "right", color: "#9ca3af" }}>{dias(r.createdAt)}</td>
-                    <td style={tdStyle}><span style={{ color: "#07c5a8", cursor: "pointer", fontSize: "0.8rem" }}>Ver</span></td>
-                  </tr>
-                ))
-              ) : tab === "contingencias" ? (
-                (rows as Contingencia[])
-                  .filter(r => !estadoFiltro || r.estado === estadoFiltro)
-                  .map(r => (
-                  <tr key={r.id}>
-                    <td style={{ ...tdStyle, fontWeight: 500 }}>{r.codigo_frontera}</td>
-                    <td style={tdStyle}>{r.operador_red?.nombre ?? "—"}</td>
-                    <td style={tdStyle}>{r.periodo.anio}-{String(r.periodo.mes).padStart(2,"0")}</td>
-                    <td style={tdStyle}>Contingencia</td>
-                    <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.energia_kwh)}</td>
-                    <td style={{ ...tdStyle, textAlign: "right" }}>{cop(r.costo_calculado_cop)}</td>
-                    <td style={tdStyle}><StatusBadge estado={r.estado} map={ESTADO_CONT} /></td>
-                    <td style={{ ...tdStyle, textAlign: "right", color: "#9ca3af" }}>{dias(r.createdAt)}</td>
-                    <td style={tdStyle}><span style={{ color: "#07c5a8", cursor: "pointer", fontSize: "0.8rem" }}>Ver</span></td>
-                  </tr>
-                ))
-              ) : (
-                (rows as Disputa[])
-                  .filter(r => !estadoFiltro || r.estado === estadoFiltro)
-                  .map(r => (
-                  <tr key={r.id}>
-                    <td style={{ ...tdStyle, fontWeight: 500 }}>{r.codigo_frontera}</td>
-                    <td style={tdStyle}>{r.operador_red?.nombre ?? "—"}</td>
-                    <td style={tdStyle}>{r.periodo.anio}-{String(r.periodo.mes).padStart(2,"0")}</td>
-                    <td style={tdStyle}>Disputa</td>
-                    <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.energia_exceso_kwh)}</td>
-                    <td style={{ ...tdStyle, textAlign: "right" }}>{cop(r.valor_disputa_cop)}</td>
-                    <td style={tdStyle}><StatusBadge estado={r.estado} map={ESTADO_DISP} /></td>
-                    <td style={{ ...tdStyle, textAlign: "right", color: "#9ca3af" }}>{dias(r.createdAt)}</td>
-                    <td style={tdStyle}><span style={{ color: "#07c5a8", cursor: "pointer", fontSize: "0.8rem" }}>Ver</span></td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        {(tab === "alertas-manuales" || tab === "incompletas") ? (
+          // Tabla para ResultadoConciliacion (alertas manuales o incompletas/errores)
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead style={{ background: "#f9fafb" }}>
+                <tr>
+                  <th style={thStyle}>Frontera</th>
+                  <th style={thStyle}>Operador</th>
+                  <th style={thStyle}>Período</th>
+                  <th style={thStyle}>Caso</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>E_fac (kWh)</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>E_xm (kWh)</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>E_sdl (kWh)</th>
+                  <th style={thStyle}>Motivo / Observaciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={8} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>Cargando...</td></tr>
+                ) : !filtrado ? (
+                  <tr><td colSpan={8} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>Selecciona un período y pulsa Filtrar.</td></tr>
+                ) : rows.length === 0 ? (
+                  <tr><td colSpan={8} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>
+                    {tab === "alertas-manuales"
+                      ? "No hay fronteras con alerta manual para este período."
+                      : "No hay fronteras incompletas o con error para este período."}
+                  </td></tr>
+                ) : (
+                  (rows as ResultadoFila[]).map(r => {
+                    const casoBg = r.caso === "INCOMPLETA" ? "#fffbeb"
+                                 : r.caso === "ERROR"      ? "#fef2f2"
+                                 : "#fef3f2"
+                    const casoCol = r.caso === "INCOMPLETA" ? "#92400e"
+                                  : r.caso === "ERROR"      ? "#991b1b"
+                                  : "#b91c1c"
+                    return (
+                      <tr key={r.id}>
+                        <td style={{ ...tdStyle, fontWeight: 500, fontFamily: "monospace" }}>{r.codigo_frontera}</td>
+                        <td style={tdStyle}>{r.or_obj?.nombre ?? "—"}</td>
+                        <td style={tdStyle}>{r.periodo.anio}-{String(r.periodo.mes).padStart(2,"0")}</td>
+                        <td style={tdStyle}>
+                          <span style={{ background: casoBg, color: casoCol, padding: "2px 8px",
+                            borderRadius: 999, fontSize: "0.75rem", fontWeight: 600 }}>
+                            {r.caso}
+                          </span>
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.e_fac)}</td>
+                        <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.e_xm)}</td>
+                        <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.e_sdl)}</td>
+                        <td style={{ ...tdStyle, fontSize: "0.78rem", color: "#6b7280", maxWidth: 400 }}>
+                          {r.observaciones ?? "—"}
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          // Tabla original para Provisiones / Contingencias / Disputas
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead style={{ background: "#f9fafb" }}>
+                <tr>
+                  <th style={thStyle}>Frontera</th>
+                  <th style={thStyle}>Operador de Red</th>
+                  <th style={thStyle}>Período</th>
+                  <th style={thStyle}>Tipo</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Energía (kWh)</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>
+                    {tab === "provisiones" ? "Provisionado (COP)"
+                     : tab === "disputas"  ? "Valor (COP)"
+                     : "Costo estimado (COP)"}
+                  </th>
+                  <th style={thStyle}>Estado</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Días</th>
+                  <th style={thStyle}>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={9} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>Cargando...</td></tr>
+                ) : !filtrado ? (
+                  <tr><td colSpan={9} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>Selecciona un período y pulsa Filtrar.</td></tr>
+                ) : rows.length === 0 ? (
+                  <tr><td colSpan={9} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>No hay registros para los filtros seleccionados.</td></tr>
+                ) : tab === "provisiones" ? (
+                  (rows as Provision[])
+                    .filter(r => !estadoFiltro || r.estado === estadoFiltro)
+                    .map(r => (
+                    <tr key={r.id}>
+                      <td style={{ ...tdStyle, fontWeight: 500 }}>{r.codigo_frontera}</td>
+                      <td style={tdStyle}>{r.operador_red?.nombre ?? "—"}</td>
+                      <td style={tdStyle}>{r.periodo.anio}-{String(r.periodo.mes).padStart(2,"0")}</td>
+                      <td style={tdStyle}>{r.tipo}</td>
+                      <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.energia_kwh)}</td>
+                      <td style={{ ...tdStyle, textAlign: "right" }}>{cop(r.valor_provisionado_cop)}</td>
+                      <td style={tdStyle}><StatusBadge estado={r.estado} map={ESTADO_PROV} /></td>
+                      <td style={{ ...tdStyle, textAlign: "right", color: "#9ca3af" }}>{dias(r.createdAt)}</td>
+                      <td style={tdStyle}><span style={{ color: "#07c5a8", cursor: "pointer", fontSize: "0.8rem" }}>Ver</span></td>
+                    </tr>
+                  ))
+                ) : tab === "contingencias" ? (
+                  (rows as Contingencia[])
+                    .filter(r => !estadoFiltro || r.estado === estadoFiltro)
+                    .map(r => (
+                    <tr key={r.id}>
+                      <td style={{ ...tdStyle, fontWeight: 500 }}>{r.codigo_frontera}</td>
+                      <td style={tdStyle}>{r.operador_red?.nombre ?? "—"}</td>
+                      <td style={tdStyle}>{r.periodo.anio}-{String(r.periodo.mes).padStart(2,"0")}</td>
+                      <td style={tdStyle}>Contingencia</td>
+                      <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.energia_kwh)}</td>
+                      <td style={{ ...tdStyle, textAlign: "right" }}>
+                        {/* Si ya cobrado, mostrar calculado; sino estimado */}
+                        {r.costo_calculado_cop != null
+                          ? cop(r.costo_calculado_cop)
+                          : r.costo_estimado_cop != null
+                            ? <span style={{ color: "#6b7280" }}>{cop(r.costo_estimado_cop)} <span style={{ fontSize: "0.7rem" }}>(estimado)</span></span>
+                            : "—"
+                        }
+                      </td>
+                      <td style={tdStyle}><StatusBadge estado={r.estado} map={ESTADO_CONT} /></td>
+                      <td style={{ ...tdStyle, textAlign: "right", color: "#9ca3af" }}>{dias(r.createdAt)}</td>
+                      <td style={tdStyle}><span style={{ color: "#07c5a8", cursor: "pointer", fontSize: "0.8rem" }}>Ver</span></td>
+                    </tr>
+                  ))
+                ) : (
+                  (rows as Disputa[])
+                    .filter(r => !estadoFiltro || r.estado === estadoFiltro)
+                    .map(r => (
+                    <tr key={r.id}>
+                      <td style={{ ...tdStyle, fontWeight: 500 }}>{r.codigo_frontera}</td>
+                      <td style={tdStyle}>{r.operador_red?.nombre ?? "—"}</td>
+                      <td style={tdStyle}>{r.periodo.anio}-{String(r.periodo.mes).padStart(2,"0")}</td>
+                      <td style={tdStyle}>Disputa</td>
+                      <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.energia_exceso_kwh)}</td>
+                      <td style={{ ...tdStyle, textAlign: "right" }}>{cop(r.valor_disputa_cop)}</td>
+                      <td style={tdStyle}><StatusBadge estado={r.estado} map={ESTADO_DISP} /></td>
+                      <td style={{ ...tdStyle, textAlign: "right", color: "#9ca3af" }}>{dias(r.createdAt)}</td>
+                      <td style={tdStyle}><span style={{ color: "#07c5a8", cursor: "pointer", fontSize: "0.8rem" }}>Ver</span></td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )

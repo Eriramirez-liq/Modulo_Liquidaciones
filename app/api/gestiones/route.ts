@@ -59,5 +59,41 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(rows)
   }
 
+  // Alertas manuales: ResultadoConciliacion con requiere_alerta_manual=true
+  if (tipo === "alertas-manuales") {
+    const rows = await db.resultadoConciliacion.findMany({
+      where: {
+        requiere_alerta_manual: true,
+        ...(periodoId ? { periodo_id: periodoId } : {}),
+        ...(orId      ? { or_id: orId }           : {}),
+      },
+      include: {
+        periodo: { select: { anio: true, mes: true } },
+        or_obj:  { select: { codigo: true, nombre: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    })
+    return NextResponse.json(rows)
+  }
+
+  // Incompletas/Errores: ResultadoConciliacion con caso INCOMPLETA o ERROR
+  if (tipo === "incompletas") {
+    const rows = await db.resultadoConciliacion.findMany({
+      where: {
+        caso: { in: ["INCOMPLETA", "ERROR"] },
+        ...(periodoId ? { periodo_id: periodoId } : {}),
+        ...(orId      ? { or_id: orId }           : {}),
+      },
+      include: {
+        periodo: { select: { anio: true, mes: true } },
+        or_obj:  { select: { codigo: true, nombre: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    })
+    return NextResponse.json(rows)
+  }
+
   return NextResponse.json([])
 }
