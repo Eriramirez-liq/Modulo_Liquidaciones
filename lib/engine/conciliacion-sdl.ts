@@ -214,6 +214,27 @@ export function clasificarFrontera(input: InputClasificacion): ResultadoClasific
     }
   }
 
+  // ── Caso extendido (no en PRD original): fac ≈ sdl < xm ──────────────────
+  // BIA y OR concuerdan, XM reporta MAS energia. Simetrico a D3 pero con XM
+  // como outlier alto en lugar de bajo. Tratamiento: contingencia L1 — OR
+  // deberia cobrar la diferencia entre lo registrado en XM y lo facturado.
+  if (facEqSdl && delta_l2 > umbral) {
+    observaciones.push(
+      "fac ≈ sdl < xm: BIA y OR concuerdan, XM reporta mayor consumo. " +
+      "Caso extendido al PRD; se clasifica como contingencia L1.",
+    )
+    return {
+      caso: "B1",
+      resultado_l1: "CONTINGENCIA_L1",
+      resultado_l2: "SIN_DIFERENCIA",
+      delta_l1, delta_l2,
+      impacto_financiero_l1: null, // se valoriza al recibir cobro
+      impacto_financiero_l2: 0,
+      requiere_alerta_manual: false,
+      observaciones,
+    }
+  }
+
   // ── D4: tres valores distintos sin patron — alerta manual ────────────────
   observaciones.push(
     "Combinacion de valores no encaja en patrones A1-D3. Requiere revision manual.",
