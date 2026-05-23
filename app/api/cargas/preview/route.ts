@@ -6,6 +6,10 @@ import { parsearXM } from "@/lib/parsers/xm"
 import { parsearSDL } from "@/lib/parsers/sdl"
 import { parsearBalance } from "@/lib/parsers/balance"
 import { parsearInsumosSTR } from "@/lib/parsers/insumos-str"
+import {
+  previewBodySchema,
+  extractPreviewBody,
+} from "@/lib/validation/cargas"
 
 import { TipoFuente } from "@prisma/client"
 
@@ -22,13 +26,24 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData()
   const file       = formData.get("file") as File | null
   const filesMulti = formData.getAll("files") as File[]
-  const anio       = Number(formData.get("anio"))
-  const mes        = Number(formData.get("mes"))
-  const tipoFuente = formData.get("tipoFuente") as string
-  const orId       = formData.get("orId") as string | null
+
+  // Validación de los campos NO-File con Zod. Files se mantienen aparte
+  // porque Zod no valida bien Blob/File en runtime de Next.
+  const parsed = previewBodySchema.safeParse(extractPreviewBody(formData))
+  if (!parsed.success) {
+    return NextResponse.json(
+      {
+        error: "VALIDATION_ERROR",
+        message: "Parámetros incompletos",
+        details: parsed.error.flatten(),
+      },
+      { status: 400 }
+    )
+  }
+  const { anio, mes, tipoFuente, orId } = parsed.data
 
   const hasAnyFile = (file != null) || (filesMulti.length > 0)
-  if (!hasAnyFile || !anio || !mes || !tipoFuente) {
+  if (!hasAnyFile) {
     return NextResponse.json({ error: "Parámetros incompletos" }, { status: 400 })
   }
 

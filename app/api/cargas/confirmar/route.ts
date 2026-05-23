@@ -9,33 +9,40 @@ import {
   FilaBalance,
 } from "@/lib/parsers/types"
 import type { FilaSTR } from "@/lib/parsers/insumos-str"
-
-interface ConfirmarBody {
-  meta: {
-    anio: number
-    mes: number
-    tipoFuente: "FACTURACION" | "XM" | "SDL" | "BALANCE" | "INSUMOS_STR"
-    orId?: string
-    nombreArchivo: string
-  }
-  filasCompletas: unknown[]
-  justificacion?: string
-  cargaPreviaId?: string
-}
+import { confirmarBodySchema } from "@/lib/validation/cargas"
 
 export async function POST(request: NextRequest) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
 
-  const body: ConfirmarBody = await request.json()
-  const { meta, filasCompletas, justificacion, cargaPreviaId } = body
+  // Validación de body con Zod. Mantiene el comportamiento previo: si el shape
+  // es inválido devolvemos 400. El schema deriva del tipo ConfirmarBody que
+  // existía aquí inline; no endurece validaciones.
+  let json: unknown
+  try {
+    json = await request.json()
+  } catch {
+    return NextResponse.json(
+      { error: "VALIDATION_ERROR", message: "Body inválido: JSON malformado" },
+      { status: 400 }
+    )
+  }
+  const parsed = confirmarBodySchema.safeParse(json)
+  if (!parsed.success) {
+    return NextResponse.json(
+      {
+        error: "VALIDATION_ERROR",
+        message: "Datos incompletos",
+        details: parsed.error.flatten(),
+      },
+      { status: 400 }
+    )
+  }
+  const { meta, filasCompletas, justificacion, cargaPreviaId } = parsed.data
 
   // INSUMOS_STR puede confirmarse aunque filasCompletas esté vacío
   // (la lógica de análisis puede aún no estar implementada y querer registrar
   // la carga de los archivos para auditoría).
-  if (!meta) {
-    return NextResponse.json({ error: "Datos incompletos" }, { status: 400 })
-  }
   if (meta.tipoFuente !== "INSUMOS_STR" && !filasCompletas?.length) {
     return NextResponse.json({ error: "Datos incompletos" }, { status: 400 })
   }
