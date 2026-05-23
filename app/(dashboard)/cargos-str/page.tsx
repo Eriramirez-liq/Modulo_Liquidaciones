@@ -3,8 +3,11 @@ import { useState, useEffect, useMemo } from "react"
 import { FilaOperador } from "@/components/cargos-str/FilaOperador"
 import { BotonCrearOC } from "@/components/cargos-str/BotonCrearOC"
 import DetalleEnvioModal from "@/components/cargos-str/DetalleEnvioModal"
-import type { EstadoEnvioKey, EstadoEnvioUI, DetalleEnvio } from "@/components/cargos-str/types"
-import { MOCK_ESTADOS_ENVIO, MOCK_DETALLE_ENVIO_OK, MOCK_DETALLE_ENVIO_ERROR } from "@/_dev/mocks/netsuite"
+import ModalConfirmarLote from "@/components/cargos-str/ModalConfirmarLote"
+import Toast from "@/components/cargos-str/Toast"
+import type { EstadoEnvioKey, EstadoEnvioUI, DetalleEnvio, LoteEnCursoUI, CargoSeleccionado, CargoParaEnviar } from "@/components/cargos-str/types"
+import { MOCK_ESTADOS_ENVIO, MOCK_DETALLE_ENVIO_OK, MOCK_DETALLE_ENVIO_ERROR, mockPostLote, mockPostProcesar } from "@/_dev/mocks/netsuite"
+import type { ToastData } from "@/components/cargos-str/Toast"
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -74,6 +77,13 @@ export default function CargosSTRPage() {
   const [detalleEnvioId, setDetalleEnvioId] = useState<string | null>(null)
   const [detalleEnvio, setDetalleEnvio] = useState<DetalleEnvio | null>(null)
   const [cargandoDetalle, setCargandoDetalle] = useState(false)
+
+  // -- Estado ModalConfirmarLote + flujo lote (FE-4) --
+  const [loteEnCurso, setLoteEnCurso] = useState<LoteEnCursoUI | null>(null)
+  const [modalConfirmarAbierto, setModalConfirmarAbierto] = useState(false)
+  const [enviandoLote, setEnviandoLote] = useState(false)
+  const [errorLote, setErrorLote] = useState<string | null>(null)
+  const [toast, setToast] = useState<ToastData | null>(null)
 
   // -- Variables derivadas --
   const modoSeleccion   = periodoSel.length === 1
@@ -216,6 +226,108 @@ export default function CargosSTRPage() {
   function handleReenviar() {
     // eslint-disable-next-line no-alert
     alert("Reenviar disponible cuando FE-4/Backend estén listos. Funcionalidad pendiente.")
+  }
+
+  // -- Helpers FE-4: lote --
+
+  function getCargosSeleccionados(): CargoSeleccionado[] {
+    if (!data || !periodoUnicoId) return []
+    return Array.from(seleccion).map(orCodigo => {
+      const operador = data.operadores.find(o => o.codigo === orCodigo)
+      const periodo = data.periodos.find(p => p.id === periodoUnicoId)
+      const montoCop = operador?.totales[periodoUnicoId] ?? 0
+      const key = cargoKey(periodoUnicoId, orCodigo)
+      const estadoEnvio = estadosEnvio[key]
+      return {
+        periodoId: periodoUnicoId,
+        orCodigo,
+        orNombre: operador?.nombre ?? orCodigo,
+        mesConsumo: periodo?.consumo ?? "",
+        mesFacturacion: periodo?.facturacion ?? "",
+        montoCop,
+        // Campo extra para el warning del modal (no está en el tipo base)
+        tieneErrorPrevio: estadoEnvio?.estado === "ERROR",
+      } as CargoSeleccionado & { tieneErrorPrevio: boolean }
+    })
+  }
+
+  async function handleConfirmarLote() {
+    // Validaciones cliente
+    if (seleccion.size === 0) {
+      setToast({ tipo: "error", mensaje: "No hay cargos seleccionados." })
+      setModalConfirmarAbierto(false)
+      return
+    }
+    if (seleccion.size > MAX_ENVIOS_POR_LOTE) {
+      setToast({ tipo: "error", mensaje: `Máximo ${MAX_ENVIOS_POR_LOTE} cargos por lote.` })
+      return
+    }
+
+    // Filtro defensivo: remover los que ya están en PROCESADO
+    const cargosSeleccionados = getCargosSeleccionados()
+    const elegibles = cargosSeleccionados.filter(c => {
+      const key = cargoKey(c.periodoId, c.orCodigo)
+      const estado = estadosEnvio[key]
+      return estado?.estado !== "PROCESADO"
+    })
+
+    if (elegibles.length === 0) {
+      setToast({ tipo: "warning", mensaje: "No hay cargos elegibles. Los seleccionados ya tienen OC." })
+      setModalConfirmarAbierto(false)
+      return
+    }
+
+    const cargosParaEnviar: CargoParaEnviar[] = elegibles.map(c => ({
+      periodoId: c.periodoId,
+      orCodigo: c.orCodigo,
+    }))
+
+    setEnviandoLote(true)
+    setErrorLote(null)
+
+    try {
+      // POST /lote (mock)
+      const response = await mockPostLote(cargosParaEnviar)
+
+      // POST /lote/:id/procesar (mock — fire-and-forget)
+      await mockPostProcesar(response.loteId)
+
+      // Actualizar estado local del lote
+      setLoteEnCurso({
+        id: response.loteId,
+        estado: "EN_PROGRESO",
+        iniciadoAt: new Date().toISOString(),
+        iniciadoPor: { nombre: "Yo" }, // El primer polling real lo reemplaza
+        totales: {
+          total: response.totalEnvios,
+          pendientes: response.totalEnvios,
+          procesados: 0,
+          errores: 0,
+        },
+        puedeCancelar: true,
+      })
+
+      // Limpiar y cerrar
+      setModalConfirmarAbierto(false)
+      setSeleccion(new Set())
+      setToast({
+        tipo: "ok",
+        mensaje: `Lote creado: ${response.totalEnvios} envío${response.totalEnvios !== 1 ? "s" : ""} en proceso.`,
+      })
+    } catch (err: unknown) {
+      // Discriminar errores por campo `error`
+      const errObj = err as Record<string, unknown>
+      if (errObj?.error === "LOTE_EN_CURSO") {
+        const iniciadoPor = (errObj.iniciadoPor as { nombre: string } | undefined)?.nombre ?? "otro usuario"
+        setErrorLote(`Hay un lote en curso iniciado por ${iniciadoPor}. Esperá a que termine.`)
+      } else if (errObj?.error === "MONTO_CERO") {
+        setErrorLote("Algún cargo seleccionado tiene monto cero. Revisá los datos.")
+      } else {
+        setErrorLote("Error al crear el lote. Reintentá en unos segundos.")
+      }
+    } finally {
+      setEnviandoLote(false)
+    }
   }
 
   // -- Helpers de selección --
@@ -374,13 +486,8 @@ export default function CargosSTRPage() {
           {filtrado && !loading && data && data.operadores.length > 0 && (
             <BotonCrearOC
               cantidad={seleccion.size}
-              disabled={!modoSeleccion || seleccion.size === 0}
-              onAbrir={() =>
-                // eslint-disable-next-line no-alert
-                alert(
-                  `Modal de confirmación: ${seleccion.size} cargo(s) seleccionado(s). (FE-4 lo implementará)`
-                )
-              }
+              disabled={!modoSeleccion || seleccion.size === 0 || loteEnCurso?.estado === "EN_PROGRESO"}
+              onAbrir={() => setModalConfirmarAbierto(true)}
             />
           )}
         </div>
@@ -422,6 +529,25 @@ export default function CargosSTRPage() {
         cargando={cargandoDetalle}
         onCerrar={handleCerrarDetalle}
         onReenviar={detalleEnvio?.estado === "ERROR" ? handleReenviar : undefined}
+      />
+
+      {/* ModalConfirmarLote — FE-4 */}
+      <ModalConfirmarLote
+        abierto={modalConfirmarAbierto}
+        cargos={modalConfirmarAbierto ? getCargosSeleccionados() : []}
+        enviando={enviandoLote}
+        error={errorLote}
+        onConfirmar={handleConfirmarLote}
+        onCancelar={() => {
+          setModalConfirmarAbierto(false)
+          setErrorLote(null)
+        }}
+      />
+
+      {/* Toast — FE-4 */}
+      <Toast
+        toast={toast}
+        onClose={() => setToast(null)}
       />
     </div>
   )

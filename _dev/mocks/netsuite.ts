@@ -1,14 +1,110 @@
 // Mock data para desarrollo — usados en FE-2 a FE-5 mientras los endpoints no existen
 // Importar con: import { MOCK_ESTADOS_ENVIO, MOCK_LOTE_EN_CURSO, ... } from "@/_dev/mocks/netsuite"
 //
-// NOTA: esta carpeta está en .gitignore. No usar en producción.
+// NOTA: esta carpeta está en _dev/ (commiteada para Vercel builds). Solo usar en flujos mock.
 
 import type {
   EstadoEnvioKey,
   EstadoEnvioUI,
   LoteEnCursoUI,
   DetalleEnvio,
+  CargoParaEnviar,
 } from "@/components/cargos-str/types"
+
+// ---------------------------------------------------------------------------
+// Tipos de respuesta de los endpoints (shape que tendrá el backend real)
+// ---------------------------------------------------------------------------
+
+export interface EnvioDto {
+  id: string
+  periodoId: string
+  orCodigo: string
+  estado: "PENDIENTE" | "PROCESANDO" | "PROCESADO" | "ERROR"
+  numeroOc: string | null
+  errorMensaje: string | null
+}
+
+export interface LoteResponse {
+  loteId: string
+  estado: "EN_PROGRESO"
+  totalEnvios: number
+  envios: EnvioDto[]
+}
+
+// ---------------------------------------------------------------------------
+// mockPostLote
+// Simula POST /api/cargos-str/netsuite/lote
+// TODO FE-6: reemplazar por fetch real cuando BE-3 esté listo
+// ---------------------------------------------------------------------------
+
+export async function mockPostLote(cargos: CargoParaEnviar[]): Promise<LoteResponse> {
+  const delay = 800 + Math.floor(Math.random() * 700) // 800-1500ms
+  await new Promise(resolve => setTimeout(resolve, delay))
+
+  const roll = Math.random()
+
+  // 10% → 409 LOTE_EN_CURSO
+  if (roll < 0.10) {
+    const err = {
+      error: "LOTE_EN_CURSO",
+      loteEnCursoId: "mock-lote-en-curso-999",
+      iniciadoAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      iniciadoPor: { nombre: "Otro usuario" },
+    }
+    return Promise.reject(err)
+  }
+
+  // 5% → 422 MONTO_CERO
+  if (roll < 0.15) {
+    const err = {
+      error: "MONTO_CERO",
+      conflictos: cargos.slice(0, 1).map(c => ({
+        periodoId: c.periodoId,
+        orCodigo: c.orCodigo,
+        monto: "0.00",
+      })),
+    }
+    return Promise.reject(err)
+  }
+
+  // 5% → 500 genérico
+  if (roll < 0.20) {
+    const err = {
+      error: "INTERNAL_ERROR",
+    }
+    return Promise.reject(err)
+  }
+
+  // 80% → OK
+  const loteId = `mock-lote-${Date.now()}`
+  const envios: EnvioDto[] = cargos.map((c, idx) => ({
+    id: `mock-envio-${idx}`,
+    periodoId: c.periodoId,
+    orCodigo: c.orCodigo,
+    estado: "PENDIENTE",
+    numeroOc: null,
+    errorMensaje: null,
+  }))
+
+  return {
+    loteId,
+    estado: "EN_PROGRESO",
+    totalEnvios: cargos.length,
+    envios,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// mockPostProcesar
+// Simula POST /api/cargos-str/netsuite/lote/:loteId/procesar
+// TODO FE-6: reemplazar por fetch real cuando BE-3 esté listo
+// ---------------------------------------------------------------------------
+
+export async function mockPostProcesar(_loteId: string): Promise<void> {
+  // Delay mínimo que simula el 202 Accepted del backend
+  await new Promise(resolve => setTimeout(resolve, 300))
+  // 100% éxito — la simulación del worker (estados cambiando) es responsabilidad de FE-5
+}
 
 // ---------------------------------------------------------------------------
 // MOCK_ESTADOS_ENVIO
