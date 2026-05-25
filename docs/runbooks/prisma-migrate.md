@@ -31,14 +31,25 @@ Una vez aplicado el procedimiento de esta página, todas las migraciones futuras
 
 > Estos pasos se ejecutan **una vez** apuntando al `DATABASE_URL` de producción Supabase. NO requieren ambiente local de Next/Vercel — solo la CLI de Prisma + acceso al `DATABASE_URL`.
 
-### Paso 1 — Snapshot de seguridad de Supabase
+### Paso 1 — Snapshot de seguridad de Supabase ⏸️ DIFERIDO (deuda técnica)
+
+> **Estado al 2026-05-25:** Paso DIFERIDO porque el proyecto no cuenta con plan Pro de Supabase (los snapshots manuales son feature de Pro). Se acepta el riesgo apoyándose en los **backups automáticos diarios** del plan Free de Supabase como red de seguridad.
+>
+> **Mitigación temporal aceptada:**
+> - Supabase Free guarda 1 backup automático diario por 7 días (retención).
+> - Antes de aplicar cualquier migración destructiva (BE-1 en adelante), confirmar manualmente que el backup automático del día existe en Supabase Dashboard → Database → Backups.
+> - Si BE-1 introduce solo `CREATE TABLE` y `CREATE TYPE` (sin `ALTER` ni `DROP`), el riesgo es bajo y el rollback es trivial (DROP TABLE de las tablas nuevas).
+>
+> **Acción recomendada cuando se contrate Supabase Pro:** retomar este paso y crear backups manuales antes de cada migración no trivial. Ver `mejoras/netsuite-backend-plan.md` § Deuda técnica.
+
+Pasos originales (a ejecutar cuando se tenga plan Pro):
 
 1. Abrir Supabase Dashboard → proyecto de producción.
 2. Ir a **Database → Backups**.
 3. Click en **Create backup** (botón superior derecho).
-4. Anotar el ID/timestamp del backup en el PR de BE-0 (comentario en GitHub).
+4. Anotar el ID/timestamp del backup en el PR.
 
-> Si el plan de Supabase no permite snapshots manuales, hacer dump con `pg_dump` apuntando al `DATABASE_URL` y guardarlo en un sitio seguro antes de continuar.
+> Alternativa con `pg_dump` (sirve incluso sin plan Pro): correr `pg_dump $DATABASE_URL > backup_$(date +%Y%m%d).sql` y guardar en un sitio seguro.
 
 ### Paso 2 — Verificar que la baseline coincide con la DB real
 

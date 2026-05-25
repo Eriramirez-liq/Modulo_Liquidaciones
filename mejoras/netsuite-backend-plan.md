@@ -127,6 +127,40 @@ Existe el directorio `lib/integrations/` con un solo archivo. La estructura `lib
 
 ---
 
+## A.4 Deuda técnica diferida (aceptada — no bloquea Fase 1)
+
+> **Última actualización:** 2026-05-25 — confirmado con Erika.
+
+### TD-1: Sin plan Pro de Supabase → sin snapshots manuales
+
+**Contexto:** el procedimiento manual de BE-0 (`docs/runbooks/prisma-migrate.md`) pedía crear un backup manual desde Supabase Dashboard antes de aplicar la baseline. Esta feature es exclusiva del plan Pro de Supabase.
+
+**Estado:** el proyecto opera hoy con **Supabase Free**. Erika decidió diferir el paso de backup manual y apoyarse en la red de seguridad existente.
+
+**Mitigación temporal aceptada:**
+- Supabase Free incluye **1 backup automático diario** con retención de 7 días.
+- Antes de cada migración no trivial (BE-1 en adelante), confirmar visualmente que el backup automático del día existe en Supabase Dashboard → Database → Backups.
+- BE-1 solo introduce `CREATE TABLE`/`CREATE TYPE`/`CREATE INDEX` (no `ALTER`/`DROP` sobre tablas existentes) → riesgo bajo, rollback trivial (`DROP TABLE envios_netsuite_cargo_str; DROP TABLE lotes_netsuite; DROP TYPE ...`).
+- Alternativa sin plan Pro: dump manual con `pg_dump $DATABASE_URL > backup.sql` antes del PR (documentado en runbook).
+
+**Cuándo retomar:** al contratar Supabase Pro. Acción: actualizar runbook `prisma-migrate.md` § Paso 1 quitando la marca DIFERIDO y restablecer la práctica de snapshot manual antes de cada migración no trivial.
+
+**Riesgo residual aceptado:** si una migración corrompe la DB entre dos backups automáticos diarios y nadie lo detecta a tiempo (~24h), pueden perderse hasta 24h de datos. Para Fase 1 (sin tráfico de usuarios reales mientras NetSuite mock está activo) es aceptable.
+
+### TD-2: Plan de Vercel a confirmar antes de BE-3
+
+**Contexto:** el plan asume `maxDuration = 300s` y `MAX_ENVIOS_POR_LOTE = 100` (Vercel Pro). En Hobby el límite es 60s.
+
+**Estado:** plan de Vercel actual no confirmado.
+
+**Acción antes de BE-3:**
+- Si Hobby: bajar `MAX_ENVIOS_POR_LOTE` a 25 (margen sobre 23 cargos típicos) y agregar guard en `crearLote` del servicio.
+- Si Pro: dejar 100 (asumido en el plan).
+
+**Cuándo retomar:** al iniciar BE-3.
+
+---
+
 # PARTE B — Plan de implementación
 
 ## B.1 Modelo de datos
