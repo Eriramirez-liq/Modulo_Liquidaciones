@@ -15,7 +15,9 @@ import type { ToastData } from "@/components/cargos-str/Toast"
 // Constantes
 // ---------------------------------------------------------------------------
 
-const MAX_ENVIOS_POR_LOTE = 100
+// Vercel Hobby: maxDuration = 60s. Con ~2s por envío real, 25 cargos ≈ 50s
+// con margen de seguridad. Si se migra a Pro, subir a 100.
+const MAX_ENVIOS_POR_LOTE = 25
 
 // ---------------------------------------------------------------------------
 // Tipos locales de la página

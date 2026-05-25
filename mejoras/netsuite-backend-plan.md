@@ -17,7 +17,7 @@ Erika aprobó los defaults recomendados sobre las 7 decisiones que el análisis 
 | D1+D6 | Campo en POST `/lote` | `orCodigo` explícito (string como `"OR-AFINIA"`). El backend mapea `codigo → id` internamente. | El payload del FE usa `{ periodoId, orCodigo }`. El service.ts hace `ConfiguracionOR.findUnique({ where: { codigo } })` para resolver `or_id` antes de persistir. La respuesta del backend devuelve ambos: `orId` (UUID interno) **y** `orCodigo` (string) para que el FE arme las keys `${periodoId}|${orCodigo}` consistentes con `/estados`. |
 | D5 | `GET /api/cargos-str/netsuite/lote/activo` | Sí — implementar en BE-4 | Endpoint adicional. Retorna el último lote `EN_PROGRESO` del tenant (o 204 si no hay). Sin filtro de usuario — cualquier lote activo bloquea. |
 | D7 | RLS sobre tablas NetSuite | **Postergar a Fase 3**. Mitigación temporal: verificar en Supabase Dashboard que `anon-key` NO tenga acceso a `lotes_netsuite` ni `envios_netsuite_cargo_str`. Documentar en `docs/audits/` durante BE-1. | No se agregan políticas RLS en la migración inicial. Sí se valida que el rol `anon` no tenga `SELECT/INSERT/UPDATE/DELETE` sobre las tablas nuevas. La auditoría queda registrada para abrir un PR de RLS en Fase 3. |
-| D8 | `MAX_ENVIOS_POR_LOTE` | **100** (asumiendo Vercel Pro con `maxDuration = 300s`). En BE-3 verificar el plan real de Vercel; si es Hobby, bajar a **25** y agregar guard. | Constante exportada desde `lib/integrations/netsuite/config.ts`. El handler de `POST /lote` valida `cargos.length <= MAX_ENVIOS_POR_LOTE` antes de tocar la DB. Si el plan resulta Hobby (maxDuration = 60s), se baja a 25 antes del merge de BE-3. |
+| D8 | `MAX_ENVIOS_POR_LOTE` | **25** (confirmado 2026-05-25: Vercel Hobby, `maxDuration = 60s`). | Constante exportada desde `lib/integrations/netsuite/config.ts` (BE-3). El handler de `POST /lote` valida `cargos.length <= MAX_ENVIOS_POR_LOTE` antes de tocar la DB. Ya aplicado en frontend (`app/(dashboard)/cargos-str/page.tsx`). |
 | D9 | Tests automáticos | Postergar a Fase 3. Validación de Fase 1 = manual en Vercel preview. | No se introduce Vitest/Jest en Fase 1. Los DoD de cada PR incluyen pasos de validación manual en preview. Se conserva el listado de tests sugeridos del plan del Arquitecto para Fase 3. |
 | Permisos DB | Verificar antes de BE-0 | Acción: `npx prisma migrate diff --from-url $DATABASE_URL --to-schema-datamodel prisma/schema.prisma --script` — si retorna SQL sin error de permisos, OK. | Si falla con `permission denied for schema public` o similar, escalar al admin de Supabase para obtener un `DATABASE_URL` con rol `postgres` (no `service_role` ni `anon`). |
 | Backup pre-BE-0 | Sí — snapshot manual en Supabase Dashboard | Antes de aplicar la primera migración versionada, hacer snapshot manual: `Supabase Dashboard → Database → Backups → Create backup`. Anotar el ID en el PR de BE-0. |
@@ -147,17 +147,20 @@ Existe el directorio `lib/integrations/` con un solo archivo. La estructura `lib
 
 **Riesgo residual aceptado:** si una migración corrompe la DB entre dos backups automáticos diarios y nadie lo detecta a tiempo (~24h), pueden perderse hasta 24h de datos. Para Fase 1 (sin tráfico de usuarios reales mientras NetSuite mock está activo) es aceptable.
 
-### TD-2: Plan de Vercel a confirmar antes de BE-3
+### TD-2: Plan de Vercel — RESUELTO (2026-05-25)
 
-**Contexto:** el plan asume `maxDuration = 300s` y `MAX_ENVIOS_POR_LOTE = 100` (Vercel Pro). En Hobby el límite es 60s.
+**Contexto:** el plan original asumía `maxDuration = 300s` y `MAX_ENVIOS_POR_LOTE = 100` (Vercel Pro). En Hobby el límite es 60s.
 
-**Estado:** plan de Vercel actual no confirmado.
+**Confirmación de Erika (2026-05-25):** el proyecto opera con **Vercel Hobby**.
 
-**Acción antes de BE-3:**
-- Si Hobby: bajar `MAX_ENVIOS_POR_LOTE` a 25 (margen sobre 23 cargos típicos) y agregar guard en `crearLote` del servicio.
-- Si Pro: dejar 100 (asumido en el plan).
+**Decisiones aplicadas:**
+- `MAX_ENVIOS_POR_LOTE = 25` (ya aplicado en `app/(dashboard)/cargos-str/page.tsx`). Margen: 25 envíos × 2s estimado = 50s, dentro del límite de 60s.
+- `maxDuration` en cada handler NetSuite: dejar default (10s) excepto `POST /lote/:id/procesar` que necesita `export const maxDuration = 60`. Configurar en BE-3.
+- `runtime = "nodejs"` en todos los endpoints NetSuite (BE-3 también).
 
-**Cuándo retomar:** al iniciar BE-3.
+**Plan de upgrade:** si la operación crece y 25 cargos por lote no alcanzan, evaluar Vercel Pro ($20/mes) o trocear el procesamiento con cron (Fase 3 — Opción 1 del plan general §B.7).
+
+**Cuándo retomar:** completado. La variable `MAX_ENVIOS_POR_LOTE` quedó fijada al valor de Hobby en código y en este plan. BE-3 hereda este valor.
 
 ---
 
