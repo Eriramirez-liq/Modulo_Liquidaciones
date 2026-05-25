@@ -57,7 +57,10 @@ interface MockLoteState {
   iniciadoPor: { nombre: string }
   envios: EnvioDto[]
   estado: "EN_PROGRESO" | "COMPLETADO" | "CANCELADO"
-  _intervalId?: ReturnType<typeof setInterval>
+  // Campos internos extendidos (no expuestos en EnvioDto base, usados para detalle)
+  _respuestaOkJson?: Record<string, unknown>[]
+  _errorPayloadJson?: Record<string, unknown>[]
+  _netsuiteInternalId?: (string | null)[]
 }
 
 // Map singleton — persiste entre renders porque los módulos de Node/Edge se cachean
@@ -65,11 +68,6 @@ const mockLotes = new Map<string, MockLoteState>()
 
 /** Limpia todo el estado mock. Útil para tests y reset de dev. NO llamar en producción. */
 export function resetMockState(): void {
-  for (const lote of mockLotes.values()) {
-    if (lote._intervalId !== undefined) {
-      clearInterval(lote._intervalId)
-    }
-  }
   mockLotes.clear()
 }
 
@@ -164,129 +162,110 @@ export async function mockPostLote(cargos: CargoParaEnviar[]): Promise<LoteRespo
 }
 
 // ---------------------------------------------------------------------------
+// Helpers internos del procesamiento secuencial
+// ---------------------------------------------------------------------------
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+/**
+ * Duración simulada de la llamada a NetSuite para el envío en posición `idx`.
+ *
+ * Casos deterministas para que Erika pueda validar los 3 estados visuales:
+ *   idx=0 →  500ms  → PROCESADO casi instantáneo
+ *   idx=1 → 5000ms  → PROCESANDO visible ~5s → PROCESADO
+ *   idx=2 → 32000ms → > 30s → fuerza TIMEOUT (ERROR_TIMEOUT a los 30s exactos)
+ *   resto → aleatorio 800-2500ms → 90% PROCESADO / 10% ERROR
+ */
+function simularDuracionNetSuite(idx: number): number {
+  if (idx === 0) return 500
+  if (idx === 1) return 5_000
+  if (idx === 2) return 32_000  // > 30s → dispara timeout
+  return 800 + Math.random() * 1_700
+}
+
+/**
+ * Procesa los envíos del lote de forma estrictamente secuencial.
+ * Equivale al `procesarLote` del backend (§B.3 del plan del arquitecto):
+ *   PENDIENTE → PROCESANDO → (esperar NetSuite, máx 30s) → PROCESADO | ERROR
+ *
+ * El loop revisa `lote.estado === "CANCELADO"` al inicio de cada iteración
+ * y después de cada await, para respetar cancelaciones en vuelo.
+ */
+async function processEnvioSecuencial(loteId: string): Promise<void> {
+  const lote = mockLotes.get(loteId)
+  if (!lote) return
+
+  const TIMEOUT_MS = 30_000
+
+  // Helper local: leer estado sin que TypeScript aplique narrowing entre awaits
+  const estaCancelado = (): boolean => mockLotes.get(loteId)?.estado === "CANCELADO"
+
+  for (let i = 0; i < lote.envios.length; i++) {
+    // Respetar cancelación antes de empezar cada envío
+    if (estaCancelado()) break
+
+    const envio = lote.envios[i]!
+    const ahora = new Date().toISOString()
+
+    // 1. Marcar PROCESANDO
+    envio.estado = "PROCESANDO"
+    envio.enviadoAt = ahora
+    envio.intentos += 1
+
+    // 2. Simular request a NetSuite con duración variable
+    const duration = simularDuracionNetSuite(i)
+
+    if (duration > TIMEOUT_MS) {
+      // Caso TIMEOUT: esperar exactamente 30s y marcar ERROR
+      await sleep(TIMEOUT_MS)
+      if (estaCancelado()) break
+
+      envio.estado = "ERROR"
+      envio.errorMensaje = "NetSuite no respondió en 30 segundos"
+      envio.respondidoAt = new Date().toISOString()
+      // El frontend detecta TIMEOUT por el prefijo del mensaje
+    } else {
+      // Caso normal: esperar duration completo
+      await sleep(duration)
+      if (estaCancelado()) break
+
+      const exito = Math.random() < 0.9  // 90% éxito, 10% error simulado
+      const respondidoAt = new Date().toISOString()
+
+      if (exito) {
+        const oc = `OC-MOCK-${String(i + 1).padStart(6, "0")}`
+        envio.estado = "PROCESADO"
+        envio.numeroOc = oc
+        envio.respondidoAt = respondidoAt
+      } else {
+        envio.estado = "ERROR"
+        envio.errorMensaje = `Validación fallida en NetSuite (mock idx=${i}): proveedor no encontrado`
+        envio.respondidoAt = respondidoAt
+      }
+    }
+  }
+
+  // 3. Marcar lote COMPLETADO si no fue cancelado durante el loop
+  if (lote.estado === "EN_PROGRESO") {
+    lote.estado = "COMPLETADO"
+  }
+}
+
+// ---------------------------------------------------------------------------
 // mockPostProcesar
 // Simula POST /api/cargos-str/netsuite/lote/:loteId/procesar
-// Arranca el worker simulado que procesa los envíos secuencialmente.
+// Retorna pronto (202 Accepted). El procesamiento corre en background.
+// El frontend hace polling con mockGetLote para ver el progreso.
 // TODO FE-6: reemplazar por fetch real cuando BE-3 esté listo
 // ---------------------------------------------------------------------------
 
 export async function mockPostProcesar(loteId: string): Promise<void> {
-  // 202 Accepted simulado — el procesamiento es asíncrono
-  await new Promise(resolve => setTimeout(resolve, 300))
-
-  const lote = mockLotes.get(loteId)
-  if (!lote) return
-
-  let tickCount = 0
-
-  // El worker avanza los envíos cada 1500ms de forma determinista:
-  // - Envío 0 (idx=0): PROCESADO inmediatamente en el primer tick
-  // - Envío 1 (idx=1): se queda en PROCESANDO durante ~5 ticks (~7.5s) antes de PROCESADO
-  // - Envíos restantes (idx≥2): procesamiento normal con 90%/10% PROCESADO/ERROR,
-  //   garantizando al menos 1 ERROR si hay ≥4 envíos totales
-  const intervalId = setInterval(() => {
-    const loteActual = mockLotes.get(loteId)
-    if (!loteActual || loteActual.estado !== "EN_PROGRESO") {
-      clearInterval(intervalId)
-      return
-    }
-
-    tickCount++
-
-    // Buscar el primer PENDIENTE disponible
-    const pendienteIdx = loteActual.envios.findIndex(e => e.estado === "PENDIENTE")
-
-    if (pendienteIdx === -1) {
-      // No quedan PENDIENTES — verificar si hay algún PROCESANDO aún en curso
-      const hayProcesando = loteActual.envios.some(e => e.estado === "PROCESANDO")
-      if (!hayProcesando) {
-        // Lote completado
-        loteActual.estado = "COMPLETADO"
-        if (loteActual._intervalId !== undefined) clearInterval(loteActual._intervalId)
-        loteActual._intervalId = undefined
-      }
-      return
-    }
-
-    const envio = loteActual.envios[pendienteIdx]!
-    const ahora = new Date().toISOString()
-
-    if (pendienteIdx === 0) {
-      // Primer envío: PROCESADO directamente (determinismo para testing)
-      envio.estado = "PROCESADO"
-      envio.intentos = 1
-      envio.numeroOc = `OC-MOCK-${String(pendienteIdx).padStart(3, "0")}`
-      envio.enviadoAt = ahora
-      envio.respondidoAt = ahora
-
-    } else if (pendienteIdx === 1) {
-      // Segundo envío: pasa a PROCESANDO y permanece así durante 5 ticks (~7.5s)
-      if (envio.estado === "PENDIENTE") {
-        envio.estado = "PROCESANDO"
-        envio.intentos = 1
-        envio.enviadoAt = ahora
-      }
-      // El envío idx=1 en PROCESANDO se resuelve después de 5 ticks desde cuando empezó
-      // Lo manejamos buscando cuántos ticks llevamos desde que se puso en PROCESANDO
-      const enProcesandoDesde = loteActual.envios
-        .filter(e => e.estado === "PROCESANDO")
-        .indexOf(envio)
-      // Si este tick es el tick 5+ de su PROCESANDO, lo resolvemos
-      if (tickCount >= 5) {
-        const procesandoEnvio = loteActual.envios.find(
-          e => e.estado === "PROCESANDO" && e.id === envio.id
-        )
-        if (procesandoEnvio) {
-          procesandoEnvio.estado = "PROCESADO"
-          procesandoEnvio.numeroOc = `OC-MOCK-${String(pendienteIdx).padStart(3, "0")}`
-          procesandoEnvio.respondidoAt = new Date().toISOString()
-        }
-        void enProcesandoDesde // silenciar warning lint
-      }
-
-    } else {
-      // Envíos restantes (idx ≥ 2): pasar a PROCESANDO primero
-      envio.estado = "PROCESANDO"
-      envio.intentos = 1
-      envio.enviadoAt = ahora
-
-      // Resolver en el siguiente tick (después de un breve "procesando")
-      setTimeout(() => {
-        const loteRef = mockLotes.get(loteId)
-        if (!loteRef || loteRef.estado !== "EN_PROGRESO") return
-        const envioRef = loteRef.envios.find(e => e.id === envio.id)
-        if (!envioRef || envioRef.estado !== "PROCESANDO") return
-
-        const respondidoAt = new Date().toISOString()
-        // Al menos 1 ERROR si hay ≥4 envíos totales: el envío idx=3 siempre falla
-        const esError =
-          (pendienteIdx === 3 && loteActual.envios.length >= 4) ||
-          (pendienteIdx !== 3 && Math.random() < 0.10)
-
-        if (esError) {
-          const errores = [
-            "Mock error: timeout de conexión con NetSuite",
-            "Mock error: proveedor no encontrado en el sistema",
-            "Mock error: monto fuera del rango permitido",
-          ]
-          envioRef.estado = "ERROR"
-          envioRef.errorMensaje = errores[pendienteIdx % errores.length] ?? "Mock error"
-          envioRef.respondidoAt = respondidoAt
-        } else {
-          envioRef.estado = "PROCESADO"
-          envioRef.numeroOc = `OC-MOCK-${String(pendienteIdx).padStart(3, "0")}`
-          envioRef.respondidoAt = respondidoAt
-        }
-      }, 800)
-    }
-
-    // Recalcular totales del lote en el state (para que mockGetLote los devuelva actualizados)
-    // (mockGetLote los calcula en tiempo real desde los envíos, así que esto es solo para
-    // consistencia interna — no es estrictamente necesario)
-
-  }, 1500)
-
-  lote._intervalId = intervalId
+  // Simular el 202 Accepted: retorna rápido
+  await sleep(300)
+  // Disparar procesamiento en background — no se hace await
+  processEnvioSecuencial(loteId).catch(console.error)
 }
 
 // ---------------------------------------------------------------------------
@@ -420,31 +399,30 @@ export async function mockGetLoteActivo(): Promise<LoteEnCursoUI | null> {
 // ---------------------------------------------------------------------------
 
 export async function mockPostCancelar(loteId: string): Promise<void> {
-  await new Promise(resolve => setTimeout(resolve, 200))
+  await sleep(200)
 
   const lote = mockLotes.get(loteId)
   if (!lote) {
     return Promise.reject({ status: 404, error: "LOTE_NOT_FOUND" })
   }
 
-  // Si hay envíos en PROCESANDO → 409
+  // Si hay envíos en PROCESANDO → 409 (el backend real haría lo mismo)
+  // El envío PROCESANDO queda en estado indeterminado — correcto por diseño
   const hayProcesando = lote.envios.some(e => e.estado === "PROCESANDO")
   if (hayProcesando) {
     return Promise.reject({ status: 409, error: "CANCELACION_IMPOSIBLE_CON_PROCESANDO" })
   }
 
-  // Limpiar interval del worker
-  if (lote._intervalId !== undefined) {
-    clearInterval(lote._intervalId)
-    lote._intervalId = undefined
-  }
-
-  // Marcar lote y envíos PENDIENTES como CANCELADO
+  // Marcar lote como CANCELADO — el loop en processEnvioSecuencial lo detecta
+  // en la siguiente iteración y rompe el ciclo
   lote.estado = "CANCELADO"
+
+  // Marcar los envíos PENDIENTES que aún no arrancaron
   lote.envios.forEach(e => {
     if (e.estado === "PENDIENTE") {
       e.estado = "ERROR"
       e.errorMensaje = "Cancelado por el usuario"
+      e.respondidoAt = new Date().toISOString()
     }
   })
 }

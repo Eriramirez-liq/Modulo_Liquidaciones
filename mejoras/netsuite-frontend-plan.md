@@ -32,6 +32,7 @@ Las siguientes decisiones bloqueantes han sido confirmadas por la usuaria y sobr
 | FE-4 — ModalConfirmarLote + creacion lote | Completado | 2026-05-22 | Modal completo con tabla, totales, warning errores previos, spinner, manejo 3 errores (409/422/500). Mocks mockPostLote (80/10/5/5%) + mockPostProcesar. Toast.tsx como componente separado. tsc 0 errores. |
 | FE-5 — PanelLoteEnCurso + polling | Completado | 2026-05-25 | Panel sticky + polling 2.5s + mocks dinámicos (mockGetLote/mockGetEstados/mockGetLoteActivo/mockPostCancelar). Keyframes en globals.css. tsc 0 errores. |
 | FE-5.5 — Warnings de timeout en panel | Completado | 2026-05-25 | Pill amarilla a los 5 min sin progreso, banner rojo a los 10 min. `lastProgressAt` trackeado en `page.tsx` con `useRef` para comparación entre ticks. `tiempoSinProgreso` recalcula cada 10s en el panel. tsc 0 errores. Sub-PR de FE-5. |
+| FE-5.6 — Fix mock: secuencial con timeout 30s | Completado | 2026-05-25 | Reemplazo del `setInterval` por loop `async/await` estrictamente secuencial. `simularDuracionNetSuite` fuerza idx=2 a 32s (>30s → ERROR con mensaje "NetSuite no respondió en 30 segundos"). `mockPostProcesar` retorna en 300ms (202 Accepted), dispara `processEnvioSecuencial` en background. `mockPostCancelar` sin `clearInterval`: marca `lote.estado = "CANCELADO"` y el loop lo detecta en la siguiente iteración. tsc 0 errores. |
 | FE-6 — Integracion real (quitar mocks) | Pendiente | — | |
 | FE-7 — Pulido + accesibilidad | Pendiente | — | |
 
@@ -802,7 +803,7 @@ Con esto, el intervalo nunca queda corriendo suelto.
 ### Frecuencia
 
 **2500ms (2.5 segundos).** Justificacion:
-- El mock-client tiene delay de 200-800ms por envio, y el backend los procesa secuencialmente. Para 23 envios, el lote completo dura ~10-18 segundos. Polling cada 2.5s da ~4-7 updates visibles — suficiente para que la barra de progreso se mueva notoriamente.
+- El mock (`_dev/mocks/netsuite.ts`, FE-5.6) procesa secuencialmente con `async/await`: idx=0 → 500ms, idx=1 → 5s, idx=2 → 30s (timeout forzado), resto → 800-2500ms. Para 23 envios, el lote completo dura ~2-4 minutos en el mock (por el timeout de 30s del idx=2). Polling cada 2.5s da actualizaciones visibles en cada cambio de estado.
 - Con la API real, NetSuite probablemente tarde 1-3 segundos por envio. Mismo razonamiento.
 - 2.5s no satura el backend con requests innecesarios.
 
