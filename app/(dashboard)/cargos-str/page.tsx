@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { FilaOperador } from "@/components/cargos-str/FilaOperador"
 import { BotonCrearOC } from "@/components/cargos-str/BotonCrearOC"
 import DetalleEnvioModal from "@/components/cargos-str/DetalleEnvioModal"
@@ -74,6 +74,9 @@ export default function CargosSTRPage() {
   // -- Estado NetSuite --
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set())
   const [estadosEnvio, setEstadosEnvio] = useState<Record<EstadoEnvioKey, EstadoEnvioUI>>({})
+  const [lastProgressAt, setLastProgressAt] = useState<Date | null>(null)
+  // Ref para comparar totales entre ticks del polling sin causar re-renders
+  const totalesRef = useRef<{ procesados: number; errores: number; pendientes: number } | null>(null)
 
   // -- Estado DetalleEnvioModal (FE-3) --
   const [detalleEnvioId, setDetalleEnvioId] = useState<string | null>(null)
@@ -194,6 +197,19 @@ export default function CargosSTRPage() {
         // Actualizar loteEnCurso con nuevos totales
         setLoteEnCurso(adaptToLoteEnCursoUI(lote))
 
+        // FE-5.5: detectar progreso real comparando totales contra el tick anterior
+        const t = lote.totales
+        const prev = totalesRef.current
+        const huboProgreso =
+          prev === null ||
+          t.procesados !== prev.procesados ||
+          t.errores !== prev.errores ||
+          t.pendientes !== prev.pendientes
+        if (huboProgreso) {
+          setLastProgressAt(new Date())
+          totalesRef.current = { procesados: t.procesados, errores: t.errores, pendientes: t.pendientes }
+        }
+
         // Actualizar estadosEnvio derivando del lote
         const estadosFromLote = derivarEstadosEnvioDeLote(lote)
         setEstadosEnvio(prev => ({ ...prev, ...estadosFromLote }))
@@ -227,6 +243,14 @@ export default function CargosSTRPage() {
         if (lote) {
           setLoteEnCurso(lote)
           setPanelLoteVisible(true)
+          // FE-5.5: asumimos el peor caso — el último progreso fue al iniciar el lote
+          // (no sabemos cuándo fue el último cambio real entre navegaciones)
+          setLastProgressAt(new Date(lote.iniciadoAt))
+          totalesRef.current = {
+            procesados: lote.totales.procesados,
+            errores: lote.totales.errores,
+            pendientes: lote.totales.pendientes,
+          }
         }
       })
       .catch(console.error)
@@ -344,6 +368,9 @@ export default function CargosSTRPage() {
       await mockPostCancelar(loteEnCurso.id)
       // TODO FE-6: reemplazar por fetch real a /api/cargos-str/netsuite/lote/:id/cancelar
       setLoteEnCurso(prev => prev ? { ...prev, estado: "CANCELADO" } : null)
+      // FE-5.5: limpiar tracking de progreso — el lote ya no está activo
+      setLastProgressAt(null)
+      totalesRef.current = null
       setToast({ tipo: "warning", mensaje: "Lote cancelado." })
       // El polling se detiene solo en el próximo tick (loteEnCurso.estado !== EN_PROGRESO)
     } catch (e: unknown) {
@@ -433,6 +460,9 @@ export default function CargosSTRPage() {
         },
         puedeCancelar: true,
       })
+      // FE-5.5: el lote acaba de crearse — el progreso arranca ahora
+      setLastProgressAt(new Date())
+      totalesRef.current = { procesados: 0, errores: 0, pendientes: response.totalEnvios }
 
       // Limpiar y cerrar
       setModalConfirmarAbierto(false)
@@ -573,6 +603,7 @@ export default function CargosSTRPage() {
       {loteEnCurso && panelLoteVisible && (
         <PanelLoteEnCurso
           lote={loteEnCurso}
+          lastProgressAt={lastProgressAt}
           puedeCancelar={loteEnCurso.estado === "EN_PROGRESO"}
           onCancelar={handleCancelarLote}
           onCerrar={() => setPanelLoteVisible(false)}

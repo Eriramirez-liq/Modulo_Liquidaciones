@@ -31,6 +31,7 @@ Las siguientes decisiones bloqueantes han sido confirmadas por la usuaria y sobr
 | FE-3 — BadgeCelda + DetalleEnvioModal | Completado | 2026-05-23 | DetalleEnvioModal con layouts PROCESADO y ERROR; BadgeCelda no extraido (trivial, sin reutilizacion externa). Mock de detalle desde _dev/mocks con setTimeout 300ms. Wiring completo en page.tsx. FilaOperador filtra clicks: solo PROCESADO/ERROR abren modal. tsc + ESLint 0 errores. |
 | FE-4 — ModalConfirmarLote + creacion lote | Completado | 2026-05-22 | Modal completo con tabla, totales, warning errores previos, spinner, manejo 3 errores (409/422/500). Mocks mockPostLote (80/10/5/5%) + mockPostProcesar. Toast.tsx como componente separado. tsc 0 errores. |
 | FE-5 — PanelLoteEnCurso + polling | Completado | 2026-05-25 | Panel sticky + polling 2.5s + mocks dinámicos (mockGetLote/mockGetEstados/mockGetLoteActivo/mockPostCancelar). Keyframes en globals.css. tsc 0 errores. |
+| FE-5.5 — Warnings de timeout en panel | Completado | 2026-05-25 | Pill amarilla a los 5 min sin progreso, banner rojo a los 10 min. `lastProgressAt` trackeado en `page.tsx` con `useRef` para comparación entre ticks. `tiempoSinProgreso` recalcula cada 10s en el panel. tsc 0 errores. Sub-PR de FE-5. |
 | FE-6 — Integracion real (quitar mocks) | Pendiente | — | |
 | FE-7 — Pulido + accesibilidad | Pendiente | — | |
 

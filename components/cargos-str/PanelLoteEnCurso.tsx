@@ -5,6 +5,9 @@ import type { LoteEnCursoUI } from "./types"
 
 interface PanelLoteEnCursoProps {
   lote: LoteEnCursoUI
+  /** FE-5.5: momento del último cambio observado en los totales del lote.
+   *  null si el lote aún no arrancó o ya terminó. */
+  lastProgressAt: Date | null
   puedeCancelar: boolean
   onCancelar: () => void
   onVerDetalle: () => void
@@ -14,6 +17,13 @@ interface PanelLoteEnCursoProps {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** FE-5.5: formatea segundos en texto legible para los warnings de timeout */
+function formatMinutos(segundos: number): string {
+  const min = Math.floor(segundos / 60)
+  if (min < 1) return `${segundos}s`
+  return `${min} min`
+}
 
 /** Formatea el tiempo transcurrido desde una fecha ISO en texto legible */
 function tiempoTranscurrido(isoString: string): string {
@@ -38,6 +48,7 @@ function tiempoTranscurrido(isoString: string): string {
 
 export default function PanelLoteEnCurso({
   lote,
+  lastProgressAt,
   puedeCancelar,
   onCancelar,
   onCerrar,
@@ -50,6 +61,9 @@ export default function PanelLoteEnCurso({
   // -- Tiempo transcurrido (actualiza cada 30s) --
   const [tiempoLabel, setTiempoLabel] = useState(() => tiempoTranscurrido(iniciadoAt))
 
+  // -- FE-5.5: tiempo sin progreso (en segundos), actualiza cada 10s --
+  const [tiempoSinProgreso, setTiempoSinProgreso] = useState(0)
+
   useEffect(() => {
     setTiempoLabel(tiempoTranscurrido(iniciadoAt))
     const interval = setInterval(() => {
@@ -58,12 +72,37 @@ export default function PanelLoteEnCurso({
     return () => clearInterval(interval)
   }, [iniciadoAt])
 
+  // -- FE-5.5: calcular tiempoSinProgreso cada 10s --
+  // Solo corre cuando el lote está EN_PROGRESO y se conoce lastProgressAt.
+  useEffect(() => {
+    if (estado !== "EN_PROGRESO" || lastProgressAt === null) {
+      setTiempoSinProgreso(0)
+      return
+    }
+
+    // Calcular el valor inicial de inmediato (no esperar el primer tick)
+    setTiempoSinProgreso(Math.floor((Date.now() - lastProgressAt.getTime()) / 1000))
+
+    const interval = setInterval(() => {
+      setTiempoSinProgreso(Math.floor((Date.now() - lastProgressAt.getTime()) / 1000))
+    }, 10_000)
+
+    return () => clearInterval(interval)
+  }, [estado, lastProgressAt])
+
   // -- Timer para resetear confirmación si no se hace click en 3s --
   useEffect(() => {
     if (!confirmando) return
     const timer = setTimeout(() => setConfirmando(false), 3000)
     return () => clearTimeout(timer)
   }, [confirmando])
+
+  // -- FE-5.5: nivel de alerta por tiempo sin progreso --
+  const nivelAlerta: "ok" | "lento" | "colgado" =
+    estado !== "EN_PROGRESO" ? "ok" :
+    tiempoSinProgreso > 600 ? "colgado" :  // > 10 min
+    tiempoSinProgreso > 300 ? "lento" :    // > 5 min
+    "ok"
 
   // -- Barra de progreso --
   const completados = totales.procesados + totales.errores
@@ -280,6 +319,54 @@ export default function PanelLoteEnCurso({
           </button>
         )}
       </div>
+
+      {/* FE-5.5: warnings de timeout — pill amarilla (lento) o banner rojo (colgado) */}
+      {/* Se muestran solo cuando el lote está EN_PROGRESO y llevan más de 5 / 10 min sin cambios */}
+      {nivelAlerta === "lento" && (
+        <div
+          role="status"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "4px 10px",
+            background: "#fef3c7",
+            border: "1px solid #fcd34d",
+            borderRadius: 999,
+            fontSize: 13,
+            color: "#92400e",
+            fontWeight: 500,
+            marginTop: 8,
+          }}
+        >
+          <span aria-hidden="true">⏱</span>
+          Este lote tarda más de lo normal ({formatMinutos(tiempoSinProgreso)})
+        </div>
+      )}
+      {nivelAlerta === "colgado" && (
+        <div
+          role="alert"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 12px",
+            background: "#fee2e2",
+            border: "1px solid #fca5a5",
+            borderRadius: 6,
+            fontSize: 13,
+            color: "#991b1b",
+            fontWeight: 500,
+            marginTop: 8,
+          }}
+        >
+          <span aria-hidden="true" style={{ fontSize: 16, flexShrink: 0 }}>⚠</span>
+          <span>
+            Este lote parece colgado ({formatMinutos(tiempoSinProgreso)} sin cambios).
+            Verificá en NetSuite antes de cancelar o reintentar.
+          </span>
+        </div>
+      )}
     </div>
   )
 }
