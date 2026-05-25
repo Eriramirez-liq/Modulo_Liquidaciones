@@ -6,7 +6,9 @@ import DetalleEnvioModal from "@/components/cargos-str/DetalleEnvioModal"
 import ModalConfirmarLote from "@/components/cargos-str/ModalConfirmarLote"
 import Toast from "@/components/cargos-str/Toast"
 import type { EstadoEnvioKey, EstadoEnvioUI, DetalleEnvio, LoteEnCursoUI, CargoSeleccionado, CargoParaEnviar } from "@/components/cargos-str/types"
-import { MOCK_ESTADOS_ENVIO, MOCK_DETALLE_ENVIO_OK, MOCK_DETALLE_ENVIO_ERROR, mockPostLote, mockPostProcesar } from "@/_dev/mocks/netsuite"
+import { MOCK_ESTADOS_ENVIO, MOCK_DETALLE_ENVIO_OK, MOCK_DETALLE_ENVIO_ERROR, mockPostLote, mockPostProcesar, mockGetLote, mockGetEstados, mockGetLoteActivo, mockPostCancelar } from "@/_dev/mocks/netsuite"
+import PanelLoteEnCurso from "@/components/cargos-str/PanelLoteEnCurso"
+import type { LoteResponse } from "@/_dev/mocks/netsuite"
 import type { ToastData } from "@/components/cargos-str/Toast"
 
 // ---------------------------------------------------------------------------
@@ -80,6 +82,7 @@ export default function CargosSTRPage() {
 
   // -- Estado ModalConfirmarLote + flujo lote (FE-4) --
   const [loteEnCurso, setLoteEnCurso] = useState<LoteEnCursoUI | null>(null)
+  const [panelLoteVisible, setPanelLoteVisible] = useState(true)
   const [modalConfirmarAbierto, setModalConfirmarAbierto] = useState(false)
   const [enviandoLote, setEnviandoLote] = useState(false)
   const [errorLote, setErrorLote] = useState<string | null>(null)
@@ -102,29 +105,133 @@ export default function CargosSTRPage() {
       .catch(() => setOperadores([]))
   }, [])
 
-  // -- Mock de estados de envío para validación visual (FE-2) --
-  // TODO FE-6: reemplazar por fetch a /api/cargos-str/netsuite/estados
+  // -- Helpers FE-5: adaptadores de respuesta del backend a tipos UI --
+
+  function adaptToLoteEnCursoUI(loteResponse: LoteResponse): LoteEnCursoUI {
+    return {
+      id: loteResponse.loteId,
+      estado: loteResponse.estado,
+      iniciadoAt: loteResponse.iniciadoAt,
+      iniciadoPor: loteResponse.iniciadoPor,
+      totales: loteResponse.totales,
+      puedeCancelar: true,
+    }
+  }
+
+  function derivarEstadosEnvioDeLote(
+    loteResponse: LoteResponse
+  ): Record<EstadoEnvioKey, EstadoEnvioUI> {
+    const resultado: Record<EstadoEnvioKey, EstadoEnvioUI> = {}
+    for (const envio of loteResponse.envios) {
+      const key = cargoKey(envio.periodoId, envio.orCodigo)
+      resultado[key] = {
+        ultimoEnvioId: envio.id,
+        estado: envio.estado,
+        numeroOc: envio.numeroOc,
+        errorMensaje: envio.errorMensaje,
+        loteId: loteResponse.loteId,
+        fecha: envio.enviadoAt ?? loteResponse.iniciadoAt,
+      }
+    }
+    return resultado
+  }
+
+  // -- useEffect A: Carga de estados al filtrar (cuando NO hay lote en progreso) --
+  // TODO FE-6: reemplazar mockGetEstados por fetch a /api/cargos-str/netsuite/estados
   useEffect(() => {
     if (!data || !modoSeleccion || !periodoUnicoId) return
     if (data.operadores.length === 0) return
+    // No refrescar estados si hay polling activo — el polling tiene datos más frescos
+    if (loteEnCurso?.estado === "EN_PROGRESO") return
 
-    // Reasignar las keys del mock para que coincidan con el periodoId real
-    // y los códigos de los primeros 4 operadores disponibles en data
+    const orCodigos = data.operadores.map(o => o.codigo)
+    mockGetEstados([periodoUnicoId], orCodigos)
+      .then(setEstadosEnvio)
+      .catch(console.error)
+    // TODO FE-6: reemplazar por fetch real a /api/cargos-str/netsuite/estados
+  }, [data, modoSeleccion, periodoUnicoId, loteEnCurso?.estado])
+
+  // Fallback estático para FE-2/FE-3: cuando el Map de mocks está vacío,
+  // usar los datos hardcodeados de MOCK_ESTADOS_ENVIO mapeados a los operadores reales.
+  // Este bloque solo actúa cuando mockGetEstados no devolvió nada (primer render sin lote).
+  useEffect(() => {
+    if (!data || !modoSeleccion || !periodoUnicoId) return
+    if (data.operadores.length === 0) return
+    if (Object.keys(estadosEnvio).length > 0) return // ya hay estados, no pisar
+
     const codigosReales = data.operadores.slice(0, 4).map(o => o.codigo)
     const mockKeys = Object.keys(MOCK_ESTADOS_ENVIO) as EstadoEnvioKey[]
-
     const estadosAdaptados: Record<EstadoEnvioKey, EstadoEnvioUI> = {}
     mockKeys.forEach((mockKey, index) => {
       const codigoReal = codigosReales[index]
       if (!codigoReal) return
       const estadoMock = MOCK_ESTADOS_ENVIO[mockKey]
       if (!estadoMock) return
-      const keyReal = cargoKey(periodoUnicoId, codigoReal)
-      estadosAdaptados[keyReal] = estadoMock
+      estadosAdaptados[cargoKey(periodoUnicoId, codigoReal)] = estadoMock
     })
-
     setEstadosEnvio(estadosAdaptados)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, modoSeleccion, periodoUnicoId])
+
+  // -- useEffect B: Polling del lote en curso --
+  // TODO FE-6: mockGetLote → fetch real a /api/cargos-str/netsuite/lote/:id
+  useEffect(() => {
+    if (!loteEnCurso?.id || loteEnCurso.estado !== "EN_PROGRESO") return
+
+    const loteId = loteEnCurso.id
+    let stop = false
+
+    const poll = async () => {
+      if (stop) return
+      // Pausar polling si la pestaña no está activa (Visibility API)
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return
+
+      try {
+        const lote = await mockGetLote(loteId)
+        // TODO FE-6: reemplazar por fetch real a /api/cargos-str/netsuite/lote/:id
+        if (stop) return
+
+        // Actualizar loteEnCurso con nuevos totales
+        setLoteEnCurso(adaptToLoteEnCursoUI(lote))
+
+        // Actualizar estadosEnvio derivando del lote
+        const estadosFromLote = derivarEstadosEnvioDeLote(lote)
+        setEstadosEnvio(prev => ({ ...prev, ...estadosFromLote }))
+
+        // Si el lote terminó, mostrar toast y dejar que el efecto se desmonte
+        if (lote.estado !== "EN_PROGRESO") {
+          setToast({
+            tipo: lote.totales.errores > 0 ? "warning" : "ok",
+            mensaje: `Lote completado: ${lote.totales.procesados} OC creada${lote.totales.procesados !== 1 ? "s" : ""}, ${lote.totales.errores} error${lote.totales.errores !== 1 ? "es" : ""}`,
+          })
+        }
+      } catch (e) {
+        console.error("Error en polling de lote:", e)
+      }
+    }
+
+    poll() // primera llamada inmediata
+    const id = setInterval(poll, 2500)
+    return () => {
+      stop = true
+      clearInterval(id)
+    }
+  // Dependencias: solo id y estado para no reiniciar el interval en cada tick de totales
+  }, [loteEnCurso?.id, loteEnCurso?.estado]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // -- useEffect C: Detección de lote activo al montar --
+  // TODO FE-6: mockGetLoteActivo → fetch real a /api/cargos-str/netsuite/lote/activo
+  useEffect(() => {
+    mockGetLoteActivo()
+      .then(lote => {
+        if (lote) {
+          setLoteEnCurso(lote)
+          setPanelLoteVisible(true)
+        }
+      })
+      .catch(console.error)
+    // TODO FE-6: reemplazar por fetch real a /api/cargos-str/netsuite/lote/activo
+  }, []) // solo al montar
 
   // Limpiar selección cuando cambia el período filtrado
   useEffect(() => {
@@ -228,6 +335,26 @@ export default function CargosSTRPage() {
     alert("Reenviar disponible cuando FE-4/Backend estén listos. Funcionalidad pendiente.")
   }
 
+  // -- Handler FE-5: cancelar lote --
+  // TODO FE-6: mockPostCancelar → fetch real a /api/cargos-str/netsuite/lote/:id/cancelar
+
+  async function handleCancelarLote() {
+    if (!loteEnCurso?.id) return
+    try {
+      await mockPostCancelar(loteEnCurso.id)
+      // TODO FE-6: reemplazar por fetch real a /api/cargos-str/netsuite/lote/:id/cancelar
+      setLoteEnCurso(prev => prev ? { ...prev, estado: "CANCELADO" } : null)
+      setToast({ tipo: "warning", mensaje: "Lote cancelado." })
+      // El polling se detiene solo en el próximo tick (loteEnCurso.estado !== EN_PROGRESO)
+    } catch (e: unknown) {
+      const errObj = e as Record<string, unknown>
+      const msg = errObj?.status === 409
+        ? "No se puede cancelar: hay envíos en proceso. Esperá un momento e intentá de nuevo."
+        : "Error al cancelar el lote. Reintentá en unos segundos."
+      setToast({ tipo: "error", mensaje: msg })
+    }
+  }
+
   // -- Helpers FE-4: lote --
 
   function getCargosSeleccionados(): CargoSeleccionado[] {
@@ -310,6 +437,7 @@ export default function CargosSTRPage() {
       // Limpiar y cerrar
       setModalConfirmarAbierto(false)
       setSeleccion(new Set())
+      setPanelLoteVisible(true) // FE-5: mostrar el panel cuando arranca el lote
       setToast({
         tipo: "ok",
         mensaje: `Lote creado: ${response.totalEnvios} envío${response.totalEnvios !== 1 ? "s" : ""} en proceso.`,
@@ -440,6 +568,17 @@ export default function CargosSTRPage() {
           Cargos calculados a partir de los Insumos STR, totalizados por operador.
         </p>
       </div>
+
+      {/* Panel lote en curso — FE-5 */}
+      {loteEnCurso && panelLoteVisible && (
+        <PanelLoteEnCurso
+          lote={loteEnCurso}
+          puedeCancelar={loteEnCurso.estado === "EN_PROGRESO"}
+          onCancelar={handleCancelarLote}
+          onCerrar={() => setPanelLoteVisible(false)}
+          onVerDetalle={() => {}}
+        />
+      )}
 
       {/* Filters */}
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "16px 20px" }}>

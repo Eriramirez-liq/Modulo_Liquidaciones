@@ -316,3 +316,30 @@
   color: var(--bia-accent);
   border-bottom-color: var(--bia-accent);
 }
+
+/* ─── Animaciones Cargos STR / NetSuite ────────────────────────────────────── */
+
+/* Entrada del PanelLoteEnCurso desde arriba */
+@keyframes panel-slide-in {
+  from { transform: translateY(-20px); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+
+/* Shimmer de la barra de progreso mientras el lote está en curso */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+/* Pop del badge de conteo en BotonCrearOC al cambiar el número */
+@keyframes badge-pop {
+  0%   { transform: scale(0.8); opacity: 0; }
+  50%  { transform: scale(1.1); }
+  100% { transform: scale(1);   opacity: 1; }
+}
+
+/* Pulso del punto de estado del PanelLoteEnCurso */
+@keyframes panel-pulse {
+  0%, 100% { opacity: 1;   transform: scale(1);    }
+  50%       { opacity: 0.5; transform: scale(1.4);  }
+}
