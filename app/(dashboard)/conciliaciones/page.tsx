@@ -13,7 +13,6 @@ type Indicador =
   | "factor_m"
   | "nivel_tension"
   | "propiedad"
-  | "alertas_manuales"
   | "incompletas"
 
 interface ResumenConciliacion {
@@ -266,8 +265,6 @@ export default function ConciliacionesPage() {
               main={resumen.indicadores.nivel_tension} color="#f59e0b" />
             <KpiCard label="Propiedad activos" indicador="propiedad"      selected={indicadorSel} onSelect={setIndicadorSel}
               main={resumen.indicadores.propiedad} color="#d97706" />
-            <KpiCard label="Alertas manuales" indicador="alertas_manuales" selected={indicadorSel} onSelect={setIndicadorSel}
-              main={resumen.alertasManual} color="#9333ea" />
             <KpiCard label="Incompletas / Error" indicador="incompletas"  selected={indicadorSel} onSelect={setIndicadorSel}
               main={resumen.incompletas} color="#6b7280" />
           </div>
@@ -380,7 +377,6 @@ function tituloIndicador(i: Indicador): string {
     case "factor_m":          return "FACTOR M — detalle"
     case "nivel_tension":     return "NIVEL DE TENSIÓN — detalle"
     case "propiedad":         return "PROPIEDAD DE ACTIVOS — detalle"
-    case "alertas_manuales":  return "Alertas manuales"
     case "incompletas":       return "Incompletas / Error"
   }
 }
@@ -409,7 +405,6 @@ function TablaDetalle({ indicador, rows }: { indicador: Indicador; rows: FilaDet
   if (indicador === "nivel_tension") return <TablaTexto rows={rows} campo="nivel_tension" />
   if (indicador === "propiedad")     return <TablaTexto rows={rows} campo="propiedad" />
   if (indicador === "incompletas")   return <TablaIncompletas rows={rows} />
-  if (indicador === "alertas_manuales") return <TablaAlertas rows={rows} />
   return <TablaSimple rows={rows} />
 }
 
@@ -424,7 +419,7 @@ function TablaActiva({ rows }: { rows: FilaDetalle[] }) {
           <th style={{ ...th, textAlign: "right" }}>Activa OR</th>
           <th style={{ ...th, textAlign: "right" }}>Activa XM</th>
           <th style={{ ...th, textAlign: "right" }}>Δ fac−XM</th>
-          <th style={{ ...th, textAlign: "right" }}>Δ XM−OR</th>
+          <th style={{ ...th, textAlign: "right" }}>Δ fac−OR</th>
           <th style={th}>Tipo</th>
           <th style={{ ...th, textAlign: "right" }}>Valor</th>
         </tr>
@@ -432,6 +427,9 @@ function TablaActiva({ rows }: { rows: FilaDetalle[] }) {
       <tbody>
         {rows.map(r => {
           const { tipo, valor, color } = tipoActiva(r)
+          const deltaFacOr = (r.e_fac != null && r.e_sdl != null)
+            ? parseFloat(r.e_fac) - parseFloat(r.e_sdl)
+            : null
           return (
             <tr key={r.id}>
               <td style={tdSic}>{r.codigo_frontera}</td>
@@ -440,7 +438,7 @@ function TablaActiva({ rows }: { rows: FilaDetalle[] }) {
               <td style={tdRight}>{num(r.e_sdl)}</td>
               <td style={tdRight}>{num(r.e_xm)}</td>
               <td style={tdRight}>{num(r.delta_l1)}</td>
-              <td style={tdRight}>{num(r.delta_l2)}</td>
+              <td style={tdRight}>{deltaFacOr != null ? num(deltaFacOr) : "—"}</td>
               <td style={{ ...td, color, fontWeight: 600 }}>
                 {tipo} <span style={{ color: "#9ca3af", fontWeight: 400 }}>({r.caso})</span>
               </td>
@@ -567,31 +565,6 @@ function TablaIncompletas({ rows }: { rows: FilaDetalle[] }) {
             <td style={tdRight}>{num(r.e_fac)}</td>
             <td style={tdRight}>{num(r.e_sdl)}</td>
             <td style={tdRight}>{num(r.e_xm)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
-function TablaAlertas({ rows }: { rows: FilaDetalle[] }) {
-  return (
-    <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", borderRadius: 6 }}>
-      <thead>
-        <tr>
-          <th style={th}>SIC</th>
-          <th style={th}>Operador</th>
-          <th style={th}>Caso</th>
-          <th style={th}>Motivo</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map(r => (
-          <tr key={r.id}>
-            <td style={tdSic}>{r.codigo_frontera}</td>
-            <td style={td}>{r.or_obj?.nombre ?? r.operador_red ?? "—"}</td>
-            <td style={{ ...td, fontWeight: 600 }}>{r.caso}</td>
-            <td style={td}>{r.observaciones ?? "—"}</td>
           </tr>
         ))}
       </tbody>
