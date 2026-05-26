@@ -2,6 +2,7 @@ import { db } from "@/lib/db"
 import { Prisma } from "@prisma/client"
 import {
   clasificarFrontera,
+  clasificarIndicadores,
   type CasoConciliacion,
   type TarifaBIA,
 } from "./conciliacion-sdl"
@@ -39,7 +40,16 @@ export interface ResumenConciliacion {
   periodoStr:             string         // "AAAA-MM"
   totalFronteras:         number         // Facturacion + huerfanas de XM/SDL
   porCaso:                Record<CasoConciliacion, number>
-  sinDiferencia:          number         // caso A1
+  // Conteos por indicador (fronteras con diff en ese indicador)
+  sinDiferencia:          number         // sin diff en NINGUN indicador
+  indicadores: {
+    activa:         number               // caso != A1, INCOMPLETA, ERROR
+    inductiva:      number               // diff_inductiva = true
+    capacitiva:     number               // diff_capacitiva = true
+    factor_m:       number               // diff_factor_m = true
+    nivel_tension:  number               // diff_nivel_tension = true
+    propiedad:      number               // diff_propiedad = true
+  }
   provisiones:            { cantidad: number; valor_total: number }
   contingencias:          { cantidad: number; energia_total: number; valor_estimado_total: number }
   disputas:               { cantidad: number; valor_total: number }
@@ -126,8 +136,15 @@ export async function ejecutarConciliacion(
     D1: 0, D2: 0, D3: 0, D4: 0,
     INCOMPLETA: 0, ERROR: 0,
   }
-  let alertasManual = 0
-  let incompletas   = 0
+  let alertasManual  = 0
+  let incompletas    = 0
+  let sinDiferencia  = 0
+  let diffActiva     = 0
+  let diffInductiva  = 0
+  let diffCapacitiva = 0
+  let diffFactorM    = 0
+  let diffNivelT     = 0
+  let diffPropiedad  = 0
   const detalleIncompletas:  DetalleFrontera[] = []
   const detalleAlertaManual: DetalleFrontera[] = []
 
@@ -154,7 +171,40 @@ export async function ejecutarConciliacion(
       tarifa,
     })
 
+    // Indicadores extendidos (fac vs sdl). Si no hay SDL, todos los diff
+    // quedan false y la frontera solo aparece como Incompleta (regla acordada).
+    const ind = clasificarIndicadores({
+      ind_pen_fac:           f.energia_reactiva_ind_pen != null ? Number(f.energia_reactiva_ind_pen) : null,
+      ind_pen_sdl:           sdlRec?.energia_reactiva_ind_pen != null ? Number(sdlRec.energia_reactiva_ind_pen) : null,
+      cap_pen_fac:           f.energia_reactiva_cap_pen != null ? Number(f.energia_reactiva_cap_pen) : null,
+      cap_pen_sdl:           sdlRec?.energia_reactiva_cap_pen != null ? Number(sdlRec.energia_reactiva_cap_pen) : null,
+      factor_m_fac:          f.factor_m != null ? Number(f.factor_m) : null,
+      factor_m_sdl:          sdlRec?.factor_m != null ? Number(sdlRec.factor_m) : null,
+      nivel_tension_fac:     f.nivel_tension ?? null,
+      nivel_tension_sdl:     sdlRec?.nivel_tension ?? null,
+      propiedad_activos_fac: f.propiedad_activos ?? null,
+      propiedad_activos_sdl: sdlRec?.propiedad_activos ?? null,
+    })
+
     porCaso[r.caso] += 1
+
+    // Contar diff por indicador (excepto INCOMPLETA que se cuenta aparte)
+    const esActivaConDiff = r.caso !== "A1" && r.caso !== "INCOMPLETA" && r.caso !== "ERROR"
+    if (esActivaConDiff)    diffActiva++
+    if (ind.diff_inductiva) diffInductiva++
+    if (ind.diff_capacitiva) diffCapacitiva++
+    if (ind.diff_factor_m)  diffFactorM++
+    if (ind.diff_nivel_tension) diffNivelT++
+    if (ind.diff_propiedad) diffPropiedad++
+
+    // Sin diferencia = A1 en activa y ningun diff en los otros 5 indicadores.
+    // Solo se cuenta si la frontera tiene SDL (sino caso == INCOMPLETA).
+    if (r.caso === "A1"
+        && !ind.diff_inductiva && !ind.diff_capacitiva
+        && !ind.diff_factor_m && !ind.diff_nivel_tension && !ind.diff_propiedad) {
+      sinDiferencia++
+    }
+
     if (r.requiere_alerta_manual) {
       alertasManual++
       detalleAlertaManual.push({
@@ -191,6 +241,24 @@ export async function ejecutarConciliacion(
       impacto_financiero_l2:  r.impacto_financiero_l2 ?? null,
       requiere_alerta_manual: r.requiere_alerta_manual,
       observaciones:          r.observaciones.length > 0 ? r.observaciones.join("; ") : null,
+      // Indicadores extendidos
+      ind_pen_fac:            f.energia_reactiva_ind_pen ?? null,
+      ind_pen_sdl:            sdlRec?.energia_reactiva_ind_pen ?? null,
+      ind_pen_delta:          ind.ind_pen_delta != null ? new Prisma.Decimal(ind.ind_pen_delta) : null,
+      diff_inductiva:         ind.diff_inductiva,
+      cap_pen_fac:            f.energia_reactiva_cap_pen ?? null,
+      cap_pen_sdl:            sdlRec?.energia_reactiva_cap_pen ?? null,
+      cap_pen_delta:          ind.cap_pen_delta != null ? new Prisma.Decimal(ind.cap_pen_delta) : null,
+      diff_capacitiva:        ind.diff_capacitiva,
+      factor_m_fac:           f.factor_m ?? null,
+      factor_m_sdl:           sdlRec?.factor_m ?? null,
+      diff_factor_m:          ind.diff_factor_m,
+      nivel_tension_fac:      f.nivel_tension ?? null,
+      nivel_tension_sdl:      sdlRec?.nivel_tension ?? null,
+      diff_nivel_tension:     ind.diff_nivel_tension,
+      propiedad_activos_fac:  f.propiedad_activos ?? null,
+      propiedad_activos_sdl:  sdlRec?.propiedad_activos ?? null,
+      diff_propiedad:         ind.diff_propiedad,
     })
 
     // Derivados según resultado_l1
@@ -456,7 +524,15 @@ export async function ejecutarConciliacion(
     periodoStr,
     totalFronteras: facturacion.length + huerfanasByKey.size,
     porCaso,
-    sinDiferencia: porCaso.A1,
+    sinDiferencia,
+    indicadores: {
+      activa:        diffActiva,
+      inductiva:     diffInductiva,
+      capacitiva:    diffCapacitiva,
+      factor_m:      diffFactorM,
+      nivel_tension: diffNivelT,
+      propiedad:     diffPropiedad,
+    },
     provisiones:   { cantidad: provisionesPorFrontera.size,   valor_total: valorProvisiones },
     contingencias: {
       cantidad:             contingenciasPorFrontera.size,

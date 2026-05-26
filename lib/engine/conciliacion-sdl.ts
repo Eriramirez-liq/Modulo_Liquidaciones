@@ -386,3 +386,81 @@ function calcularDisputa(ctx: { delta: number; tarifa: TarifaBIA; observaciones:
   }
   return Math.abs(ctx.delta) * ctx.tarifa.tarifa_sdl
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// INDICADORES EXTENDIDOS (fac vs sdl, ademas de ACTIVA)
+//
+// Comparaciones independientes a la conciliacion de ACTIVA. Una frontera puede
+// estar OK en activa pero tener diff en inductiva, factor M, etc.
+// Si algun campo es null en cualquiera de los dos lados, no se evalua diff
+// (no podemos comparar). Mismo criterio si no hay SDL: todos diff_* = false
+// y la frontera queda solo como Incompleta.
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface InputIndicadores {
+  // Energia reactiva inductiva penalizada
+  ind_pen_fac: number | null
+  ind_pen_sdl: number | null
+  // Energia reactiva capacitiva penalizada
+  cap_pen_fac: number | null
+  cap_pen_sdl: number | null
+  // Factor M (entero 1-12 esperado)
+  factor_m_fac: number | null
+  factor_m_sdl: number | null
+  // Nivel tension (string)
+  nivel_tension_fac: string | null
+  nivel_tension_sdl: string | null
+  // Propiedad de activos (string)
+  propiedad_activos_fac: string | null
+  propiedad_activos_sdl: string | null
+  // Umbral kWh para reactivas (default 100, mismo que activa)
+  umbral_kwh?: number
+}
+
+export interface ResultadoIndicadores {
+  ind_pen_delta:      number | null
+  diff_inductiva:     boolean
+  cap_pen_delta:      number | null
+  diff_capacitiva:    boolean
+  diff_factor_m:      boolean
+  diff_nivel_tension: boolean
+  diff_propiedad:     boolean
+}
+
+export function clasificarIndicadores(input: InputIndicadores): ResultadoIndicadores {
+  const umbral = input.umbral_kwh ?? 100
+
+  // Inductiva penalizada: |fac - sdl| > umbral
+  const indDelta = (input.ind_pen_fac != null && input.ind_pen_sdl != null)
+    ? input.ind_pen_fac - input.ind_pen_sdl
+    : null
+  const diffInd = indDelta != null && Math.abs(indDelta) > umbral
+
+  // Capacitiva penalizada: |fac - sdl| > umbral
+  const capDelta = (input.cap_pen_fac != null && input.cap_pen_sdl != null)
+    ? input.cap_pen_fac - input.cap_pen_sdl
+    : null
+  const diffCap = capDelta != null && Math.abs(capDelta) > umbral
+
+  // Factor M: comparacion exacta de enteros (redondear porque puede venir
+  // como decimal pero conceptualmente es 1..12).
+  const diffFm = (input.factor_m_fac != null && input.factor_m_sdl != null)
+    && Math.round(input.factor_m_fac) !== Math.round(input.factor_m_sdl)
+
+  // Nivel tension y propiedad: string normalizado (trim + lowercase).
+  const normStr = (s: string | null): string => (s ?? "").trim().toLowerCase()
+  const diffNT = (input.nivel_tension_fac != null && input.nivel_tension_sdl != null)
+    && normStr(input.nivel_tension_fac) !== normStr(input.nivel_tension_sdl)
+  const diffProp = (input.propiedad_activos_fac != null && input.propiedad_activos_sdl != null)
+    && normStr(input.propiedad_activos_fac) !== normStr(input.propiedad_activos_sdl)
+
+  return {
+    ind_pen_delta:      indDelta,
+    diff_inductiva:     diffInd,
+    cap_pen_delta:      capDelta,
+    diff_capacitiva:    diffCap,
+    diff_factor_m:      diffFm,
+    diff_nivel_tension: diffNT,
+    diff_propiedad:     diffProp,
+  }
+}
