@@ -114,7 +114,10 @@ export const confirmarMetaSchema = z.object({
     .max(12),
   tipoFuente: tipoFuenteSchema,
   orId: z.string().min(1).optional(),
-  nombreArchivo: z.string().min(1),
+  // El flow de Facturacion-Metabase no tiene archivo fisico; WizardCarga.tsx
+  // envia `file?.name ?? ""`. Aceptamos string vacio para preservar el
+  // comportamiento previo a BE-0.
+  nombreArchivo: z.string(),
 })
 
 export const confirmarBodySchema = z.object({
