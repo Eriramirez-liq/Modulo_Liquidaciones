@@ -144,6 +144,9 @@ export function mapearFilasMetabase(
   const colNombre   = findCol("Cliente", "Client", "Nombre", "Usuario", "nombre_usuario")
   const colOR       = findCol("Operador", "OR", "last_operator", "lastoperator", "operador_red")
   const colG        = findCol("Tarifa G", "tarifa_g", "g_bia", "g")
+  // G de bolsa para formulas de Perdida (distinta de g regular)
+  const colGBolsa   = findCol("Tarifa G Bolsa", "tarifa_g_bolsa", "g_bolsa", "g_bolsa_bia",
+                              "G Bolsa", "Bolsa G", "Tarifa Bolsa")
   const colT        = findCol("Tarifa T", "tarifa_t", "t_bia", "t")
   const colD        = findCol("Tarifa D", "tarifa_d", "d_bia", "d")
   const colPR       = findCol("Tarifa PR", "tarifa_pr", "pr_bia", "pr")
@@ -197,6 +200,7 @@ export function mapearFilasMetabase(
       energia_reactiva_cap_pen: toNum(r[colReactCapPen!]),
       factor_m:                 toNum(r[colFactor!]),
       g_bia:            colG        ? toNum(r[colG])        : null,
+      g_bolsa_bia:      colGBolsa   ? toNum(r[colGBolsa])   : null,
       t_bia:            colT        ? toNum(r[colT])        : null,
       d_bia:            colD        ? toNum(r[colD])        : null,
       pr_bia:           colPR       ? toNum(r[colPR])       : null,

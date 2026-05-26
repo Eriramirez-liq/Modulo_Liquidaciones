@@ -128,13 +128,14 @@ export async function ejecutarConciliacion(
     const sdlRec = sdlByFrontera.get(f.codigo_frontera)
 
     const tarifa: TarifaBIA = {
-      g_bia:      f.g_bia      != null ? Number(f.g_bia)      : null,
-      t_bia:      f.t_bia      != null ? Number(f.t_bia)      : null,
-      d_bia:      f.d_bia      != null ? Number(f.d_bia)      : null,
-      pr_bia:     f.pr_bia     != null ? Number(f.pr_bia)     : null,
-      r_bia:      f.r_bia      != null ? Number(f.r_bia)      : null,
-      c_bia:      f.c_bia      != null ? Number(f.c_bia)      : null,
-      tarifa_sdl: sdlRec       != null ? Number(sdlRec.tarifa_sdl) : null,
+      g_bia:       f.g_bia        != null ? Number(f.g_bia)        : null,
+      g_bolsa_bia: f.g_bolsa_bia  != null ? Number(f.g_bolsa_bia)  : null,
+      t_bia:       f.t_bia        != null ? Number(f.t_bia)        : null,
+      d_bia:       f.d_bia        != null ? Number(f.d_bia)        : null,
+      pr_bia:      f.pr_bia       != null ? Number(f.pr_bia)       : null,
+      r_bia:       f.r_bia        != null ? Number(f.r_bia)        : null,
+      c_bia:       f.c_bia        != null ? Number(f.c_bia)        : null,
+      tarifa_sdl:  sdlRec         != null ? Number(sdlRec.tarifa_sdl) : null,
     }
 
     const r = clasificarFrontera({
@@ -185,9 +186,7 @@ export async function ejecutarConciliacion(
 
     // Derivados según resultado_l1
     if (r.resultado_l1 === "PROVISION_L1" || r.resultado_l1 === "PROVISION_COMBINADA") {
-      const tipo = r.caso === "D3" ? "D3"
-                 : r.caso === "D2" ? "COMBINADA"
-                 : "L1"
+      const tipo = r.caso === "D3" ? "D3" : "L1"
       provisionesPorFrontera.set(f.codigo_frontera, {
         periodo_id:             periodo.id,
         codigo_frontera:        f.codigo_frontera,
@@ -206,11 +205,11 @@ export async function ejecutarConciliacion(
         creado_por_id: userId,
       })
     } else if (r.resultado_l1 === "CONTINGENCIA_L1") {
-      // Estimacion del valor a cobrar al OR: energia × tarifa_sdl.
-      // Si no hay tarifa_sdl en el SDL de esta frontera, queda null.
+      // Perdida: el motor ya calcula impacto_financiero_l1 con la formula
+      // correspondiente al caso (B1, B1-ext, D1). Lo usamos como costo_estimado.
       const energia = Math.abs(r.delta_l1)
-      const estimado = tarifa.tarifa_sdl != null
-        ? new Prisma.Decimal(energia * tarifa.tarifa_sdl)
+      const estimado = r.impacto_financiero_l1 != null
+        ? new Prisma.Decimal(r.impacto_financiero_l1)
         : null
       contingenciasPorFrontera.set(f.codigo_frontera, {
         periodo_id:           periodo.id,

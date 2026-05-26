@@ -34,13 +34,14 @@ export type ResultadoLinea =
   | "INCOMPLETA"
 
 export interface TarifaBIA {
-  g_bia:      number | null
-  t_bia:      number | null
-  d_bia:      number | null
-  pr_bia:     number | null
-  r_bia:      number | null
-  c_bia:      number | null    // c NO se usa en las formulas de provision
-  tarifa_sdl: number | null
+  g_bia:       number | null
+  g_bolsa_bia: number | null   // se usa en formulas de Perdida (B1, B1-ext)
+  t_bia:       number | null
+  d_bia:       number | null
+  pr_bia:      number | null
+  r_bia:       number | null
+  c_bia:       number | null   // c NO se usa en las formulas de provision/perdida
+  tarifa_sdl:  number | null
 }
 
 export interface InputClasificacion {
@@ -110,14 +111,16 @@ export function clasificarFrontera(input: InputClasificacion): ResultadoClasific
     }
   }
 
-  // ── B1: fac < xm = sdl  (OR debe pagar) ──────────────────────────────────
+  // ── B1: fac < xm = sdl  (Perdida, OR alineado con XM) ───────────────────
+  // Formula: (xm-fac) × (g_bolsa + t + d + pr + r)
   if (delta_l1 < -umbral && xmEqSdl) {
+    const valor = calcularPerdidaNormal({ e_fac, e_xm, tarifa, observaciones })
     return {
       caso: "B1",
       resultado_l1: "CONTINGENCIA_L1",
       resultado_l2: "SIN_DIFERENCIA",
       delta_l1, delta_l2,
-      impacto_financiero_l1: null, // se valoriza al recibir cobro del OR
+      impacto_financiero_l1: valor,
       impacto_financiero_l2: 0,
       requiere_alerta_manual: false,
       observaciones,
@@ -169,28 +172,30 @@ export function clasificarFrontera(input: InputClasificacion): ResultadoClasific
     }
   }
 
-  // ── D1: fac < sdl < xm  (contingencia + disputa) ─────────────────────────
+  // ── D1: fac < sdl < xm  (Alerta manual: BIA<OR<XM → Perdida) ─────────────
+  // Formula: (xm-fac) × (g + t + d + pr + r)  — g regular, NO g_bolsa
   if (e_fac + umbral < e_sdl && e_sdl + umbral < e_xm) {
-    const valor_l2 = calcularDisputa({ delta: e_xm - e_sdl, tarifa, observaciones })
+    const valor = calcularPerdidaAlertaManual({ e_fac, e_xm, tarifa, observaciones })
     return {
       caso: "D1",
       resultado_l1: "CONTINGENCIA_L1",
-      resultado_l2: "DISPUTA_L2",
+      resultado_l2: "SIN_DIFERENCIA",
       delta_l1, delta_l2,
-      impacto_financiero_l1: null, // valorización al recibir cobro
-      impacto_financiero_l2: valor_l2,
+      impacto_financiero_l1: valor,
+      impacto_financiero_l2: 0,
       requiere_alerta_manual: true,
       observaciones,
     }
   }
 
-  // ── D2: sdl < xm < fac  (provision combinada, absorbe disputa) ───────────
-  if (e_sdl + umbral < e_xm && e_xm + umbral < e_fac) {
-    const valor = calcularProvisionCombinada({ e_fac, e_sdl, tarifa, observaciones })
+  // ── D2: fac > sdl > xm  (Alerta manual: BIA>OR>XM → Provision) ───────────
+  // Formula: (fac-xm) × (g + t + d + pr + r)
+  if (e_fac > e_sdl + umbral && e_sdl > e_xm + umbral) {
+    const valor = calcularProvisionAlertaManual({ e_fac, e_xm, tarifa, observaciones })
     return {
       caso: "D2",
-      resultado_l1: "PROVISION_COMBINADA",
-      resultado_l2: "SIN_DIFERENCIA",  // disputa absorbida
+      resultado_l1: "PROVISION_L1",
+      resultado_l2: "SIN_DIFERENCIA",
       delta_l1, delta_l2,
       impacto_financiero_l1: valor,
       impacto_financiero_l2: 0,
@@ -214,21 +219,20 @@ export function clasificarFrontera(input: InputClasificacion): ResultadoClasific
     }
   }
 
-  // ── Caso extendido (no en PRD original): fac ≈ sdl < xm ──────────────────
-  // BIA y OR concuerdan, XM reporta MAS energia. Simetrico a D3 pero con XM
-  // como outlier alto en lugar de bajo. Tratamiento: contingencia L1 — OR
-  // deberia cobrar la diferencia entre lo registrado en XM y lo facturado.
+  // ── B1-ext: fac ≈ sdl < xm  (Perdida, OR alineado con BIA) ───────────────
+  // Formula: (xm-fac) × (g_bolsa + t + (d-sdl) + pr + r)
+  // BIA y OR concuerdan, XM reporta MAS energia. Tarifa especial (d-sdl).
   if (facEqSdl && delta_l2 > umbral) {
     observaciones.push(
-      "fac ≈ sdl < xm: BIA y OR concuerdan, XM reporta mayor consumo. " +
-      "Caso extendido al PRD; se clasifica como contingencia L1.",
+      "B1-ext: fac ≈ sdl < xm. BIA y OR concuerdan, XM reporta mayor consumo.",
     )
+    const valor = calcularPerdidaBIAext({ e_fac, e_xm, tarifa, observaciones })
     return {
       caso: "B1",
       resultado_l1: "CONTINGENCIA_L1",
       resultado_l2: "SIN_DIFERENCIA",
       delta_l1, delta_l2,
-      impacto_financiero_l1: null, // se valoriza al recibir cobro
+      impacto_financiero_l1: valor,
       impacto_financiero_l2: 0,
       requiere_alerta_manual: false,
       observaciones,
@@ -255,36 +259,29 @@ export function clasificarFrontera(input: InputClasificacion): ResultadoClasific
 // Helpers de valorizacion
 // ────────────────────────────────────────────────────────────────────────────
 
-interface CtxProvision { e_fac: number; e_xm?: number; e_sdl?: number; tarifa: TarifaBIA; observaciones: string[] }
+// ────────────────────────────────────────────────────────────────────────────
+// PROVISIONES (BIA reporto de menos a XM, fac > xm)
+// ────────────────────────────────────────────────────────────────────────────
 
-/** Provision L1 (B2): |e_fac - e_xm| × (g + t + d + pr + r).  C excluido. */
+/**
+ * Provision L1 (B2 — OR alineado con XM):
+ *   (fac - xm) × (g + t + d + pr + r)
+ * C excluido. Tarifa normal sin ajustar.
+ */
 function calcularProvisionL1(ctx: { e_fac: number; e_xm: number; tarifa: TarifaBIA; observaciones: string[] }): number | null {
   const { g_bia, t_bia, d_bia, pr_bia, r_bia } = ctx.tarifa
   if (g_bia == null || t_bia == null || d_bia == null || pr_bia == null || r_bia == null) {
-    ctx.observaciones.push("Provision L1 sin valorizar: faltan tarifas BIA (g/t/d/pr/r).")
+    ctx.observaciones.push("Provision L1 (B2) sin valorizar: faltan tarifas BIA (g/t/d/pr/r).")
     return null
   }
   const delta = Math.abs(ctx.e_fac - ctx.e_xm)
-  const tarifaTotal = g_bia + t_bia + d_bia + pr_bia + r_bia
-  return delta * tarifaTotal
-}
-
-/** Provision combinada (D2): |e_fac - e_sdl| × (g + t + d + pr + r).  C excluido. */
-function calcularProvisionCombinada(ctx: { e_fac: number; e_sdl: number; tarifa: TarifaBIA; observaciones: string[] }): number | null {
-  const { g_bia, t_bia, d_bia, pr_bia, r_bia } = ctx.tarifa
-  if (g_bia == null || t_bia == null || d_bia == null || pr_bia == null || r_bia == null) {
-    ctx.observaciones.push("Provision combinada sin valorizar: faltan tarifas BIA (g/t/d/pr/r).")
-    return null
-  }
-  const delta = Math.abs(ctx.e_fac - ctx.e_sdl)
-  const tarifaTotal = g_bia + t_bia + d_bia + pr_bia + r_bia
-  return delta * tarifaTotal
+  return delta * (g_bia + t_bia + d_bia + pr_bia + r_bia)
 }
 
 /**
- * Provision D3: |e_fac - e_xm| × (g + t + (d - tarifa_sdl) + pr + r).
- * Valida `tarifa_sdl <= d_bia` — si la tarifa SDL supera el componente D
- * de BIA, no se puede calcular (escala a alerta).
+ * Provision D3 (OR alineado con BIA):
+ *   (fac - xm) × (g + t + (d - tarifa_sdl) + pr + r)
+ * Valida tarifa_sdl <= d_bia.
  */
 function calcularProvisionD3(ctx: { e_fac: number; e_xm: number; tarifa: TarifaBIA; observaciones: string[] }): number | null {
   const { g_bia, t_bia, d_bia, pr_bia, r_bia, tarifa_sdl } = ctx.tarifa
@@ -303,11 +300,95 @@ function calcularProvisionD3(ctx: { e_fac: number; e_xm: number; tarifa: TarifaB
     return null
   }
   const delta = Math.abs(ctx.e_fac - ctx.e_xm)
-  const tarifaAjustada = g_bia + t_bia + (d_bia - tarifa_sdl) + pr_bia + r_bia
-  return delta * tarifaAjustada
+  return delta * (g_bia + t_bia + (d_bia - tarifa_sdl) + pr_bia + r_bia)
 }
 
-/** Disputa L2 (C1, C2, D1): |delta| × tarifa_sdl. */
+/**
+ * Provision Alerta Manual (D2 — BIA>OR>XM):
+ *   (fac - xm) × (g + t + d + pr + r)
+ * Misma estructura que B2.
+ */
+function calcularProvisionAlertaManual(ctx: { e_fac: number; e_xm: number; tarifa: TarifaBIA; observaciones: string[] }): number | null {
+  const { g_bia, t_bia, d_bia, pr_bia, r_bia } = ctx.tarifa
+  if (g_bia == null || t_bia == null || d_bia == null || pr_bia == null || r_bia == null) {
+    ctx.observaciones.push("Provision D2 sin valorizar: faltan tarifas BIA (g/t/d/pr/r).")
+    return null
+  }
+  const delta = Math.abs(ctx.e_fac - ctx.e_xm)
+  return delta * (g_bia + t_bia + d_bia + pr_bia + r_bia)
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// PERDIDAS (BIA reporto de mas a XM, fac < xm)
+// Las formulas de Perdida usan g_bolsa_bia en lugar de g_bia.
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Perdida normal (B1 — OR alineado con XM):
+ *   (xm - fac) × (g_bolsa + t + d + pr + r)
+ */
+function calcularPerdidaNormal(ctx: { e_fac: number; e_xm: number; tarifa: TarifaBIA; observaciones: string[] }): number | null {
+  const { g_bolsa_bia, t_bia, d_bia, pr_bia, r_bia } = ctx.tarifa
+  if (g_bolsa_bia == null) {
+    ctx.observaciones.push("Perdida B1 sin valorizar: falta g_bolsa_bia.")
+    return null
+  }
+  if (t_bia == null || d_bia == null || pr_bia == null || r_bia == null) {
+    ctx.observaciones.push("Perdida B1 sin valorizar: faltan tarifas BIA (t/d/pr/r).")
+    return null
+  }
+  const delta = Math.abs(ctx.e_xm - ctx.e_fac)
+  return delta * (g_bolsa_bia + t_bia + d_bia + pr_bia + r_bia)
+}
+
+/**
+ * Perdida B1-ext (OR alineado con BIA):
+ *   (xm - fac) × (g_bolsa + t + (d - tarifa_sdl) + pr + r)
+ */
+function calcularPerdidaBIAext(ctx: { e_fac: number; e_xm: number; tarifa: TarifaBIA; observaciones: string[] }): number | null {
+  const { g_bolsa_bia, t_bia, d_bia, pr_bia, r_bia, tarifa_sdl } = ctx.tarifa
+  if (g_bolsa_bia == null) {
+    ctx.observaciones.push("Perdida B1-ext sin valorizar: falta g_bolsa_bia.")
+    return null
+  }
+  if (t_bia == null || d_bia == null || pr_bia == null || r_bia == null) {
+    ctx.observaciones.push("Perdida B1-ext sin valorizar: faltan tarifas BIA (t/d/pr/r).")
+    return null
+  }
+  if (tarifa_sdl == null) {
+    ctx.observaciones.push("Perdida B1-ext sin valorizar: falta tarifa_sdl.")
+    return null
+  }
+  if (tarifa_sdl > d_bia) {
+    ctx.observaciones.push(
+      `Perdida B1-ext invalida: tarifa_sdl (${tarifa_sdl}) > d_bia (${d_bia}). Revisar tarifas.`,
+    )
+    return null
+  }
+  const delta = Math.abs(ctx.e_xm - ctx.e_fac)
+  return delta * (g_bolsa_bia + t_bia + (d_bia - tarifa_sdl) + pr_bia + r_bia)
+}
+
+/**
+ * Perdida Alerta Manual (D1 — BIA<OR<XM):
+ *   (xm - fac) × (g + t + d + pr + r)
+ * Usa g regular (NO g_bolsa) y tarifa normal sin ajustar.
+ */
+function calcularPerdidaAlertaManual(ctx: { e_fac: number; e_xm: number; tarifa: TarifaBIA; observaciones: string[] }): number | null {
+  const { g_bia, t_bia, d_bia, pr_bia, r_bia } = ctx.tarifa
+  if (g_bia == null || t_bia == null || d_bia == null || pr_bia == null || r_bia == null) {
+    ctx.observaciones.push("Perdida D1 sin valorizar: faltan tarifas BIA (g/t/d/pr/r).")
+    return null
+  }
+  const delta = Math.abs(ctx.e_xm - ctx.e_fac)
+  return delta * (g_bia + t_bia + d_bia + pr_bia + r_bia)
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// DISPUTAS (C1, C2)
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Disputa L2 (C1, C2): |delta| × tarifa_sdl. Estimacion mientras OR responde. */
 function calcularDisputa(ctx: { delta: number; tarifa: TarifaBIA; observaciones: string[] }): number | null {
   if (ctx.tarifa.tarifa_sdl == null) {
     ctx.observaciones.push("Disputa L2 sin valorizar: falta tarifa_sdl.")

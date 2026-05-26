@@ -18,13 +18,14 @@
 import type { CasoConciliacion, InputClasificacion, ResultadoLinea } from "./conciliacion-sdl"
 
 export const TARIFA_REF = {
-  g_bia: 50,
-  t_bia: 100,
-  d_bia: 200,
-  pr_bia: 30,
-  r_bia:  20,
-  c_bia:  10,
-  tarifa_sdl: 150,
+  g_bia:       50,
+  g_bolsa_bia: 60,    // G de bolsa (diferente de G regular). Usada en Perdidas.
+  t_bia:       100,
+  d_bia:       200,
+  pr_bia:      30,
+  r_bia:       20,
+  c_bia:       10,
+  tarifa_sdl:  150,
 }
 
 export interface CasoEsperado {

@@ -20,6 +20,8 @@ export type FilaFacturacion = {
   factor_m:                 number | null
   // Tarifas BIA (para conciliacion de balance, no para SDL)
   g_bia:                    number | null
+  // G de bolsa: tarifa especial usada en formulas de Perdida
+  g_bolsa_bia:              number | null
   t_bia:                    number | null
   d_bia:                    number | null
   pr_bia:                   number | null

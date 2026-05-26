@@ -125,6 +125,7 @@ export async function POST(request: NextRequest) {
               energia_reactiva_cap_pen: f.energia_reactiva_cap_pen,
               factor_m:                 f.factor_m,
               g_bia:                    f.g_bia,
+              g_bolsa_bia:              f.g_bolsa_bia,
               t_bia:                    f.t_bia,
               d_bia:                    f.d_bia,
               pr_bia:                   f.pr_bia,
