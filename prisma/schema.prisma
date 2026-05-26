@@ -418,6 +418,30 @@ model ResultadoConciliacion {
   createdAt              DateTime          @default(now())
   updatedAt              DateTime          @updatedAt
 
+  // ─── Indicadores extendidos (fac vs sdl) ────────────────────────────────
+  // Energia reactiva inductiva penalizada
+  ind_pen_fac            Decimal?          @db.Decimal(18, 6)
+  ind_pen_sdl            Decimal?          @db.Decimal(18, 6)
+  ind_pen_delta          Decimal?          @db.Decimal(18, 6)
+  diff_inductiva         Boolean           @default(false)
+  // Energia reactiva capacitiva penalizada
+  cap_pen_fac            Decimal?          @db.Decimal(18, 6)
+  cap_pen_sdl            Decimal?          @db.Decimal(18, 6)
+  cap_pen_delta          Decimal?          @db.Decimal(18, 6)
+  diff_capacitiva        Boolean           @default(false)
+  // Factor M (entero 1-12 esperado)
+  factor_m_fac           Decimal?          @db.Decimal(10, 4)
+  factor_m_sdl           Decimal?          @db.Decimal(10, 4)
+  diff_factor_m          Boolean           @default(false)
+  // Nivel tension (string)
+  nivel_tension_fac      String?           @db.VarChar(20)
+  nivel_tension_sdl      String?           @db.VarChar(20)
+  diff_nivel_tension     Boolean           @default(false)
+  // Propiedad activos (string)
+  propiedad_activos_fac  String?           @db.VarChar(40)
+  propiedad_activos_sdl  String?           @db.VarChar(40)
+  diff_propiedad         Boolean           @default(false)
+
   periodo        PeriodoConciliacion @relation(fields: [periodo_id], references: [id])
   or_obj         ConfiguracionOR?    @relation(fields: [or_id], references: [id])
   conciliado_por User?               @relation(fields: [conciliado_por_id], references: [id])
