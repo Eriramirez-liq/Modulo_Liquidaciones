@@ -172,10 +172,11 @@ export function clasificarFrontera(input: InputClasificacion): ResultadoClasific
     }
   }
 
-  // ── D1: fac < sdl < xm  (Alerta manual: BIA<OR<XM → Perdida) ─────────────
-  // Formula: (xm-fac) × (g + t + d + pr + r)  — g regular, NO g_bolsa
+  // ── D1: fac < sdl < xm  (Alerta manual + Perdida: BIA<OR<XM) ─────────────
+  // Formula: (xm-fac) × (g_bolsa + t + d + pr + r)  — g_bolsa como toda perdida
   if (e_fac + umbral < e_sdl && e_sdl + umbral < e_xm) {
-    const valor = calcularPerdidaAlertaManual({ e_fac, e_xm, tarifa, observaciones })
+    observaciones.push("D1 (BIA<OR<XM): genera Perdida y aparece en Alertas Manuales.")
+    const valor = calcularPerdidaNormal({ e_fac, e_xm, tarifa, observaciones })
     return {
       caso: "D1",
       resultado_l1: "CONTINGENCIA_L1",
@@ -369,20 +370,9 @@ function calcularPerdidaBIAext(ctx: { e_fac: number; e_xm: number; tarifa: Tarif
   return delta * (g_bolsa_bia + t_bia + (d_bia - tarifa_sdl) + pr_bia + r_bia)
 }
 
-/**
- * Perdida Alerta Manual (D1 — BIA<OR<XM):
- *   (xm - fac) × (g + t + d + pr + r)
- * Usa g regular (NO g_bolsa) y tarifa normal sin ajustar.
- */
-function calcularPerdidaAlertaManual(ctx: { e_fac: number; e_xm: number; tarifa: TarifaBIA; observaciones: string[] }): number | null {
-  const { g_bia, t_bia, d_bia, pr_bia, r_bia } = ctx.tarifa
-  if (g_bia == null || t_bia == null || d_bia == null || pr_bia == null || r_bia == null) {
-    ctx.observaciones.push("Perdida D1 sin valorizar: faltan tarifas BIA (g/t/d/pr/r).")
-    return null
-  }
-  const delta = Math.abs(ctx.e_xm - ctx.e_fac)
-  return delta * (g_bia + t_bia + d_bia + pr_bia + r_bia)
-}
+// Nota: D1 (Perdida alerta manual, BIA<OR<XM) usa la misma formula que B1
+// (calcularPerdidaNormal). La diferencia es solo la condicion + el flag
+// requiere_alerta_manual. Toda Perdida usa g_bolsa_bia.
 
 // ────────────────────────────────────────────────────────────────────────────
 // DISPUTAS (C1, C2)

@@ -92,14 +92,21 @@ export async function ejecutarConciliacion(
     }),
   ])
 
-  // Indexar XM y SDL por codigo_frontera
-  const xmByFrontera  = new Map(xm.map(r  => [r.codigo_frontera, r]))
-  const sdlByFrontera = new Map(sdl.map(r => [r.codigo_frontera, r]))
+  // Normalizar codigo_frontera para matcheo case-insensitive (trim + uppercase).
+  // Facturacion puede traer codigos en mixed case ("Frt24040", "FRT32213") y los
+  // archivos SDL/XM pueden venir distinto — comparar tal cual rompe el match.
+  // Los registros se guardan en BD con su capitalizacion original; solo el lookup
+  // se normaliza.
+  const normKey = (s: string | null | undefined): string =>
+    (s ?? "").trim().toUpperCase()
+
+  const xmByFrontera  = new Map(xm.map(r  => [normKey(r.codigo_frontera), r]))
+  const sdlByFrontera = new Map(sdl.map(r => [normKey(r.codigo_frontera), r]))
 
   // Detectar fronteras "huérfanas" (en XM/SDL pero no en Facturacion)
-  const facFronteras = new Set(facturacion.map(f => f.codigo_frontera))
-  const xmHuerfanas  = xm.filter(r  => !facFronteras.has(r.codigo_frontera)).length
-  const sdlHuerfanas = sdl.filter(r => !facFronteras.has(r.codigo_frontera)).length
+  const facFronteras = new Set(facturacion.map(f => normKey(f.codigo_frontera)))
+  const xmHuerfanas  = xm.filter(r  => !facFronteras.has(normKey(r.codigo_frontera))).length
+  const sdlHuerfanas = sdl.filter(r => !facFronteras.has(normKey(r.codigo_frontera))).length
 
   // 4. Clasificar cada Facturacion + construir registros a persistir
   type PendingProvision = Omit<Prisma.ProvisionCreateManyInput, "id" | "createdAt" | "updatedAt">
@@ -124,8 +131,9 @@ export async function ejecutarConciliacion(
   const detalleAlertaManual: DetalleFrontera[] = []
 
   for (const f of facturacion) {
-    const xmRec  = xmByFrontera.get(f.codigo_frontera)
-    const sdlRec = sdlByFrontera.get(f.codigo_frontera)
+    const fKey   = normKey(f.codigo_frontera)
+    const xmRec  = xmByFrontera.get(fKey)
+    const sdlRec = sdlByFrontera.get(fKey)
 
     const tarifa: TarifaBIA = {
       g_bia:       f.g_bia        != null ? Number(f.g_bia)        : null,
@@ -185,7 +193,9 @@ export async function ejecutarConciliacion(
     })
 
     // Derivados según resultado_l1
-    if (r.resultado_l1 === "PROVISION_L1" || r.resultado_l1 === "PROVISION_COMBINADA") {
+    // - PROVISION_L1: B2, D2 (alerta manual), D3
+    // - CONTINGENCIA_L1: B1, B1-ext, D1 (alerta manual)
+    if (r.resultado_l1 === "PROVISION_L1") {
       const tipo = r.caso === "D3" ? "D3" : "L1"
       provisionesPorFrontera.set(f.codigo_frontera, {
         periodo_id:             periodo.id,
@@ -237,11 +247,11 @@ export async function ejecutarConciliacion(
             "Disputa L2 no creada: falta or_id (no hay SDL para esta frontera)."
         }
       } else {
+        // Disputas solo C1 y C2 (D1 ya no genera disputa, va por Contingencia + Alerta Manual)
         const valorDisputa = r.impacto_financiero_l2 ?? 0
-        const deltaDisputa = r.caso === "C1" ? Math.abs(r.delta_l2)
-                           : r.caso === "C2" ? Math.abs(r.delta_l2)
-                           : r.caso === "D1" ? Math.abs(r.delta_l2)
-                           : 0
+        const deltaDisputa = (r.caso === "C1" || r.caso === "C2")
+          ? Math.abs(r.delta_l2)
+          : 0
         disputasPorFrontera.set(f.codigo_frontera, {
           periodo_id:         periodo.id,
           codigo_frontera:    f.codigo_frontera,

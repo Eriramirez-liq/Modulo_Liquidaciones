@@ -110,24 +110,28 @@ export const CASOS_PRUEBA: CasoEsperado[] = [
     requiere_alerta_manual: false,
   },
 
-  // ─────────── D1: fac < sdl < xm (contingencia + disputa, alerta manual) ─────────
+  // ─────────── D1: fac < sdl < xm (Perdida + Alerta Manual, BIA<OR<XM) ─────────
+  // Genera Contingencia (Perdida con g_bolsa) y aparece en Alertas Manuales.
+  // Formula: (xm-fac) × (g_bolsa + t + d + pr + r) = 2000 × (60+100+200+30+20) = 820.000
   {
-    nombre: "D1: fac=8000, sdl=9000, xm=10000",
+    nombre: "D1: fac=8000, sdl=9000, xm=10000 — perdida = 2000 × 410 = 820.000",
     input: { e_fac: 8000, e_xm: 10000, e_sdl: 9000, tarifa: TARIFA_REF },
     caso: "D1",
     resultado_l1: "CONTINGENCIA_L1",
-    resultado_l2: "DISPUTA_L2",
-    impacto_financiero_l1: null,   // valorizacion al recibir cobro
-    impacto_financiero_l2: 150_000, // (10000-9000) × 150
+    resultado_l2: "SIN_DIFERENCIA",
+    impacto_financiero_l1: 820_000,  // 2000 × (60+100+200+30+20)
+    impacto_financiero_l2: 0,
     requiere_alerta_manual: true,
   },
 
-  // ───────────────── D2: sdl < xm < fac (provision combinada) ─────────────────────
+  // ───────────────── D2: fac > sdl > xm (Provision + Alerta Manual, BIA>OR>XM) ────
+  // Genera Provision (con g_bia) y aparece en Alertas Manuales.
+  // Formula: (fac-xm) × (g + t + d + pr + r) = 4000 × 400 = 1.600.000
   {
-    nombre: "D2: sdl=8000, xm=10000, fac=12000 — provision = 4000 × 400 = 1.600.000",
-    input: { e_fac: 12000, e_xm: 10000, e_sdl: 8000, tarifa: TARIFA_REF },
+    nombre: "D2: fac=12000, sdl=10000, xm=8000 — provision = 4000 × 400 = 1.600.000",
+    input: { e_fac: 12000, e_xm: 8000, e_sdl: 10000, tarifa: TARIFA_REF },
     caso: "D2",
-    resultado_l1: "PROVISION_COMBINADA",
+    resultado_l1: "PROVISION_L1",
     resultado_l2: "SIN_DIFERENCIA",
     impacto_financiero_l1: 1_600_000, // (12000-8000) × 400
     impacto_financiero_l2: 0,
