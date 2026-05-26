@@ -81,7 +81,7 @@ export default function ConciliacionesPage() {
       setResumen(data.resumen)
       setMensaje(
         `Conciliación completada: ${data.resumen.totalFronteras} fronteras procesadas. ` +
-        `Revisá Gestiones para ver provisiones, contingencias y disputas.`,
+        `Revisá Gestiones para ver provisiones, pérdidas y disputas.`,
       )
     } catch (e) {
       setError(`Error de red: ${e instanceof Error ? e.message : String(e)}`)
@@ -102,7 +102,7 @@ export default function ConciliacionesPage() {
           Motor de Conciliación
         </h1>
         <p style={{ fontSize: "0.875rem", color: "#6b7280", margin: 0 }}>
-          Ejecuta las reglas de negocio sobre el período seleccionado para obtener Provisiones, Contingencias y Disputas.
+          Ejecuta las reglas de negocio sobre el período seleccionado para obtener Provisiones, Pérdidas y Disputas.
         </p>
       </div>
 
@@ -202,7 +202,7 @@ export default function ConciliacionesPage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
             <KpiCard label="Provisiones"   main={resumen.provisiones.cantidad}
               sub={cop(resumen.provisiones.valor_total)} color="#3b82f6" />
-            <KpiCard label="Contingencias" main={resumen.contingencias.cantidad}
+            <KpiCard label="Pérdidas" main={resumen.contingencias.cantidad}
               sub={`${resumen.contingencias.energia_total.toLocaleString("es-CO")} kWh`} color="#f59e0b" />
             <KpiCard label="Disputas"      main={resumen.disputas.cantidad}
               sub={cop(resumen.disputas.valor_total)} color="#dc2626" />

@@ -158,7 +158,7 @@ function GestionesContent() {
           Gestión M3
         </h1>
         <p style={{ fontSize: "0.875rem", color: "#6b7280", margin: 0 }}>
-          Provisiones, contingencias y disputas generadas por el motor de conciliación.
+          Provisiones, pérdidas y disputas generadas por el motor de conciliación.
         </p>
       </div>
 
@@ -201,7 +201,7 @@ function GestionesContent() {
       <div style={{ display: "flex", borderBottom: "1px solid #e5e7eb", flexWrap: "wrap" }}>
         {([
           ["provisiones",      "Provisiones"],
-          ["contingencias",    "Contingencias"],
+          ["contingencias",    "Pérdidas"],
           ["disputas",         "Disputas"],
           ["alertas-manuales", "Alertas manuales"],
           ["incompletas",      "Incompletas / Errores"],
@@ -309,7 +309,7 @@ function GestionesContent() {
             </table>
           </div>
         ) : (
-          // Tabla original para Provisiones / Contingencias / Disputas
+          // Tabla original para Provisiones / Pérdidas / Disputas
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead style={{ background: "#f9fafb" }}>
@@ -360,7 +360,7 @@ function GestionesContent() {
                       <td style={{ ...tdStyle, fontWeight: 500 }}>{r.codigo_frontera}</td>
                       <td style={tdStyle}>{r.operador_red?.nombre ?? "—"}</td>
                       <td style={tdStyle}>{r.periodo.anio}-{String(r.periodo.mes).padStart(2,"0")}</td>
-                      <td style={tdStyle}>Contingencia</td>
+                      <td style={tdStyle}>Pérdida</td>
                       <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.energia_kwh)}</td>
                       <td style={{ ...tdStyle, textAlign: "right" }}>
                         {/* Si ya cobrado, mostrar calculado; sino estimado */}

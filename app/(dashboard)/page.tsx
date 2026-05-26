@@ -131,7 +131,7 @@ export default function InicioPage() {
             <KPI label="PROVISIONES" main={d?.provisiones ?? 0} color="#3b82f6"
               sub={cop(d?.valorProvisiones ?? 0)}
               href={periodoId ? `/gestiones?tab=provisiones&periodoId=${periodoId}` : undefined} />
-            <KPI label="CONTINGENCIAS L1" main={d?.contingenciasAbiertas ?? 0} color="#f59e0b"
+            <KPI label="PÉRDIDAS L1" main={d?.contingenciasAbiertas ?? 0} color="#f59e0b"
               sub={cop(d?.valorContingencias ?? 0)}
               href={periodoId ? `/gestiones?tab=contingencias&periodoId=${periodoId}` : undefined} />
             <KPI label="DISPUTAS L2" main={d?.disputas ?? 0} color="#3b82f6"
