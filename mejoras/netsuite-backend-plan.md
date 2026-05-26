@@ -40,7 +40,7 @@ Erika aprobó los defaults recomendados sobre las 7 decisiones que el análisis 
 | PR | Estado | Fecha | Notas |
 |----|--------|-------|-------|
 | BE-0 — Adoptar `prisma migrate` (baseline) + Zod en handlers `cargas/preview` y `cargas/confirmar` | ✅ Completado | 2026-05-22 | Baseline `20260522000000_baseline` generado; scripts `db:migrate:dev/deploy/status` agregados; Zod en handlers existentes; runbook en `docs/runbooks/prisma-migrate.md`. Erika debe correr `prisma migrate resolve --applied 20260522000000_baseline` contra producción (ver runbook) antes de que BE-1 introduzca migraciones reales. |
-| BE-1 — Migración: `lotes_netsuite` + `envios_netsuite_cargo_str` + índices en `registros_str` | ⏳ Pendiente | — | Incluye audit doc de RLS en `docs/audits/` |
+| BE-1 — Migración: `lotes_netsuite` + `envios_netsuite_cargo_str` + índices en `registros_str` | ✅ Completado (código) | 2026-05-25 | Schema agregado, migración generada (`prisma/migrations/20260525000000_netsuite_cargos_str/migration.sql`), Prisma client regenerado, audit doc D7 creado (`docs/audits/2026-05-25-rls-netsuite.md`). **PENDIENTE: Erika aplica `migrate resolve --applied baseline` + `migrate deploy` cuando decida.** |
 | BE-2 — Capa de servicio + mock determinista | ⏳ Pendiente | — | `lib/integrations/netsuite/*` (sin endpoints aún) |
 | BE-3 — Endpoints POST/GET de lote (1, 2, 3) | ⏳ Pendiente | — | Desbloquea FE-4 |
 | BE-4 — Endpoints de estados, lote activo, detalle (4, 7) | ⏳ Pendiente | — | Desbloquea FE-5/FE-6 |

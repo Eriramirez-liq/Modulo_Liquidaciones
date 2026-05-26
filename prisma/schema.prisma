@@ -118,6 +118,20 @@ enum AccionAuditoria {
   CAMBIAR_CONFIGURACION
   CREAR_USUARIO
   ACTUALIZAR_USUARIO
+  ENVIAR_LOTE_NETSUITE
+}
+
+enum EstadoLoteNetsuite {
+  EN_PROGRESO
+  COMPLETADO
+  CANCELADO
+}
+
+enum EstadoEnvioNetsuite {
+  PENDIENTE
+  PROCESANDO
+  PROCESADO
+  ERROR
 }
 
 // ─── Modelos ──────────────────────────────────────────────────────────────────
@@ -142,6 +156,7 @@ model User {
   disputas_abiertas     Disputa[]               @relation("DisputaAbiertaPor")
   disputas_cerradas     Disputa[]               @relation("DisputaCerradaPor")
   log_auditoria         LogAuditoria[]
+  lotesIniciados        LoteNetsuite[]
 
   @@map("users")
 }
@@ -165,6 +180,7 @@ model PeriodoConciliacion {
   contingencias Contingencia[]
   disputas      Disputa[]
   registros_str RegistroSTR[]
+  enviosNetsuite EnvioNetsuiteCargoSTR[]
 
   @@unique([anio, mes], name: "uq_periodo_anio_mes")
   @@map("periodos_conciliacion")
@@ -191,6 +207,7 @@ model ConfiguracionOR {
   provisiones       Provision[]
   contingencias     Contingencia[]
   disputas          Disputa[]
+  enviosNetsuite    EnvioNetsuiteCargoSTR[]
 
   @@map("configuracion_or")
 }
@@ -368,6 +385,9 @@ model RegistroSTR {
   periodo      PeriodoConciliacion @relation(fields: [periodo_id], references: [id])
   operador_red ConfiguracionOR     @relation(fields: [or_id], references: [id])
 
+  @@index([periodo_id])
+  @@index([or_id])
+  @@index([mes_consumo])
   @@map("registros_str")
 }
 
@@ -524,4 +544,66 @@ model LogAuditoria {
   usuario User @relation(fields: [usuario_id], references: [id])
 
   @@map("log_auditoria")
+}
+
+// ─── NetSuite Cargos STR ──────────────────────────────────────────────────────
+// Tablas para la integración de Cargos STR con Oracle NetSuite.
+// Ver plan en mejoras/netsuite-backend-plan.md §B.1.
+// TODO RLS Fase 3: agregar políticas RLS específicas para service_role
+// y revocar acceso a anon/authenticated. Ver docs/audits/2026-05-25-rls-netsuite.md.
+
+model LoteNetsuite {
+  id              String              @id @default(cuid())
+  estado          EstadoLoteNetsuite  @default(EN_PROGRESO)
+  total_envios    Int
+  total_ok        Int                 @default(0)
+  total_error     Int                 @default(0)
+  iniciado_por_id String
+  iniciado_at     DateTime            @default(now())
+  finalizado_at   DateTime?
+
+  iniciado_por User                   @relation(fields: [iniciado_por_id], references: [id])
+  envios       EnvioNetsuiteCargoSTR[]
+
+  @@index([estado])
+  @@index([iniciado_at])
+  @@map("lotes_netsuite")
+}
+
+model EnvioNetsuiteCargoSTR {
+  id                   String              @id @default(cuid())
+  lote_id              String
+  periodo_id           String
+  or_id                String              // FK a ConfiguracionOR.id (UUID)
+
+  monto_snapshot_cop   Decimal             @db.Decimal(18, 2)
+  mes_consumo          String
+  mes_facturacion      String
+
+  estado               EstadoEnvioNetsuite @default(PENDIENTE)
+  intentos             Int                 @default(0)
+
+  numero_oc            String?
+  netsuite_internal_id String?
+  respuesta_ok_json    Json?
+
+  error_mensaje        String?
+  error_codigo         String?
+  error_payload_json   Json?
+
+  idempotency_key      String              @unique
+
+  enviado_at           DateTime?
+  respondido_at        DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  lote         LoteNetsuite        @relation(fields: [lote_id], references: [id], onDelete: Cascade)
+  periodo      PeriodoConciliacion @relation(fields: [periodo_id], references: [id])
+  operador_red ConfiguracionOR     @relation(fields: [or_id], references: [id])
+
+  @@unique([lote_id, periodo_id, or_id], name: "uq_envio_lote_periodo_or")
+  @@index([periodo_id, or_id, createdAt])
+  @@index([estado])
+  @@map("envios_netsuite_cargo_str")
 }
