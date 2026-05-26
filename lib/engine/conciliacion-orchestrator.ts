@@ -37,13 +37,14 @@ export interface DetalleFrontera {
 export interface ResumenConciliacion {
   periodoId:              string
   periodoStr:             string         // "AAAA-MM"
-  totalFronteras:         number
+  totalFronteras:         number         // Facturacion + huerfanas de XM/SDL
   porCaso:                Record<CasoConciliacion, number>
+  sinDiferencia:          number         // caso A1
   provisiones:            { cantidad: number; valor_total: number }
   contingencias:          { cantidad: number; energia_total: number; valor_estimado_total: number }
   disputas:               { cantidad: number; valor_total: number }
   alertasManual:          number
-  incompletas:            number
+  incompletas:            number         // caso INCOMPLETA (incluye huerfanas de XM/SDL)
   fronterasNoEnFacturacion: { xm: number; sdl: number }
   // Detalle de fronteras que requieren atencion
   detalleIncompletas:    DetalleFrontera[]
@@ -266,13 +267,90 @@ export async function ejecutarConciliacion(
     }
   }
 
+  // 4b. Procesar huerfanas (XM/SDL sin match en Facturacion) como INCOMPLETA.
+  // Asi quedan visibles en el resumen y en la pestaña de Incompletas, en vez de
+  // descartarse silenciosamente.
+  // Cuando hay orId filter, las huerfanas XM se ignoran (no podemos saber a que
+  // OR pertenecen porque XM no trae or_id). Las huerfanas SDL si se incluyen
+  // porque ya vienen filtradas por or_id en el query.
+  type Huerfana = {
+    codigo:  string
+    xmRec?:  typeof xm[number]
+    sdlRec?: typeof sdl[number]
+    or_id?:  string | null
+  }
+  const huerfanasByKey = new Map<string, Huerfana>()
+
+  for (const s of sdl) {
+    const k = normKey(s.codigo_frontera)
+    if (facFronteras.has(k)) continue
+    const existing = huerfanasByKey.get(k)
+    if (existing) {
+      existing.sdlRec = s
+      existing.or_id ??= s.or_id
+    } else {
+      huerfanasByKey.set(k, { codigo: s.codigo_frontera, sdlRec: s, or_id: s.or_id })
+    }
+  }
+  if (!orId) {
+    // Solo procesar huerfanas XM si no estamos filtrando por OR.
+    for (const x of xm) {
+      const k = normKey(x.codigo_frontera)
+      if (facFronteras.has(k)) continue
+      const existing = huerfanasByKey.get(k)
+      if (existing) {
+        existing.xmRec = x
+      } else {
+        huerfanasByKey.set(k, { codigo: x.codigo_frontera, xmRec: x })
+      }
+    }
+  }
+
+  for (const h of huerfanasByKey.values()) {
+    const motivos: string[] = ["No existe en Facturación"]
+    if (!h.xmRec)  motivos.push("falta XM")
+    if (!h.sdlRec) motivos.push("falta SDL")
+    const motivo = motivos.join("; ")
+
+    incompletas++
+    porCaso.INCOMPLETA += 1
+    detalleIncompletas.push({
+      codigo_frontera: h.codigo,
+      caso:            "INCOMPLETA",
+      motivo,
+    })
+
+    resultadosToCreate.push({
+      periodo_id:             periodo.id,
+      codigo_frontera:        h.codigo,
+      nombre_usuario:         null,
+      operador_red:           null,
+      or_id:                  h.or_id ?? null,
+      e_fac:                  null,
+      e_xm:                   h.xmRec?.energia_xm_kwh   ?? null,
+      e_sdl:                  h.sdlRec?.energia_sdl_kwh ?? null,
+      delta_l1:               null,
+      delta_l2:               null,
+      caso:                   "INCOMPLETA",
+      resultado_l1:           "INCOMPLETA",
+      resultado_l2:           "INCOMPLETA",
+      impacto_financiero_l1:  null,
+      impacto_financiero_l2:  null,
+      requiere_alerta_manual: false,
+      observaciones:          motivo,
+    })
+  }
+
   // 5. Transaction: limpiar previos + insertar nuevos
   //
   // Borrado idempotente: filtramos por las fronteras que vamos a re-conciliar
   // (no por or_id) porque ResultadoConciliacion puede tener or_id=null cuando
   // la frontera no tuvo match en SDL — si filtraramos por or_id, esas filas
   // sobrevivirian al DELETE y luego romperian el @@unique al re-insertar.
-  const fronterasACincoliar = facturacion.map(f => f.codigo_frontera)
+  const fronterasACincoliar = [
+    ...facturacion.map(f => f.codigo_frontera),
+    ...Array.from(huerfanasByKey.values()).map(h => h.codigo),
+  ]
   const whereDerivados = {
     periodo_id:      periodo.id,
     codigo_frontera: { in: fronterasACincoliar },
@@ -376,8 +454,9 @@ export async function ejecutarConciliacion(
   return {
     periodoId:    periodo.id,
     periodoStr,
-    totalFronteras: facturacion.length,
+    totalFronteras: facturacion.length + huerfanasByKey.size,
     porCaso,
+    sinDiferencia: porCaso.A1,
     provisiones:   { cantidad: provisionesPorFrontera.size,   valor_total: valorProvisiones },
     contingencias: {
       cantidad:             contingenciasPorFrontera.size,

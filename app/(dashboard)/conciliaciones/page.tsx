@@ -15,6 +15,7 @@ interface ResumenConciliacion {
   periodoStr: string
   totalFronteras: number
   porCaso: Record<string, number>
+  sinDiferencia: number
   provisiones:   { cantidad: number; valor_total: number }
   contingencias: { cantidad: number; energia_total: number }
   disputas:      { cantidad: number; valor_total: number }
@@ -192,46 +193,21 @@ export default function ConciliacionesPage() {
               Resumen — {resumen.periodoStr}
             </h2>
             <p style={{ fontSize: "0.85rem", color: "#6b7280", margin: 0 }}>
-              {resumen.totalFronteras} fronteras conciliadas.
-              {resumen.alertasManual > 0 && ` ${resumen.alertasManual} con alerta manual.`}
-              {resumen.incompletas > 0 && ` ${resumen.incompletas} incompletas.`}
+              {resumen.totalFronteras} fronteras procesadas.
             </p>
           </div>
 
           {/* KPI cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-            <KpiCard label="Provisiones"   main={resumen.provisiones.cantidad}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12 }}>
+            <KpiCard label="Sin diferencia"     main={resumen.sinDiferencia} color="#10b981" />
+            <KpiCard label="Provisiones"        main={resumen.provisiones.cantidad}
               sub={cop(resumen.provisiones.valor_total)} color="#3b82f6" />
-            <KpiCard label="Pérdidas" main={resumen.contingencias.cantidad}
+            <KpiCard label="Pérdidas"           main={resumen.contingencias.cantidad}
               sub={`${resumen.contingencias.energia_total.toLocaleString("es-CO")} kWh`} color="#f59e0b" />
-            <KpiCard label="Disputas"      main={resumen.disputas.cantidad}
+            <KpiCard label="Disputas"           main={resumen.disputas.cantidad}
               sub={cop(resumen.disputas.valor_total)} color="#dc2626" />
-            <KpiCard label="Alertas manuales" main={resumen.alertasManual} color="#9333ea" />
-          </div>
-
-          {/* Distribución por caso */}
-          <div>
-            <h3 style={{ fontSize: "0.9rem", fontWeight: 600, color: "#374151", margin: "0 0 8px" }}>
-              Distribución por caso
-            </h3>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
-              {Object.entries(resumen.porCaso)
-                .filter(([, n]) => n > 0)
-                .sort(([a], [b]) => a.localeCompare(b))
-                .map(([caso, n]) => (
-                  <div key={caso} style={{
-                    border: "1px solid #e5e7eb", borderRadius: 8, padding: "8px 12px",
-                    background: "#fafafa",
-                  }}>
-                    <div style={{ fontSize: "0.7rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      {caso}
-                    </div>
-                    <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "#111827" }}>
-                      {n.toLocaleString("es-CO")}
-                    </div>
-                  </div>
-                ))}
-            </div>
+            <KpiCard label="Alertas manuales"   main={resumen.alertasManual} color="#9333ea" />
+            <KpiCard label="Incompletas / Error" main={resumen.incompletas} color="#6b7280" />
           </div>
 
           {/* Listas de detalle: incompletas y alertas manuales */}
@@ -250,19 +226,6 @@ export default function ConciliacionesPage() {
             />
           )}
 
-          {/* Fronteras huérfanas */}
-          {(resumen.fronterasNoEnFacturacion.xm > 0 || resumen.fronterasNoEnFacturacion.sdl > 0) && (
-            <div style={{
-              padding: "10px 14px", background: "#fffbeb",
-              border: "1px solid #fde68a", borderRadius: 8,
-              fontSize: "0.85rem", color: "#92400e",
-            }}>
-              ⚠ Hay fronteras en otras fuentes que no están en Facturación:
-              {resumen.fronterasNoEnFacturacion.xm  > 0 && ` ${resumen.fronterasNoEnFacturacion.xm} en XM,`}
-              {resumen.fronterasNoEnFacturacion.sdl > 0 && ` ${resumen.fronterasNoEnFacturacion.sdl} en SDL.`}
-              {" "}Estas fronteras NO se concilian (Facturación es el universo maestro).
-            </div>
-          )}
         </div>
       )}
     </div>
