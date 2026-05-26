@@ -137,8 +137,6 @@ export default function InicioPage() {
             <KPI label="DISPUTAS L2" main={d?.disputas ?? 0} color="#3b82f6"
               sub={cop(d?.valorDisputas ?? 0)}
               href={periodoId ? `/gestiones?tab=disputas&periodoId=${periodoId}` : undefined} />
-            <KPI label="ALERTAS MANUALES" main={d?.alertasManuales ?? 0} color="#9333ea"
-              href={periodoId ? `/gestiones?tab=alertas-manuales&periodoId=${periodoId}` : undefined} />
             <KPI label="INCOMPLETAS / ERRORES"
               main={`${d?.incompletas ?? 0} / ${d?.errores ?? 0}`} color="#ef4444"
               href={periodoId ? `/gestiones?tab=incompletas&periodoId=${periodoId}` : undefined} />
