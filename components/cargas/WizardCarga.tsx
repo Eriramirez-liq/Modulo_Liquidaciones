@@ -317,7 +317,12 @@ export function WizardCarga() {
         }),
       })
       const data = await res.json()
-      if (!res.ok) { setError(data.error ?? "Error al confirmar."); return }
+      if (!res.ok) {
+        const base = data.error ?? "Error al confirmar."
+        const detalle = data.detalle ? ` — ${String(data.detalle).slice(0, 300)}` : ""
+        setError(`${base}${detalle}`)
+        return
+      }
       router.push("/cargas")
     } catch {
       setError("Error de red al confirmar la carga.")
