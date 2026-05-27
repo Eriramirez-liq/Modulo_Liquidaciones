@@ -162,6 +162,18 @@ export async function POST(request: NextRequest) {
               energia_sdl_kwh: f.energia_sdl_kwh,
               valor_sdl_cop: f.valor_sdl_cop,
               tarifa_sdl: f.tarifa_sdl,
+              // Campos que el motor de conciliacion usa para comparar los 6
+              // indicadores con Facturacion. Sin esto, el motor siempre ve
+              // null en sdl y reporta 'sin diff' en factor_m/reactivas/
+              // nivel_tension/propiedad/etc.
+              nivel_tension:            f.nivel_tension            ?? null,
+              propiedad_activos:        f.propiedad_activos        ?? null,
+              energia_reactiva_ind_pen: f.energia_reactiva_ind_pen ?? null,
+              energia_reactiva_cap_pen: f.energia_reactiva_cap_pen ?? null,
+              valor_reactiva_cop:       f.valor_reactiva_cop       ?? null,
+              tarifa_reactiva:          f.tarifa_reactiva          ?? null,
+              factor_m:                 f.factor_m                 ?? null,
+              es_duplicado:             f.es_duplicado             ?? false,
             })),
           })
           break
