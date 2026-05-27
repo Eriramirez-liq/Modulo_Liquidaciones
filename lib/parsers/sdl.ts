@@ -148,7 +148,39 @@ function readRows(buffer: Buffer, mapeo: MapeoSDL): Row[] {
   // escanea las primeras 15 filas y elige la que mejor coincida.
   const finalSkip = detectHeaderRow(raw, skip)
 
-  const headers = (raw[finalSkip] ?? []).map(h => String(h ?? "").trim())
+  const rawHeaders = (raw[finalSkip] ?? []).map(h => String(h ?? "").trim())
+
+  // Algunos archivos (EEP Pereira/Cartago) tienen DOS columnas con el mismo
+  // header (ej. "Tarifa Reactiva" debajo de "Reactiva Capacitiva" y debajo de
+  // "Reactiva Inductiva"). Sin prefijo de grupo, ambas se mapean al mismo
+  // key del Row y la segunda sobreescribe a la primera.
+  // Fix: si hay duplicados, leer la fila anterior (que en archivos con merged
+  // cells suele tener el header de grupo) y usarla como prefijo.
+  const countByNorm = new Map<string, number>()
+  for (const h of rawHeaders) {
+    const n = norm(h)
+    if (n) countByNorm.set(n, (countByNorm.get(n) ?? 0) + 1)
+  }
+  const prevRow = finalSkip > 0
+    ? (raw[finalSkip - 1] ?? []).map(h => String(h ?? "").trim())
+    : []
+  const headers = rawHeaders.map((h, j) => {
+    const n = norm(h)
+    if (!n || (countByNorm.get(n) ?? 0) <= 1) return h
+    // Buscar el header de grupo en la fila anterior. Cuando hay merged cells
+    // en xlsx, el valor solo aparece en la primera columna del rango; las
+    // demas vienen vacias. Por eso miramos hacia la izquierda si la celda
+    // directa esta vacia.
+    let group: string = prevRow[j] ?? ""
+    if (!group) {
+      for (let k = j - 1; k >= 0; k--) {
+        const prev = prevRow[k]
+        if (prev) { group = prev; break }
+      }
+    }
+    return group ? `${group} ${h}` : h
+  })
+
   const rows: Row[] = []
   for (let i = finalSkip + 1; i < raw.length; i++) {
     const vals = raw[i] ?? []
