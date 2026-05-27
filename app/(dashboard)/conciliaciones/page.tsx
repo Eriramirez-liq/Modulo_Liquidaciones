@@ -95,7 +95,7 @@ export default function ConciliacionesPage() {
   useEffect(() => {
     Promise.all([
       fetch("/api/periodos").then(r => r.json()),
-      fetch("/api/operadores").then(r => r.json()),
+      fetch("/api/operadores?tipo=sdl").then(r => r.json()),
     ]).then(([ps, ors]) => {
       setPeriodos(ps)
       setOperadores(ors)

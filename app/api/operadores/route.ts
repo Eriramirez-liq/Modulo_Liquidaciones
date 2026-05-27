@@ -11,6 +11,16 @@ const STR_OPERADORES = [
   "ENERGUAVIARE", "EPM", "ESSA", "PUTUMAYO",
 ]
 
+// Whitelist de operadores que aplican al módulo SDL. Son los 21 ORs que
+// requieren mapeo de estructura para cargar el archivo de preliquidación.
+// Lista provista por el negocio (Erika, 2026-05-27).
+const SDL_OPERADORES = [
+  "AFINIA", "AIRE", "CEDENAR", "CETSA", "CELSIA_VALLE", "CELSIA_TOLIMA",
+  "CENS", "CEO", "CHEC", "EBSA", "EDEQ", "EEP_PEREIRA", "ELECTROHUILA",
+  "EMCALI", "EMSA", "ENEL", "ENERCA", "EPM", "ESSA", "EEP_CARTAGO",
+  "RUITOQUE",
+]
+
 export async function GET(request: NextRequest) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
@@ -19,10 +29,15 @@ export async function GET(request: NextRequest) {
   const includeMapeo = url.searchParams.get("includeMapeo") === "true"
   const tipo         = url.searchParams.get("tipo")
 
+  const whitelist =
+    tipo === "str" ? STR_OPERADORES :
+    tipo === "sdl" ? SDL_OPERADORES :
+    null
+
   const operadores = await db.configuracionOR.findMany({
     where: {
       activo: true,
-      ...(tipo === "str" ? { codigo: { in: STR_OPERADORES } } : {}),
+      ...(whitelist ? { codigo: { in: whitelist } } : {}),
     },
     select: {
       id: true, codigo: true, nombre: true, nit: true, activo: true,

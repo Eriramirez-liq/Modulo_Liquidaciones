@@ -89,12 +89,16 @@ export function WizardCarga() {
   const [justificacion, setJustificacion] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Lista de operadores: para SDL filtramos a los 21 que tienen mapeo de
+  // estructura (el resto no aplica al modulo). Para BALANCE/COT y demas
+  // fuentes que requieren OR seguimos mostrando todos los activos.
   useEffect(() => {
-    fetch("/api/operadores")
+    const url = tipoFuente === "SDL" ? "/api/operadores?tipo=sdl" : "/api/operadores"
+    fetch(url)
       .then((r) => r.json())
       .then((data) => setOperadores(Array.isArray(data) ? data : data.operadores ?? []))
       .catch(() => {})
-  }, [])
+  }, [tipoFuente])
 
   // Si el usuario cambia el año y el mes seleccionado quedó en el futuro,
   // lo clamp al mes actual para que la selección sea siempre válida.
