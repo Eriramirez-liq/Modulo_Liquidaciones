@@ -311,6 +311,7 @@ model RegistroSDL {
   energia_reactiva_ind_pen Decimal? @db.Decimal(18, 6)
   energia_reactiva_cap_pen Decimal? @db.Decimal(18, 6)
   valor_reactiva_cop       Decimal? @db.Decimal(18, 2)
+  tarifa_reactiva          Decimal? @db.Decimal(18, 6)
   factor_m                 Decimal? @db.Decimal(10, 4)
   es_duplicado             Boolean  @default(false)
   createdAt                DateTime @default(now())
