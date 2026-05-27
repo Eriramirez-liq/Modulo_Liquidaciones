@@ -1185,9 +1185,16 @@ export async function parsearSDL(
   const colPeriodo  = cols["periodo"]
     ? resolveCol(headers, cols["periodo"])
     : null
+  // Si hay codigo_frontera_split, NO inferir nombre_frontera por header.
+  // El nombre se extrae del valor de la columna codigo_frontera (parte despues
+  // del separador). Sin esta guarda, "NOMBRE FRONTERA" matchea por substring
+  // inverso contra "FRONTERA" y el parser termina poniendo el valor completo
+  // (codigo+nombre sin split) como nombre_frontera.
   const colNombre   = cols["nombre_frontera"]
     ? resolveCol(headers, cols["nombre_frontera"])
-    : resolveColMulti(headers, ["NOMBRE_FRONTERA", "NOMBRE FRONTERA", "NOMBRE"])
+    : (m.codigo_frontera_split
+        ? null
+        : resolveColMulti(headers, ["NOMBRE_FRONTERA", "NOMBRE FRONTERA", "NOMBRE"]))
   const colTension  = cols["nivel_tension"]
     ? resolveCol(headers, cols["nivel_tension"])
     : resolveColMulti(headers, ["NIVEL TENSION", "NIVEL DE TENSION", "NIVEL TENSIÓN", "NT", "NT_PRO"])
