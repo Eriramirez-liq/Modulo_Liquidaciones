@@ -522,23 +522,11 @@ function preCens(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
     cols["valor_reactiva_cop"] = "__VALOR_REACTIVA__"
   }
 
-  // Tarifa reactiva = Valor R_Inductiva / R_Inductiva / Factor M
-  const colKwhInd  = resolveCol(headers, "R_Inductiva")
-  const colFactorM = resolveCol(headers, "Factor M")
-  if (colValInd && colKwhInd && colFactorM) {
-    rows = rows.map(r => {
-      const v = toNum(r[colValInd])
-      const k = toNum(r[colKwhInd])
-      const f = toNum(r[colFactorM])
-      let tar: number | null = null
-      if (v != null && k && k !== 0) {
-        tar = v / k
-        if (f && f !== 0) tar = tar / f
-      }
-      return { ...r, __TARIFA_REACTIVA__: tar != null ? String(tar) : "" }
-    })
-    cols["tarifa_reactiva"] = "__TARIFA_REACTIVA__"
-  }
+  // Tarifa reactiva: se toma directamente de la columna "Tarifa Reactiva"
+  // del archivo (configurado en el mapeo). Antes la calculabamos como
+  // Valor R_Inductiva / R_Inductiva / Factor M, pero eso fallaba cuando
+  // reactiva = 0 (division por cero -> null) en fronteras donde el archivo
+  // si traia el valor explicito.
 
   return { rows, mapeo: m }
 }
