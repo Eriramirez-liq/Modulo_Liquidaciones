@@ -1232,8 +1232,16 @@ export async function parsearSDL(
 
     let codFrontera = (row[colFrontera!] ?? "").trim()
     if (!codFrontera) continue
+    // Si hay separador, el codigo es la parte ANTES del separador y
+    // (cuando no hay columna nombre_frontera mapeada) el nombre es la
+    // parte DESPUES. Ej: "Frt59357-ALTIPAL" -> codigo=Frt59357, nombre=ALTIPAL.
+    let nombreFromSplit: string | null = null
     if (splitChar && codFrontera.includes(splitChar)) {
-      codFrontera = codFrontera.split(splitChar)[0]!.trim()
+      const parts = codFrontera.split(splitChar)
+      codFrontera = parts[0]!.trim()
+      if (parts.length > 1) {
+        nombreFromSplit = parts.slice(1).join(splitChar).trim() || null
+      }
     }
 
     const esDuplicado = fronterasVistas.has(codFrontera)
@@ -1267,7 +1275,7 @@ export async function parsearSDL(
     // row appears first.
     filas.push({
       codigo_frontera:          codFrontera,
-      nombre_frontera:          colNombre  ? (row[colNombre]?.trim()  || null) : null,
+      nombre_frontera:          colNombre  ? (row[colNombre]?.trim()  || null) : nombreFromSplit,
       periodo_sdl:              periodoSDL,
       energia_sdl_kwh:          energia,
       valor_sdl_cop:            valor,
