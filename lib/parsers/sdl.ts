@@ -1245,11 +1245,19 @@ export async function parsearSDL(
     }
     fronterasVistas.add(codFrontera)
 
-    const energia = toNum(row[colEnergia!])
+    const energiaRaw = toNum(row[colEnergia!])
     // null valor_cop → default to 0 (row is still valid; preserves row count)
-    const valor   = colValor ? (toNum(row[colValor]) ?? 0) : 0
+    const valorRaw   = colValor  ? toNum(row[colValor])  : null
+    const tarifaRaw  = colTarSDL ? toNum(row[colTarSDL]) : null
 
-    if (energia == null) continue // blank/summary row — skip silently
+    // Skipear solo si la fila parece summary/blank: sin energia, sin valor
+    // y sin tarifa. Si tiene al menos uno de esos valores la fila se carga
+    // (ej. EEP trae tarifa para fronteras sin consumo).
+    if (energiaRaw == null && valorRaw == null && tarifaRaw == null) continue
+
+    const energia = energiaRaw ?? 0
+    const valor   = valorRaw   ?? 0
+
     if (energia < 0) {
       erroresCriticos.push(`Fila ${fila}: energía negativa`); continue
     }
@@ -1257,8 +1265,8 @@ export async function parsearSDL(
       erroresCriticos.push(`Fila ${fila}: valor_cop negativo`); continue
     }
 
-    const tarifaSDL = colTarSDL
-      ? (toNum(row[colTarSDL]) ?? 0)
+    const tarifaSDL = tarifaRaw != null
+      ? tarifaRaw
       : energia > 0 ? valor / energia : 0
 
     const periodoSDL = colPeriodo
