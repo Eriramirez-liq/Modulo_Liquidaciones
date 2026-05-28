@@ -1177,9 +1177,10 @@ type EmsaAcumulado = {
   nivel_tension:            string | null  // de Inductiva (Capacitiva fallback)
   energia_reactiva_ind_pen: number | null  // de Inductiva
   energia_reactiva_cap_pen: number | null  // de Capacitiva
-  factor_m:                 number | null  // de Inductiva
+  factor_m:                 number | null  // de Inductiva (default 1 si no viene)
   cobro_ind:                number          // de Inductiva
   cobro_cap:                number          // de Capacitiva
+  tarifa_reactiva:          number | null  // de Inductiva, columna COSTO_DISTRIBUCION
 }
 
 function procesarEmsaMulti(
@@ -1248,6 +1249,7 @@ function procesarEmsaMulti(
       const colInduc  = resolveCol(headers, "TotalInduc")
       const colM      = resolveCol(headers, "M")
       const colCobro  = resolveCol(headers, "Cobro")
+      const colTar    = resolveCol(headers, "COSTO_DISTRIBUCION") ?? resolveCol(headers, "COSTO DISTRIBUCION")
       for (const r of rows) {
         const cod = (r[colCodigo] ?? "").trim()
         if (!cod) continue
@@ -1257,6 +1259,7 @@ function procesarEmsaMulti(
         if (colInduc) ent.energia_reactiva_ind_pen = toNum(r[colInduc])
         if (colM)     ent.factor_m                 = toNum(r[colM])
         if (colCobro) ent.cobro_ind                = toNum(r[colCobro]) ?? 0
+        if (colTar)   ent.tarifa_reactiva          = toNum(r[colTar])
         acumulado.set(cod, ent)
       }
     } else if (tipo === "CAPACITIVA") {
@@ -1303,8 +1306,9 @@ function procesarEmsaMulti(
       energia_reactiva_ind_pen: ent.energia_reactiva_ind_pen,
       energia_reactiva_cap_pen: ent.energia_reactiva_cap_pen,
       valor_reactiva_cop:       ent.cobro_ind + ent.cobro_cap,
-      tarifa_reactiva:          null,
-      factor_m:                 ent.factor_m,
+      tarifa_reactiva:          ent.tarifa_reactiva,
+      // Default factor_m = 1 cuando el archivo Inductiva no lo trae.
+      factor_m:                 ent.factor_m ?? 1,
       es_duplicado:             false,
     })
   }
@@ -1321,6 +1325,7 @@ function blankEmsa(): EmsaAcumulado {
     factor_m: null,
     cobro_ind: 0,
     cobro_cap: 0,
+    tarifa_reactiva: null,
   }
 }
 
