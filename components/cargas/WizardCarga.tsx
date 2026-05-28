@@ -87,6 +87,10 @@ export function WizardCarga() {
   const [existeCargaPrevia, setExisteCargaPrevia] = useState(false)
   const [cargaPreviaId, setCargaPreviaId] = useState<string | undefined>()
   const [justificacion, setJustificacion] = useState("")
+  // Accion frente a una carga previa: 'reemplazar' (default) o 'agregar'
+  // (solo disponible para EEP_PEREIRA SDL — fronteras complementarias por NT).
+  const [accionCargaPrevia, setAccionCargaPrevia] =
+    useState<"reemplazar" | "agregar">("reemplazar")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Lista de operadores: para SDL filtramos a los 21 que tienen mapeo de
@@ -107,6 +111,13 @@ export function WizardCarga() {
       setMes(CURRENT_MONTH)
     }
   }, [anio, mes])
+
+  // Resetear accion frente a carga previa cuando cambia OR/fuente, para que
+  // no quede 'agregar' seleccionado si despues cambian a un OR que no lo
+  // permite (solo EEP_PEREIRA SDL puede agregar).
+  useEffect(() => {
+    setAccionCargaPrevia("reemplazar")
+  }, [orId, tipoFuente])
 
   const fuenteActual = FUENTES.find((f) => f.tipo === tipoFuente)
   const requiereOR  = fuenteActual?.requiresOR ?? false
@@ -300,7 +311,9 @@ export function WizardCarga() {
   }
 
   async function handleConfirmar() {
-    if (existeCargaPrevia && !justificacion.trim()) {
+    // Justificacion solo requerida cuando se reemplaza (la opcion 'agregar'
+    // no la pide porque las dos cargas coexisten).
+    if (existeCargaPrevia && accionCargaPrevia === "reemplazar" && !justificacion.trim()) {
       setError("Ingresá una justificación para reemplazar la carga existente.")
       return
     }
@@ -316,8 +329,9 @@ export function WizardCarga() {
         body: JSON.stringify({
           meta: { anio, mes, tipoFuente, orId: orId || undefined, nombreArchivo },
           filasCompletas,
-          justificacion: justificacion || undefined,
+          justificacion: accionCargaPrevia === "reemplazar" ? (justificacion || undefined) : undefined,
           cargaPreviaId,
+          accionCargaPrevia: existeCargaPrevia ? accionCargaPrevia : undefined,
         }),
       })
       const data = await res.json()
@@ -721,24 +735,73 @@ export function WizardCarga() {
             )}
 
             {/* Carga previa warning */}
-            {existeCargaPrevia && (
-              <div style={{ padding: "12px 14px", borderRadius: "7px", border: "1px solid #fde68a", backgroundColor: "#fffbeb" }}>
-                <p style={{ fontSize: "0.85rem", fontWeight: 600, color: "#92400e", marginBottom: "8px" }}>
-                  Ya existe una carga para este período y fuente. Ingresá una justificación para reemplazarla.
-                </p>
-                <textarea
-                  value={justificacion}
-                  onChange={(e) => setJustificacion(e.target.value)}
-                  placeholder="Motivo del reemplazo…"
-                  rows={2}
-                  style={{
-                    width: "100%", padding: "8px 10px", borderRadius: "7px",
-                    border: "1px solid #d1d5db", fontSize: "0.85rem",
-                    resize: "vertical", boxSizing: "border-box",
-                  }}
-                />
-              </div>
-            )}
+            {existeCargaPrevia && (() => {
+              // EEP Pereira (SDL) puede AGREGAR cargas complementarias sin
+              // reemplazar (envia fronteras de distintos NT en meses
+              // distintos). Resto de ORs solo permiten reemplazar.
+              const orCodigo = operadores.find((o) => o.id === orId)?.codigo
+              const permiteAgregar = tipoFuente === "SDL" && orCodigo === "EEP_PEREIRA"
+              return (
+                <div style={{ padding: "12px 14px", borderRadius: "7px", border: "1px solid #fde68a", backgroundColor: "#fffbeb" }}>
+                  <p style={{ fontSize: "0.85rem", fontWeight: 600, color: "#92400e", marginBottom: "10px" }}>
+                    Ya existe una carga SDL para este período y operador.
+                    {permiteAgregar ? " Elegí qué hacer:" : " Ingresá una justificación para reemplazarla."}
+                  </p>
+
+                  {permiteAgregar && (
+                    <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => setAccionCargaPrevia("reemplazar")}
+                        style={{
+                          padding: "8px 14px", borderRadius: 7, fontSize: "0.82rem",
+                          fontWeight: 600, cursor: "pointer",
+                          background: accionCargaPrevia === "reemplazar" ? "#92400e" : "#fff",
+                          color:      accionCargaPrevia === "reemplazar" ? "#fff"    : "#92400e",
+                          border: "1px solid #92400e",
+                        }}
+                      >
+                        Reemplazar existente
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAccionCargaPrevia("agregar")}
+                        style={{
+                          padding: "8px 14px", borderRadius: 7, fontSize: "0.82rem",
+                          fontWeight: 600, cursor: "pointer",
+                          background: accionCargaPrevia === "agregar" ? "#92400e" : "#fff",
+                          color:      accionCargaPrevia === "agregar" ? "#fff"    : "#92400e",
+                          border: "1px solid #92400e",
+                        }}
+                      >
+                        Agregar archivo
+                      </button>
+                    </div>
+                  )}
+
+                  {accionCargaPrevia === "reemplazar" && (
+                    <textarea
+                      value={justificacion}
+                      onChange={(e) => setJustificacion(e.target.value)}
+                      placeholder="Motivo del reemplazo…"
+                      rows={2}
+                      style={{
+                        width: "100%", padding: "8px 10px", borderRadius: "7px",
+                        border: "1px solid #d1d5db", fontSize: "0.85rem",
+                        resize: "vertical", boxSizing: "border-box",
+                      }}
+                    />
+                  )}
+
+                  {accionCargaPrevia === "agregar" && (
+                    <p style={{ fontSize: "0.78rem", color: "#78350f", margin: 0 }}>
+                      Ambos archivos quedarán cargados. Útil cuando EEP Pereira
+                      envía fronteras complementarias por nivel de tensión.
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
 
             {/* Preview table */}
             {preview.length > 0 && (
