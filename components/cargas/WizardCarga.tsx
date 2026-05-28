@@ -59,7 +59,15 @@ const FUENTES: FuenteCard[] = [
   },
 ]
 
-interface Operador { id: string; codigo: string; nombre: string }
+interface Operador {
+  id: string
+  codigo: string
+  nombre: string
+  // Solo presente cuando se solicita con ?includeMapeo=true. Si el mapeo tiene
+  // multi_archivos:true, el wizard debe permitir subir varios archivos a la vez
+  // (ej. EMSA SDL: 3 archivos por periodo).
+  mapeo_sdl_json?: { multi_archivos?: boolean } | null
+}
 
 const now = new Date()
 const CURRENT_YEAR  = now.getFullYear()
@@ -96,8 +104,12 @@ export function WizardCarga() {
   // Lista de operadores: para SDL filtramos a los 21 que tienen mapeo de
   // estructura (el resto no aplica al modulo). Para BALANCE/COT y demas
   // fuentes que requieren OR seguimos mostrando todos los activos.
+  // Para SDL incluimos el mapeo en la respuesta para poder detectar si el OR
+  // requiere multi-archivo (ej. EMSA).
   useEffect(() => {
-    const url = tipoFuente === "SDL" ? "/api/operadores?tipo=sdl" : "/api/operadores"
+    const url = tipoFuente === "SDL"
+      ? "/api/operadores?tipo=sdl&includeMapeo=true"
+      : "/api/operadores"
     fetch(url)
       .then((r) => r.json())
       .then((data) => setOperadores(Array.isArray(data) ? data : data.operadores ?? []))
@@ -121,7 +133,13 @@ export function WizardCarga() {
 
   const fuenteActual = FUENTES.find((f) => f.tipo === tipoFuente)
   const requiereOR  = fuenteActual?.requiresOR ?? false
-  const isMultiFile = fuenteActual?.multiFile ?? false
+  // Multi-archivo: por FUENTES (INSUMOS_STR siempre) o por mapeo del OR cuando
+  // es SDL (ej. EMSA tiene multi_archivos:true en su mapeo_sdl_json y debe
+  // permitir subir 3 archivos juntos).
+  const operadorActual    = operadores.find((o) => o.id === orId)
+  const mapeoMultiSdl     = tipoFuente === "SDL"
+    && operadorActual?.mapeo_sdl_json?.multi_archivos === true
+  const isMultiFile = (fuenteActual?.multiFile ?? false) || mapeoMultiSdl
   const paso1Ok     = tipoFuente !== null && (!requiereOR || orId !== "")
   const hasFiles    = isMultiFile ? files.length > 0 : file !== null
 
