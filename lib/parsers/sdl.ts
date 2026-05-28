@@ -1329,6 +1329,180 @@ function blankEmsa(): EmsaAcumulado {
   }
 }
 
+// ─── ENEL multi-archivo ──────────────────────────────────────────────────────
+//
+// ENEL envia 2 archivos .xlsx por periodo que se combinan por CODIGO SIC:
+//   - Preliquidacion consumos:
+//       CODIGO SIC, NOMBRE CUENTA CONTRATO, CONSUMO ACTIVA, VALOR SDL ACT,
+//       VALOR SDL REAC, NIVEL TENSION
+//   - Informe energia reactiva:
+//       CODIGO SIC, FACTOR M, EXCESO_REACTIVA_INDUCTIVA, EXCESO_REACTIVA_CAPACITIVA
+//
+// tarifa_sdl se calcula como VALOR SDL ACT / CONSUMO ACTIVA (igual logica
+// que el preprocessor preEnel original).
+
+type EnelTipo = "PRELIQ" | "REACTIVA" | "DESCONOCIDO"
+
+function detectarTipoArchivoEnel(rows: Row[]): EnelTipo {
+  if (rows.length === 0) return "DESCONOCIDO"
+  const headers = Object.keys(rows[0] ?? {})
+  const normH = headers.map(h => norm(h))
+  if (normH.some(h => h.includes("EXCESOREACTIVA") || h.includes("EXCESO REACTIVA")))
+    return "REACTIVA"
+  if (normH.some(h => h.includes("FACTOR M")))
+    return "REACTIVA"
+  if (normH.some(h => h.includes("CONSUMO ACTIVA") || h.includes("VALOR SDL ACT")))
+    return "PRELIQ"
+  return "DESCONOCIDO"
+}
+
+type EnelAcumulado = {
+  energia_kwh:              number | null   // de Preliq (CONSUMO ACTIVA)
+  valor_sdl_cop:            number | null   // de Preliq (VALOR SDL ACT)
+  valor_reactiva_cop:       number | null   // de Preliq (VALOR SDL REAC)
+  nombre_frontera:          string | null   // de Preliq (NOMBRE CUENTA CONTRATO)
+  nivel_tension:            string | null   // de Preliq (NIVEL TENSION)
+  energia_reactiva_ind_pen: number | null   // de Reactiva (EXCESO_REACTIVA_INDUCTIVA)
+  energia_reactiva_cap_pen: number | null   // de Reactiva (EXCESO_REACTIVA_CAPACITIVA)
+  factor_m:                 number | null   // de Reactiva (FACTOR M)
+}
+
+function blankEnel(): EnelAcumulado {
+  return {
+    energia_kwh: null,
+    valor_sdl_cop: null,
+    valor_reactiva_cop: null,
+    nombre_frontera: null,
+    nivel_tension: null,
+    energia_reactiva_ind_pen: null,
+    energia_reactiva_cap_pen: null,
+    factor_m: null,
+  }
+}
+
+function procesarEnelMulti(
+  buffers: Buffer[],
+  anio: number,
+  mes: number,
+  alertas: string[],
+  erroresCriticos: string[],
+): FilaSDL[] {
+  const mapeoLectura: MapeoSDL = {
+    tipo_archivo: "xlsx",
+    hoja: 0,
+    fila_inicio: 2,
+    columnas: {},
+  }
+
+  const acumulado = new Map<string, EnelAcumulado>()
+  const tiposVistos = new Set<EnelTipo>()
+
+  for (let i = 0; i < buffers.length; i++) {
+    let rows: Row[] = []
+    try {
+      rows = readRows(buffers[i]!, mapeoLectura)
+    } catch (e) {
+      erroresCriticos.push(`Archivo ${i + 1}: no se pudo leer (${e})`)
+      continue
+    }
+    if (rows.length === 0) {
+      alertas.push(`Archivo ${i + 1}: sin datos, se ignora.`)
+      continue
+    }
+    const tipo = detectarTipoArchivoEnel(rows)
+    if (tipo === "DESCONOCIDO") {
+      alertas.push(
+        `Archivo ${i + 1}: no se reconoce como Preliquidacion (CONSUMO ACTIVA) ` +
+        `ni Informe Reactiva (EXCESO_REACTIVA_INDUCTIVA / FACTOR M). Se ignora.`,
+      )
+      continue
+    }
+    if (tiposVistos.has(tipo)) {
+      alertas.push(`Archivo ${i + 1}: tipo ${tipo} ya cargado, sobrescribe al anterior.`)
+    }
+    tiposVistos.add(tipo)
+
+    const headers = Object.keys(rows[0] ?? {})
+    // CODIGO SIC: buscar header que contenga "SIC"
+    let colSic: string | null = null
+    for (const h of headers) {
+      if (norm(h).includes("SIC")) { colSic = h; break }
+    }
+    if (!colSic) {
+      erroresCriticos.push(`Archivo ${i + 1} (${tipo}): falta columna CODIGO SIC.`)
+      continue
+    }
+
+    if (tipo === "PRELIQ") {
+      const colNom    = resolveCol(headers, "NOMBRE CUENTA CONTRATO")
+                     ?? resolveCol(headers, "NOMBRE")
+      const colKwh    = resolveCol(headers, "CONSUMO ACTIVA")
+      const colValAct = resolveCol(headers, "VALOR SDL ACT")
+      const colValRea = resolveCol(headers, "VALOR SDL REAC")
+      const colNT     = resolveCol(headers, "NIVEL TENSION")
+      for (const r of rows) {
+        const cod = (r[colSic] ?? "").trim()
+        if (!cod) continue
+        const ent = acumulado.get(cod) ?? blankEnel()
+        if (colNom)    ent.nombre_frontera     = (r[colNom]?.trim() || null)
+        if (colKwh)    ent.energia_kwh         = toNum(r[colKwh])
+        if (colValAct) ent.valor_sdl_cop       = toNum(r[colValAct])
+        if (colValRea) ent.valor_reactiva_cop  = toNum(r[colValRea])
+        if (colNT)     ent.nivel_tension       = (r[colNT]?.trim() || null)
+        acumulado.set(cod, ent)
+      }
+    } else if (tipo === "REACTIVA") {
+      const colFM   = resolveCol(headers, "FACTOR M")
+      const colInd  = resolveCol(headers, "EXCESO_REACTIVA_INDUCTIVA")
+                   ?? resolveCol(headers, "EXCESO REACTIVA INDUCTIVA")
+      const colCap  = resolveCol(headers, "EXCESO_REACTIVA_CAPACITIVA")
+                   ?? resolveCol(headers, "EXCESO REACTIVA CAPACITIVA")
+      for (const r of rows) {
+        const cod = (r[colSic] ?? "").trim()
+        if (!cod) continue
+        const ent = acumulado.get(cod) ?? blankEnel()
+        if (colFM)  ent.factor_m                 = toNum(r[colFM])
+        if (colInd) ent.energia_reactiva_ind_pen = toNum(r[colInd])
+        if (colCap) ent.energia_reactiva_cap_pen = toNum(r[colCap])
+        acumulado.set(cod, ent)
+      }
+    }
+  }
+
+  const periodoStr = `${anio}-${String(mes).padStart(2, "0")}`
+  const filas: FilaSDL[] = []
+  const fronterasVistas = new Set<string>()
+  for (const [cod, ent] of acumulado.entries()) {
+    if (fronterasVistas.has(cod)) continue
+    fronterasVistas.add(cod)
+    const energia = ent.energia_kwh ?? 0
+    if (energia < 0) {
+      erroresCriticos.push(`Frontera ${cod}: energia activa negativa.`)
+      continue
+    }
+    const valor = ent.valor_sdl_cop ?? 0
+    // tarifa_sdl = valor / energia (misma logica que preEnel original)
+    const tarifaSdl = energia > 0 ? valor / energia : 0
+    filas.push({
+      codigo_frontera:          cod,
+      nombre_frontera:          ent.nombre_frontera,
+      periodo_sdl:              periodoStr,
+      energia_sdl_kwh:          energia,
+      valor_sdl_cop:            valor,
+      tarifa_sdl:               tarifaSdl,
+      nivel_tension:            ent.nivel_tension,
+      propiedad_activos:        null,
+      energia_reactiva_ind_pen: ent.energia_reactiva_ind_pen,
+      energia_reactiva_cap_pen: ent.energia_reactiva_cap_pen,
+      valor_reactiva_cop:       ent.valor_reactiva_cop,
+      tarifa_reactiva:          null,
+      factor_m:                 ent.factor_m,
+      es_duplicado:             false,
+    })
+  }
+  return filas
+}
+
 // ─── Main parser ──────────────────────────────────────────────────────────────
 
 export async function parsearSDL(
@@ -1348,19 +1522,23 @@ export async function parsearSDL(
     ? (mapeoRaw as MapeoSDL)
     : MAPEO_DEFAULT
 
-  // EMSA (y futuros ORs con multi_archivos) traen varios buffers que se
+  // EMSA / ENEL (y futuros ORs con multi_archivos) traen varios buffers que se
   // combinan por codigo_frontera. Si recibimos un array, delegamos al
   // handler especifico y salimos.
   if (Array.isArray(bufferOrBuffers)) {
     const codigoOR = (orCodigo ?? orId ?? "").toUpperCase()
-    if (codigoOR !== "EMSA") {
-      erroresCriticos.push(
-        `Multi-archivo SDL solo soportado para EMSA. OR recibido: ${codigoOR}.`,
-      )
-      return { filas, alertas, erroresCriticos }
+    if (codigoOR === "EMSA") {
+      const fs = procesarEmsaMulti(bufferOrBuffers, anio, mes, alertas, erroresCriticos)
+      return { filas: fs, alertas, erroresCriticos }
     }
-    const fs = procesarEmsaMulti(bufferOrBuffers, anio, mes, alertas, erroresCriticos)
-    return { filas: fs, alertas, erroresCriticos }
+    if (codigoOR === "ENEL") {
+      const fs = procesarEnelMulti(bufferOrBuffers, anio, mes, alertas, erroresCriticos)
+      return { filas: fs, alertas, erroresCriticos }
+    }
+    erroresCriticos.push(
+      `Multi-archivo SDL solo soportado para EMSA y ENEL. OR recibido: ${codigoOR}.`,
+    )
+    return { filas, alertas, erroresCriticos }
   }
   const buffer: Buffer = bufferOrBuffers
 
