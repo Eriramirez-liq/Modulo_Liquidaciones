@@ -120,6 +120,16 @@ export const confirmarMetaSchema = z.object({
   nombreArchivo: z.string(),
 })
 
+/**
+ * Accion a tomar cuando ya existe una carga COMPLETADA para
+ * (periodo, tipoFuente, orId):
+ *   - "reemplazar" (default): borra los registros de la carga previa
+ *     y la marca como reemplazada en audit trail. Requiere justificacion.
+ *   - "agregar": solo permitido para EEP_PEREIRA SDL — la nueva carga
+ *     coexiste con la previa (fronteras complementarias por NT).
+ */
+export const accionCargaPreviaSchema = z.enum(["reemplazar", "agregar"])
+
 export const confirmarBodySchema = z.object({
   meta: confirmarMetaSchema,
   // unknown[] preservado: cada handler interno hace su propio cast a FilaXxx.
@@ -127,5 +137,6 @@ export const confirmarBodySchema = z.object({
   filasCompletas: z.array(z.unknown()).default([]),
   justificacion: z.string().optional(),
   cargaPreviaId: z.string().min(1).optional(),
+  accionCargaPrevia: accionCargaPreviaSchema.optional(),
 })
 export type ConfirmarBody = z.infer<typeof confirmarBodySchema>

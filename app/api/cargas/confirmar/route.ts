@@ -38,7 +38,13 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     )
   }
-  const { meta, filasCompletas, justificacion, cargaPreviaId } = parsed.data
+  const { meta, filasCompletas, justificacion, cargaPreviaId, accionCargaPrevia } = parsed.data
+  // Default: si hay carga previa pero no se especifico accion, asumimos
+  // "reemplazar" (preserva el comportamiento previo del wizard para otros ORs).
+  const accion: "reemplazar" | "agregar" | null =
+    cargaPreviaId
+      ? (accionCargaPrevia ?? "reemplazar")
+      : null
 
   // INSUMOS_STR puede confirmarse aunque filasCompletas esté vacío
   // (la lógica de análisis puede aún no estar implementada y querer registrar
@@ -58,11 +64,39 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (cargaPreviaId && !justificacion?.trim()) {
+  // Justificacion solo requerida cuando se reemplaza (agregar no la pide).
+  if (accion === "reemplazar" && !justificacion?.trim()) {
     return NextResponse.json(
       { error: "Se requiere justificación para reemplazar una carga existente" },
       { status: 400 }
     )
+  }
+
+  // "Agregar" solo permitido para EEP_PEREIRA SDL (envia archivos
+  // complementarios por NT en distintos meses).
+  if (accion === "agregar") {
+    if (meta.tipoFuente !== "SDL") {
+      return NextResponse.json(
+        { error: "La opción 'Agregar' solo aplica a cargas SDL." },
+        { status: 400 }
+      )
+    }
+    if (!meta.orId) {
+      return NextResponse.json(
+        { error: "La opción 'Agregar' requiere indicar el Operador de Red." },
+        { status: 400 }
+      )
+    }
+    const or = await db.configuracionOR.findUnique({
+      where: { id: meta.orId },
+      select: { codigo: true },
+    })
+    if (or?.codigo !== "EEP_PEREIRA") {
+      return NextResponse.json(
+        { error: "La opción 'Agregar' solo está disponible para EEP Pereira." },
+        { status: 400 }
+      )
+    }
   }
 
   const ip = request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined
@@ -80,7 +114,33 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      // Crear CargaFuente
+      // Si reemplazamos, borrar los registros derivados de la carga previa
+      // ANTES de crear la nueva. Asi la conciliacion no ve datos viejos
+      // mezclados con nuevos. Si "agregamos", no tocamos nada.
+      if (accion === "reemplazar" && cargaPreviaId) {
+        switch (meta.tipoFuente) {
+          case "FACTURACION":
+            await tx.registroFacturacion.deleteMany({ where: { carga_id: cargaPreviaId } })
+            break
+          case "XM":
+            await tx.registroXM.deleteMany({ where: { carga_id: cargaPreviaId } })
+            break
+          case "SDL":
+            await tx.registroSDL.deleteMany({ where: { carga_id: cargaPreviaId } })
+            break
+          case "BALANCE":
+            await tx.registroBalance.deleteMany({ where: { carga_id: cargaPreviaId } })
+            break
+          // INSUMOS_STR no entra aca (ya borra registros antes de insertar)
+        }
+        // Audit trail: la nueva carga apunta a la vieja con reemplaza_id
+        // (se setea abajo en el create). No agregamos estado REEMPLAZADA
+        // porque el enum EstadoCarga no lo contempla y `reemplaza_id` ya
+        // sirve como puntero.
+      }
+
+      // Crear CargaFuente. reemplaza_id solo cuando es reemplazo real,
+      // no cuando se agrega en paralelo (en ese caso ambas cargas coexisten).
       const carga = await tx.cargaFuente.create({
         data: {
           periodo_id: periodo.id,
@@ -91,8 +151,8 @@ export async function POST(request: NextRequest) {
           total_registros: filasCompletas.length,
           registros_procesados: filasCompletas.length,
           registros_error: 0,
-          justificacion_reemplazo: justificacion ?? null,
-          reemplaza_id: cargaPreviaId ?? null,
+          justificacion_reemplazo: accion === "reemplazar" ? (justificacion ?? null) : null,
+          reemplaza_id:            accion === "reemplazar" ? (cargaPreviaId ?? null) : null,
           cargado_por_id: session.user.id,
         },
       })
@@ -233,12 +293,14 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Log de auditoría
-      const accion = cargaPreviaId ? "REEMPLAZAR_FUENTE" : "CARGAR_FUENTE"
+      // Log de auditoría. "agregar" comparte CARGAR_FUENTE porque el enum
+      // AccionAuditoria no tiene una accion AGREGAR_FUENTE; el detalle JSON
+      // contiene accion_carga_previa para distinguirlas.
+      const accionAudit = accion === "reemplazar" ? "REEMPLAZAR_FUENTE" : "CARGAR_FUENTE"
       await tx.logAuditoria.create({
         data: {
           usuario_id: session.user.id,
-          accion,
+          accion: accionAudit,
           entidad: "cargas_fuente",
           entidad_id: carga.id,
           detalle: {
@@ -246,7 +308,8 @@ export async function POST(request: NextRequest) {
             or_id: meta.orId,
             nombre_archivo: meta.nombreArchivo,
             total_registros: filasCompletas.length,
-            reemplaza_id: cargaPreviaId,
+            carga_previa_id: cargaPreviaId,
+            accion_carga_previa: accion,
             justificacion,
           },
           ip,
