@@ -104,8 +104,15 @@ export async function POST(request: NextRequest) {
           where: { id: orId },
           select: { mapeo_sdl_json: true, codigo: true },
         })
+        // Multi-archivo: si el OR tiene multi_archivos:true en su mapeo
+        // y llegaron varios archivos, los pasamos como array al parser.
+        const mapeoSdl = or?.mapeo_sdl_json as { multi_archivos?: boolean } | null
+        const esMulti  = mapeoSdl?.multi_archivos === true && filesMulti.length > 0
+        const bufs = esMulti
+          ? await Promise.all(filesMulti.map(async (f) => Buffer.from(await f.arrayBuffer())))
+          : buffer
         result = await parsearSDL(
-          buffer,
+          bufs,
           or?.mapeo_sdl_json as Record<string, unknown> | null,
           orId,
           periodoExistente?.id ?? null,

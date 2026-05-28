@@ -1146,10 +1146,188 @@ function deepCloneMapeo(m: MapeoSDL): MapeoSDL {
   return { ...m, columnas: { ...(m.columnas ?? {}) } }
 }
 
+// ─── EMSA multi-archivo ──────────────────────────────────────────────────────
+//
+// EMSA envia 3 archivos .xlsx separados por periodo y se combinan en un solo
+// RegistroSDL por frontera:
+//   - Activa     (sheet ~ SDL-BIAC-15): CODIGO + kWhR (energia activa)
+//   - Inductiva  (sheet ~ SDL-BIAC-INDUCTIVA): CODIGO + Nombre + Nivel +
+//     TotalInduc (ind_pen) + M (factor_m) + Cobro (valor reactiva ind)
+//   - Capacitiva (sheet ~ SDL-CMMC-CAPACITIVA): CODIGO + SumaCapacitiva (cap_pen)
+//     + Cobro (valor reactiva cap, se suma al de inductiva)
+//
+// Politica: si una frontera solo aparece en algunos archivos, se crea el
+// registro con los datos que haya (resto null).
+
+type EmsaTipo = "ACTIVA" | "INDUCTIVA" | "CAPACITIVA" | "DESCONOCIDO"
+
+function detectarTipoArchivoEmsa(rows: Row[]): EmsaTipo {
+  if (rows.length === 0) return "DESCONOCIDO"
+  const headers = Object.keys(rows[0] ?? {})
+  const normH = headers.map(h => norm(h))
+  if (normH.some(h => h.includes("TOTALINDUC")))      return "INDUCTIVA"
+  if (normH.some(h => h.includes("SUMACAPACITIVA")))  return "CAPACITIVA"
+  if (normH.some(h => h === "KWHR" || h.includes("KWHR"))) return "ACTIVA"
+  return "DESCONOCIDO"
+}
+
+type EmsaAcumulado = {
+  energia_kwh:              number | null  // de Activa
+  nombre_frontera:          string | null  // de Inductiva (Capacitiva fallback)
+  nivel_tension:            string | null  // de Inductiva (Capacitiva fallback)
+  energia_reactiva_ind_pen: number | null  // de Inductiva
+  energia_reactiva_cap_pen: number | null  // de Capacitiva
+  factor_m:                 number | null  // de Inductiva
+  cobro_ind:                number          // de Inductiva
+  cobro_cap:                number          // de Capacitiva
+}
+
+function procesarEmsaMulti(
+  buffers: Buffer[],
+  anio: number,
+  mes: number,
+  alertas: string[],
+  erroresCriticos: string[],
+): FilaSDL[] {
+  // Mapeo minimo solo para que readRows pueda leer (fila_inicio=2 etc.)
+  const mapeoLectura: MapeoSDL = {
+    tipo_archivo: "xlsx",
+    hoja: 0,
+    fila_inicio: 2,
+    columnas: {},
+  }
+
+  // Leer cada buffer y clasificarlo
+  const acumulado = new Map<string, EmsaAcumulado>()
+  const tiposVistos = new Set<EmsaTipo>()
+
+  for (let i = 0; i < buffers.length; i++) {
+    let rows: Row[] = []
+    try {
+      rows = readRows(buffers[i]!, mapeoLectura)
+    } catch (e) {
+      erroresCriticos.push(`Archivo ${i + 1}: no se pudo leer (${e})`)
+      continue
+    }
+    if (rows.length === 0) {
+      alertas.push(`Archivo ${i + 1}: sin datos, se ignora.`)
+      continue
+    }
+    const tipo = detectarTipoArchivoEmsa(rows)
+    if (tipo === "DESCONOCIDO") {
+      alertas.push(
+        `Archivo ${i + 1}: no se reconoce como Activa, Inductiva ni Capacitiva ` +
+        `(headers esperados: kWhR / TotalInduc / SumaCapacitiva). Se ignora.`,
+      )
+      continue
+    }
+    if (tiposVistos.has(tipo)) {
+      alertas.push(`Archivo ${i + 1}: tipo ${tipo} ya cargado, sobrescribe al anterior.`)
+    }
+    tiposVistos.add(tipo)
+
+    const headers = Object.keys(rows[0] ?? {})
+    const colCodigo = resolveCol(headers, "CODIGO")
+    if (!colCodigo) {
+      erroresCriticos.push(`Archivo ${i + 1} (${tipo}): falta columna CODIGO.`)
+      continue
+    }
+
+    if (tipo === "ACTIVA") {
+      const colKwh = resolveCol(headers, "kWhR")
+      for (const r of rows) {
+        const cod = (r[colCodigo] ?? "").trim()
+        if (!cod) continue
+        const ent = acumulado.get(cod) ?? blankEmsa()
+        if (colKwh) ent.energia_kwh = toNum(r[colKwh])
+        acumulado.set(cod, ent)
+      }
+    } else if (tipo === "INDUCTIVA") {
+      const colNom    = resolveCol(headers, "Nombre Frontera (KWH)") ?? resolveCol(headers, "Nombre Frontera") ?? resolveCol(headers, "Nombre")
+      const colNivel  = resolveCol(headers, "Nivel")
+      const colInduc  = resolveCol(headers, "TotalInduc")
+      const colM      = resolveCol(headers, "M")
+      const colCobro  = resolveCol(headers, "Cobro")
+      for (const r of rows) {
+        const cod = (r[colCodigo] ?? "").trim()
+        if (!cod) continue
+        const ent = acumulado.get(cod) ?? blankEmsa()
+        if (colNom)   ent.nombre_frontera          = (r[colNom]?.trim() || null)
+        if (colNivel) ent.nivel_tension            = (r[colNivel]?.trim() || null)
+        if (colInduc) ent.energia_reactiva_ind_pen = toNum(r[colInduc])
+        if (colM)     ent.factor_m                 = toNum(r[colM])
+        if (colCobro) ent.cobro_ind                = toNum(r[colCobro]) ?? 0
+        acumulado.set(cod, ent)
+      }
+    } else if (tipo === "CAPACITIVA") {
+      const colNom    = resolveCol(headers, "Nombre Frontera (KWH)") ?? resolveCol(headers, "Nombre Frontera") ?? resolveCol(headers, "Nombre")
+      const colNivel  = resolveCol(headers, "Nivel")
+      const colCap    = resolveCol(headers, "SumaCapacitiva")
+      const colCobro  = resolveCol(headers, "Cobro")
+      for (const r of rows) {
+        const cod = (r[colCodigo] ?? "").trim()
+        if (!cod) continue
+        const ent = acumulado.get(cod) ?? blankEmsa()
+        if (colCap)   ent.energia_reactiva_cap_pen = toNum(r[colCap])
+        if (colCobro) ent.cobro_cap                = toNum(r[colCobro]) ?? 0
+        // Fallback de Capacitiva si no llego por Inductiva
+        if (colNom   && !ent.nombre_frontera) ent.nombre_frontera = (r[colNom]?.trim()   || null)
+        if (colNivel && !ent.nivel_tension)   ent.nivel_tension   = (r[colNivel]?.trim() || null)
+        acumulado.set(cod, ent)
+      }
+    }
+  }
+
+  // Construir FilaSDL[] a partir del map
+  const periodoStr = `${anio}-${String(mes).padStart(2, "0")}`
+  const filas: FilaSDL[] = []
+  const fronterasVistas = new Set<string>()
+  for (const [cod, ent] of acumulado.entries()) {
+    if (fronterasVistas.has(cod)) continue
+    fronterasVistas.add(cod)
+    const energia = ent.energia_kwh ?? 0
+    if (energia < 0) {
+      erroresCriticos.push(`Frontera ${cod}: energia activa negativa.`)
+      continue
+    }
+    filas.push({
+      codigo_frontera:          cod,
+      nombre_frontera:          ent.nombre_frontera,
+      periodo_sdl:              periodoStr,
+      energia_sdl_kwh:          energia,
+      // EMSA no trae valor activa hoy (placeholder 0 hasta modulo Tarifas SDL)
+      valor_sdl_cop:            0,
+      tarifa_sdl:               0,
+      nivel_tension:            ent.nivel_tension,
+      propiedad_activos:        null,
+      energia_reactiva_ind_pen: ent.energia_reactiva_ind_pen,
+      energia_reactiva_cap_pen: ent.energia_reactiva_cap_pen,
+      valor_reactiva_cop:       ent.cobro_ind + ent.cobro_cap,
+      tarifa_reactiva:          null,
+      factor_m:                 ent.factor_m,
+      es_duplicado:             false,
+    })
+  }
+  return filas
+}
+
+function blankEmsa(): EmsaAcumulado {
+  return {
+    energia_kwh: null,
+    nombre_frontera: null,
+    nivel_tension: null,
+    energia_reactiva_ind_pen: null,
+    energia_reactiva_cap_pen: null,
+    factor_m: null,
+    cobro_ind: 0,
+    cobro_cap: 0,
+  }
+}
+
 // ─── Main parser ──────────────────────────────────────────────────────────────
 
 export async function parsearSDL(
-  buffer: Buffer,
+  bufferOrBuffers: Buffer | Buffer[],
   mapeoRaw: Record<string, unknown> | null,
   orId: string,
   _periodoId: string | null,
@@ -1164,6 +1342,22 @@ export async function parsearSDL(
   const mapeo: MapeoSDL = mapeoRaw
     ? (mapeoRaw as MapeoSDL)
     : MAPEO_DEFAULT
+
+  // EMSA (y futuros ORs con multi_archivos) traen varios buffers que se
+  // combinan por codigo_frontera. Si recibimos un array, delegamos al
+  // handler especifico y salimos.
+  if (Array.isArray(bufferOrBuffers)) {
+    const codigoOR = (orCodigo ?? orId ?? "").toUpperCase()
+    if (codigoOR !== "EMSA") {
+      erroresCriticos.push(
+        `Multi-archivo SDL solo soportado para EMSA. OR recibido: ${codigoOR}.`,
+      )
+      return { filas, alertas, erroresCriticos }
+    }
+    const fs = procesarEmsaMulti(bufferOrBuffers, anio, mes, alertas, erroresCriticos)
+    return { filas: fs, alertas, erroresCriticos }
+  }
+  const buffer: Buffer = bufferOrBuffers
 
   // ── Read file ──────────────────────────────────────────────────────────────
   let rows: Row[]
