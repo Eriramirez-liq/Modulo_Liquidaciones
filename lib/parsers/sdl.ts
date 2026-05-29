@@ -1169,6 +1169,68 @@ function preEnerca(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   return { rows, mapeo: m }
 }
 
+// ─── EPM ───────────────────────────────────────────────────────────────────
+//
+// EPM envia 2 archivos en momentos distintos (activa y reactiva) que se
+// cargan por separado con la accion "agregar" (como EEP Pereira). El
+// preprocessor detecta el tipo de archivo por sus headers y mapea segun
+// corresponda.
+//
+// Archivo de ACTIVA: headers en fila 13 / datos desde fila 14 (fila_inicio:14).
+//   - Codigo SIC                 -> codigo_frontera
+//   - Instalación                -> nombre_frontera
+//   - ENERGÍA Activa SDL (KW)    -> energia_kwh
+//   - INGRESO Activa SDL($)      -> valor_cop
+//   - Cargo por Uso($/KWh)       -> tarifa_sdl
+//   - Nivel de Tensión           -> nivel_tension (celda combinada, forward-fill,
+//                                   "nivel 2" -> "2")
+// Las filas de subtotal ("Total por nivel de tensión (nivel 1): ...") no
+// tienen Codigo SIC valido y el parser principal las salta solo.
+//
+// Archivo de REACTIVA: pendiente de mapear (rama futura).
+function preEpm(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
+  const m = deepCloneMapeo(mapeo)
+  const cols = m.columnas!
+  const headers = Object.keys(rows[0] ?? {})
+
+  const colActiva = resolveCol(headers, "ENERGÍA Activa SDL (KW)")
+                 ?? resolveCol(headers, "ENERGIA Activa SDL (KW)")
+                 ?? resolveCol(headers, "ENERGÍA Activa SDL")
+  const esActiva = colActiva != null
+
+  if (esActiva) {
+    const colSic    = resolveCol(headers, "Código SIC") ?? resolveCol(headers, "Codigo SIC")
+    const colInst   = resolveCol(headers, "Instalación") ?? resolveCol(headers, "Instalacion")
+    const colValor  = resolveCol(headers, "INGRESO Activa SDL($)") ?? resolveCol(headers, "INGRESO Activa SDL")
+    const colTarifa = resolveCol(headers, "Cargo por Uso($/KWh)") ?? resolveCol(headers, "Cargo por Uso")
+    const colNivel  = resolveCol(headers, "Nivel de Tensión") ?? resolveCol(headers, "Nivel de Tension")
+
+    if (colSic)    cols["codigo_frontera"] = colSic
+    if (colInst)   cols["nombre_frontera"] = colInst
+    if (colActiva) cols["energia_kwh"]     = colActiva
+    if (colValor)  cols["valor_cop"]       = colValor
+    if (colTarifa) cols["tarifa_sdl"]      = colTarifa
+
+    // Nivel de Tensión: celda combinada -> forward fill. El valor ("nivel 2")
+    // aparece una vez al inicio del bloque y las filas siguientes vienen
+    // vacias; se arrastra hasta el proximo valor. Extrae el numero.
+    if (colNivel) {
+      let ultimoNivel = ""
+      rows = rows.map(r => {
+        const raw = (r[colNivel] ?? "").trim()
+        if (raw) {
+          const match = raw.match(/(\d+)/)
+          if (match) ultimoNivel = match[1]!
+        }
+        return { ...r, __NIVEL_EPM__: ultimoNivel }
+      })
+      cols["nivel_tension"] = "__NIVEL_EPM__"
+    }
+  }
+
+  return { rows, mapeo: m }
+}
+
 // ─── Preprocessor registry ───────────────────────────────────────────────────
 
 type PreFn = (rows: Row[], mapeo: MapeoSDL, buffer: Buffer) => PreResult
@@ -1190,6 +1252,7 @@ const PREPROCESSORS: Record<string, PreFn> = {
   ENEL:          preEnel,
   ENERCA:        preEnerca,
   EMSA:          preEmsa,
+  EPM:           preEpm,
   ESSA:          preEssa,
   RUITOQUE:      preRuitoque,
 }

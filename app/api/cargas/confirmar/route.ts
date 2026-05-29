@@ -72,8 +72,10 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // "Agregar" solo permitido para EEP_PEREIRA SDL (envia archivos
-  // complementarios por NT en distintos meses).
+  // "Agregar" solo permitido para SDL de ORs que reciben archivos en
+  // momentos distintos para el mismo periodo:
+  //   - EEP_PEREIRA: archivos complementarios por NT.
+  //   - EPM: archivo de activa y archivo de reactiva por separado.
   if (accion === "agregar") {
     if (meta.tipoFuente !== "SDL") {
       return NextResponse.json(
@@ -91,9 +93,9 @@ export async function POST(request: NextRequest) {
       where: { id: meta.orId },
       select: { codigo: true },
     })
-    if (or?.codigo !== "EEP_PEREIRA") {
+    if (or?.codigo !== "EEP_PEREIRA" && or?.codigo !== "EPM") {
       return NextResponse.json(
-        { error: "La opción 'Agregar' solo está disponible para EEP Pereira." },
+        { error: "La opción 'Agregar' solo está disponible para EEP Pereira y EPM." },
         { status: 400 }
       )
     }

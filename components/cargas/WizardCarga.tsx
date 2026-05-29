@@ -758,7 +758,8 @@ export function WizardCarga() {
               // reemplazar (envia fronteras de distintos NT en meses
               // distintos). Resto de ORs solo permiten reemplazar.
               const orCodigo = operadores.find((o) => o.id === orId)?.codigo
-              const permiteAgregar = tipoFuente === "SDL" && orCodigo === "EEP_PEREIRA"
+              const permiteAgregar = tipoFuente === "SDL"
+                && (orCodigo === "EEP_PEREIRA" || orCodigo === "EPM")
               return (
                 <div style={{ padding: "12px 14px", borderRadius: "7px", border: "1px solid #fde68a", backgroundColor: "#fffbeb" }}>
                   <p style={{ fontSize: "0.85rem", fontWeight: 600, color: "#92400e", marginBottom: "10px" }}>
@@ -813,8 +814,9 @@ export function WizardCarga() {
 
                   {accionCargaPrevia === "agregar" && (
                     <p style={{ fontSize: "0.78rem", color: "#78350f", margin: 0 }}>
-                      Ambos archivos quedarán cargados. Útil cuando EEP Pereira
-                      envía fronteras complementarias por nivel de tensión.
+                      Ambos archivos quedarán cargados. Útil cuando el OR envía
+                      archivos complementarios en momentos distintos (EEP Pereira
+                      por nivel de tensión, EPM activa y reactiva por separado).
                     </p>
                   )}
                 </div>
