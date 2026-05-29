@@ -325,14 +325,20 @@ model RegistroTC1 {
   id                     String   @id @default(cuid())
   carga_id               String
   periodo_id             String
-  codigo_frontera        String
+  or_id                  String?
+  codigo_frontera        String   // COD_FRONTERA_COMERCIAL (clave de cruce con Facturacion)
   niu                    String?
-  nivel_tension          String?
+  nivel_tension          String?  // NIVEL_DE_TENSION (se concilia)
   nivel_tension_primario String?
-  pct_propiedad_activo   String?
+  pct_propiedad_activo   String?  // PORC_PROPIEDAD_DEL_ACTIVO (valor crudo: 0/50/100/101)
+  propiedad_activos      String?  // derivado: USUARIO / COMPARTIDO / OR (se concilia)
   tipo_conexion          String?
   conexion_red           String?
   id_comercializador     String?
+  // Todas las columnas mapeadas del archivo (para almacenamiento completo y
+  // futuro push a Metabase). Solo incluye las columnas conocidas del formato
+  // TC1; las columnas extra del archivo se omiten.
+  detalle_json           Json?
   createdAt              DateTime @default(now())
 
   @@map("registros_tc1")

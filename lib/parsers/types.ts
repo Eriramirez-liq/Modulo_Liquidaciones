@@ -65,6 +65,35 @@ export type FilaBalance = {
   periodo_tarifa: string
 }
 
+// Columnas conocidas del formato TC1 (configuracion tecnica del OR). Las
+// columnas extra del archivo se omiten. Se concilian solo nivel_tension y
+// propiedad_activos contra Facturacion, pero se guardan todas (detalle).
+export const TC1_COLUMNAS = [
+  "NIU", "CODIGO_DE_CONEXION", "TIPO_DE_CONEXION", "NIVEL_DE_TENSION",
+  "NIVEL_DE_TENSION_PRIMARIO", "PORC_PROPIEDAD_DEL_ACTIVO", "CONEXION_RED",
+  "ID_COMERCIALIZADOR", "ID_MERCADO", "GRUPO_DE_CALIDAD",
+  "COD_FRONTERA_COMERCIAL", "CODIGO_CIRCUITO_O_LINEA", "CODIGO_TRANSFORMADOR",
+  "CODIGO_DANE_NIU", "UBICACION", "DIRECCION", "CONDICION_ESPECIAL",
+  "TIPO_AREA_ESPECIAL", "CODIGO_AREA_ESPECIAL", "ESTRATO_ID", "ALTITUD",
+  "LONGITUD", "LATITUD", "AUTOGENERADOR", "EXPORTA_ENERGIA", "POTENCIA",
+  "TIPO_GENERACION", "CODIGO_FRONTERA_AUTO_GEN", "INICIO_OPERACION",
+  "CONTRATO_RESPALDO",
+] as const
+
+export type FilaTC1 = {
+  codigo_frontera:        string         // COD_FRONTERA_COMERCIAL
+  niu:                    string | null
+  nivel_tension:          string | null  // NIVEL_DE_TENSION (se concilia)
+  nivel_tension_primario: string | null
+  pct_propiedad_activo:   string | null  // PORC_PROPIEDAD_DEL_ACTIVO crudo
+  propiedad_activos:      string | null  // derivado: USUARIO/COMPARTIDO/OR (se concilia)
+  tipo_conexion:          string | null
+  conexion_red:           string | null
+  id_comercializador:     string | null
+  // Todas las columnas conocidas del archivo (las extra se omiten).
+  detalle:                Record<string, string>
+}
+
 export type ResultadoParser<T> = {
   filas: T[]
   alertas: string[]
