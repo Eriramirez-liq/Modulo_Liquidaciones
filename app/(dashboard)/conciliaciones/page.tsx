@@ -1,6 +1,6 @@
 "use client"
 import { useState, useEffect } from "react"
-import { Play } from "lucide-react"
+import { Play, Download } from "lucide-react"
 
 type Periodo = { id: string; anio: number; mes: number; estado: string }
 type Operador = { id: string; codigo: string; nombre: string }
@@ -28,7 +28,7 @@ interface ResumenConciliacion {
     nivel_tension: number
     propiedad:     number
   }
-  provisiones:   { cantidad: number; valor_total: number }
+  provisiones:   { cantidad: number; energia_total: number; valor_total: number }
   contingencias: { cantidad: number; energia_total: number; valor_estimado_total: number }
   disputas:      { cantidad: number; valor_total: number }
   alertasManual: number
@@ -91,6 +91,38 @@ export default function ConciliacionesPage() {
   const [error, setError]           = useState<string | null>(null)
   const [resumen, setResumen]       = useState<ResumenConciliacion | null>(null)
   const [indicadorSel, setIndicadorSel] = useState<Indicador | null>(null)
+  const [descargando, setDescargando] = useState(false)
+
+  async function descargarExcel() {
+    if (!resumen) return
+    setDescargando(true)
+    try {
+      const qs = new URLSearchParams({ periodoId: resumen.periodoId })
+      if (orId) qs.set("orId", orId)
+      const res = await fetch(`/api/conciliaciones/exportar?${qs}`)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.error ?? "No se pudo generar el Excel.")
+        return
+      }
+      const blob = await res.blob()
+      const disp = res.headers.get("Content-Disposition") ?? ""
+      const m = disp.match(/filename="(.+?)"/)
+      const fname = m?.[1] ?? `conciliacion_${resumen.periodoStr}.xlsx`
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = fname
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setError(`Error al descargar el Excel: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setDescargando(false)
+    }
+  }
 
   useEffect(() => {
     Promise.all([
@@ -240,13 +272,28 @@ export default function ConciliacionesPage() {
           background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "24px",
           display: "flex", flexDirection: "column", gap: 20,
         }}>
-          <div>
-            <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#111827", margin: "0 0 4px" }}>
-              Resumen — {resumen.periodoStr}
-            </h2>
-            <p style={{ fontSize: "0.85rem", color: "#6b7280", margin: 0 }}>
-              {resumen.totalFronteras} fronteras procesadas. Hacé click en una KPI para ver el detalle.
-            </p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+            <div>
+              <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#111827", margin: "0 0 4px" }}>
+                Resumen — {resumen.periodoStr}
+              </h2>
+              <p style={{ fontSize: "0.85rem", color: "#6b7280", margin: 0 }}>
+                {resumen.totalFronteras} fronteras procesadas. Hacé click en una KPI para ver el detalle.
+              </p>
+            </div>
+            <button
+              onClick={descargarExcel}
+              disabled={descargando}
+              style={{
+                background: "#fff", color: "#15803d", border: "1px solid #86efac",
+                borderRadius: 8, padding: "8px 16px", fontSize: "0.85rem", fontWeight: 600,
+                cursor: descargando ? "default" : "pointer", display: "flex", alignItems: "center",
+                gap: 8, opacity: descargando ? 0.7 : 1, whiteSpace: "nowrap",
+              }}
+            >
+              <Download size={15} />
+              {descargando ? "Generando…" : "Descargar Excel"}
+            </button>
           </div>
 
           {/* KPIs clickeables */}
@@ -298,7 +345,7 @@ function PanelDetalle({
   periodoId: string
   orId?: string
   totales?: {
-    provisiones:   { cantidad: number; valor_total: number }
+    provisiones:   { cantidad: number; energia_total: number; valor_total: number }
     contingencias: { cantidad: number; energia_total: number; valor_estimado_total: number }
     disputas:      { cantidad: number; valor_total: number }
   }
@@ -340,7 +387,8 @@ function PanelDetalle({
       {indicador === "activa" && totales && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
           <SubTotal label="Provisiones" cantidad={totales.provisiones.cantidad}
-            sub={cop(totales.provisiones.valor_total)} color="#3b82f6" />
+            sub={`${num(totales.provisiones.energia_total)} kWh · ${cop(totales.provisiones.valor_total)}`}
+            color="#3b82f6" />
           <SubTotal label="Pérdidas" cantidad={totales.contingencias.cantidad}
             sub={`${num(totales.contingencias.energia_total)} kWh · ${cop(totales.contingencias.valor_estimado_total)}`}
             color="#f59e0b" />

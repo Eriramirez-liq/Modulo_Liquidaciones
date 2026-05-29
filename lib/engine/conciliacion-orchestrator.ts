@@ -50,7 +50,7 @@ export interface ResumenConciliacion {
     nivel_tension:  number               // diff_nivel_tension = true
     propiedad:      number               // diff_propiedad = true
   }
-  provisiones:            { cantidad: number; valor_total: number }
+  provisiones:            { cantidad: number; energia_total: number; valor_total: number }
   contingencias:          { cantidad: number; energia_total: number; valor_estimado_total: number }
   disputas:               { cantidad: number; valor_total: number }
   alertasManual:          number
@@ -512,6 +512,8 @@ export async function ejecutarConciliacion(
   // 6. Resumen agregado
   const valorProvisiones = Array.from(provisionesPorFrontera.values())
     .reduce((s, p) => s + Number(p.valor_provisionado_cop), 0)
+  const energiaProvisiones = Array.from(provisionesPorFrontera.values())
+    .reduce((s, p) => s + Number(p.energia_kwh), 0)
   const energiaContingencias = Array.from(contingenciasPorFrontera.values())
     .reduce((s, c) => s + Number(c.energia_kwh), 0)
   const valorEstimadoContingencias = Array.from(contingenciasPorFrontera.values())
@@ -533,7 +535,7 @@ export async function ejecutarConciliacion(
       nivel_tension: diffNivelT,
       propiedad:     diffPropiedad,
     },
-    provisiones:   { cantidad: provisionesPorFrontera.size,   valor_total: valorProvisiones },
+    provisiones:   { cantidad: provisionesPorFrontera.size,   energia_total: energiaProvisiones, valor_total: valorProvisiones },
     contingencias: {
       cantidad:             contingenciasPorFrontera.size,
       energia_total:        energiaContingencias,
