@@ -1118,6 +1118,57 @@ function preCedenar(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   return { rows, mapeo: m }
 }
 
+// ─── ENERCA ──────────────────────────────────────────────────────────────────
+//
+// Archivo unico, headers en fila 4 / datos desde fila 5 (fila_inicio: 5).
+// Mapeo directo se define en el seed; aqui solo dos transformaciones:
+//
+// 1. propiedad_activos: leer columna 'PROPIEDAD DE ACTIVO' + 'NT'.
+//    - Si NT = 2 o 3 -> "Usuario" (siempre)
+//    - Si NT = 1: "SI" -> Usuario, "NO" -> OR
+//
+// 2. valor_reactiva_cop = 'REACTIVA EN EXCESO LIQUIDADO' +
+//    'CAPACTIVA EN EXCESO LIQUIDADO' (sumar las dos columnas).
+function preEnerca(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
+  const m = deepCloneMapeo(mapeo)
+  const cols = m.columnas!
+  const headers = Object.keys(rows[0] ?? {})
+
+  const colNT       = resolveCol(headers, "NT")
+  const colPropRaw  = resolveCol(headers, "PROPIEDAD DE ACTIVO")
+  if (colNT && colPropRaw) {
+    rows = rows.map(r => {
+      const nt = toNum(r[colNT])
+      const propRaw = (r[colPropRaw] ?? "").trim().toUpperCase()
+      let prop = ""
+      if (nt === 2 || nt === 3) {
+        prop = "Usuario"
+      } else if (nt === 1) {
+        if (propRaw === "SI" || propRaw === "SÍ") prop = "Usuario"
+        else if (propRaw === "NO")                 prop = "OR"
+      }
+      return { ...r, __PROPIEDAD__: prop }
+    })
+    cols["propiedad_activos"] = "__PROPIEDAD__"
+  }
+
+  const colValReac = resolveCol(headers, "REACTIVA EN EXCESO LIQUIDADO")
+  const colValCap  = resolveCol(headers, "CAPACTIVA EN EXCESO LIQUIDADO")
+                  ?? resolveCol(headers, "CAPACITIVA EN EXCESO LIQUIDADO")
+  if (colValReac || colValCap) {
+    rows = rows.map(r => ({
+      ...r,
+      __VALOR_REAC__: String(
+        (colValReac ? toNum(r[colValReac]) ?? 0 : 0) +
+        (colValCap  ? toNum(r[colValCap])  ?? 0 : 0)
+      ),
+    }))
+    cols["valor_reactiva_cop"] = "__VALOR_REAC__"
+  }
+
+  return { rows, mapeo: m }
+}
+
 // ─── Preprocessor registry ───────────────────────────────────────────────────
 
 type PreFn = (rows: Row[], mapeo: MapeoSDL, buffer: Buffer) => PreResult
@@ -1137,6 +1188,7 @@ const PREPROCESSORS: Record<string, PreFn> = {
   EEP_CARTAGO:   preEepc,
   EEP_PEREIRA:   preEepc,
   ENEL:          preEnel,
+  ENERCA:        preEnerca,
   EMSA:          preEmsa,
   ESSA:          preEssa,
   RUITOQUE:      preRuitoque,

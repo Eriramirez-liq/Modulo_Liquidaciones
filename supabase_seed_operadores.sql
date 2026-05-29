@@ -48,8 +48,8 @@ VALUES
 (gen_random_uuid()::text, 'EMSA', 'Emsa', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "CODIGO", "energia_kwh": "kWhR", "valor_cop": null, "periodo": null, "nivel_tension": null, "propiedad_activos": null, "energia_reactiva_ind_pen": null, "energia_reactiva_cap_pen": null, "valor_reactiva_cop": null, "tarifa_reactiva": null, "tarifa_sdl": null, "factor_m": null, "codigo_frontera_split": null}, "multi_archivos": true}'::jsonb, NULL, now(), now()),
 -- ENEL: configurado — pendiente cargar archivo de prueba
 (gen_random_uuid()::text, 'ENEL', 'Enel', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 2, "separador_csv": ",", "columnas": {"codigo_frontera": "CODIGO SIC", "nombre_frontera": "NOMBRE CUENTA CONTRATO", "energia_kwh": "CONSUMO ACTIVA", "valor_cop": "VALOR SDL ACT", "periodo": null, "nivel_tension": "NIVEL TENSION", "propiedad_activos": null, "energia_reactiva_ind_pen": "EXCESO_REACTIVA_INDUCTIVA", "energia_reactiva_cap_pen": "EXCESO_REACTIVA_CAPACITIVA", "valor_reactiva_cop": "VALOR SDL REAC", "factor_m": "FACTOR M"}, "multi_archivos": true}'::jsonb, NULL, now(), now()),
--- ENERCA: pendiente mapeo SDL
-(gen_random_uuid()::text, 'ENERCA', 'Enerca', true, NULL, NULL, now(), now()),
+-- ENERCA: validado con archivo (preprocessor preEnerca para propiedad+valor_reactiva)
+(gen_random_uuid()::text, 'ENERCA', 'Enerca', true, '{"tipo_archivo": "xlsx", "hoja": 0, "fila_inicio": 5, "separador_csv": ",", "columnas": {"codigo_frontera": "CODIGO SIC", "nombre_frontera": "NOMBRE FRONTERA", "energia_kwh": "TOTAL ACTIVA AENC", "valor_cop": "CONSUMO ACTIVA LIQUIDADO", "tarifa_sdl": "TARIFA SDL", "periodo": null, "nivel_tension": "NT", "propiedad_activos": null, "energia_reactiva_ind_pen": "EXCESO REACTIVA", "energia_reactiva_cap_pen": "EXCESO CAPACITIVA", "valor_reactiva_cop": null, "tarifa_reactiva": "TARIFA Dm", "factor_m": "FACTOR M"}}'::jsonb, NULL, now(), now()),
 -- EPM: pendiente mapeo SDL
 (gen_random_uuid()::text, 'EPM', 'EPM', true, NULL, NULL, now(), now()),
 -- ESSA: validado con archivo
