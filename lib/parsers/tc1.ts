@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx"
-import { type FilaTC1, type ResultadoParser, TC1_COLUMNAS } from "./types"
+import { type FilaTC1, type ResultadoParser } from "./types"
 
 /**
  * Parser del archivo TC1 (configuracion tecnica por OR).
@@ -17,14 +17,17 @@ import { type FilaTC1, type ResultadoParser, TC1_COLUMNAS } from "./types"
 
 const ID_COMERCIALIZADOR_BIA = "62371"
 
+// Normaliza un header a solo [A-Z0-9]: quita acentos, espacios, guiones,
+// underscores y cualquier caracter invisible (BOM, zero-width, etc.). Esto
+// hace el match robusto ante variaciones de nombre entre OR
+// (ej. "CODIGO_CONEXION" vs "CODIGO_DE_CONEXION" siguen difiriendo, pero
+// "COD_FRONTERA_COMERCIAL" matchea aunque tenga caracteres ocultos).
 function normCol(s: string): string {
   return s
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toUpperCase()
-    .trim()
-    .replace(/[\s\-]+/g, "_")
-    .replace(/_+/g, "_")
+    .replace(/[^A-Z0-9]/g, "")
 }
 
 function mapPropiedad(porc: string | null): string | null {
@@ -65,7 +68,6 @@ export async function parsearTC1(buffer: Buffer): Promise<ResultadoParser<FilaTC
 
   const headersOrig = (raw[0] ?? []).map(h => String(h ?? "").trim())
   const headersNorm = headersOrig.map(normCol)
-  const conocidasNorm = new Set(TC1_COLUMNAS.map(c => normCol(c)))
 
   const findIdx = (...cands: string[]): number => {
     for (const c of cands) {
@@ -75,13 +77,14 @@ export async function parsearTC1(buffer: Buffer): Promise<ResultadoParser<FilaTC
     return -1
   }
 
-  const idxCodigo = findIdx("COD_FRONTERA_COMERCIAL")
+  // Acepta variantes de nombre entre OR (con/sin "DE", abreviaciones, etc.)
+  const idxCodigo = findIdx("COD_FRONTERA_COMERCIAL", "CODIGO_FRONTERA_COMERCIAL")
   const idxNivel  = findIdx("NIVEL_DE_TENSION", "NIVEL_TENSION")
-  const idxPorc   = findIdx("PORC_PROPIEDAD_DEL_ACTIVO", "PROPIEDAD_ACTIVO")
+  const idxPorc   = findIdx("PORC_PROPIEDAD_DEL_ACTIVO", "PROPIEDAD_ACTIVO", "PROPIEDAD_DEL_ACTIVO")
   const idxIdCom  = findIdx("ID_COMERCIALIZADOR")
   const idxNiu    = findIdx("NIU")
-  const idxNTP    = findIdx("NIVEL_DE_TENSION_PRIMARIO")
-  const idxTipoCx = findIdx("TIPO_DE_CONEXION")
+  const idxNTP    = findIdx("NIVEL_DE_TENSION_PRIMARIO", "NIVEL_TENSION_PRIMARIO")
+  const idxTipoCx = findIdx("TIPO_DE_CONEXION", "TIPO_CONEXION")
   const idxConRed = findIdx("CONEXION_RED")
 
   const faltantes: string[] = []
@@ -108,12 +111,11 @@ export async function parsearTC1(buffer: Buffer): Promise<ResultadoParser<FilaTC
     const cod = cell(row, idxCodigo)
     if (!cod) continue
 
-    // detalle: solo las columnas conocidas (las extra se omiten).
+    // detalle: todas las columnas del archivo (los nombres varian entre OR;
+    // guardamos todo para no perder data y para el futuro push a Metabase).
     const detalle: Record<string, string> = {}
     headersOrig.forEach((h, j) => {
-      if (conocidasNorm.has(headersNorm[j] ?? "")) {
-        detalle[h] = String(row[j] ?? "").trim()
-      }
+      if (h) detalle[h] = String(row[j] ?? "").trim()
     })
 
     const porc = cell(row, idxPorc) || null
