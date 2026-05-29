@@ -1618,6 +1618,211 @@ function procesarEnelMulti(
   return filas
 }
 
+// ─── EPM archivo de REACTIVA ─────────────────────────────────────────────────
+//
+// El archivo de reactiva de EPM tiene DOS bloques apilados verticalmente, con
+// el mismo layout de columnas, distinguidos por un titulo de grupo:
+//   - "INGRESO POR EXCESO DE ENERGIA REACTIVA SDL XM" (bloque SDL)
+//   - "INGRESO POR EXCESO DE ENERGIA REACTIVA STR XM" (bloque STR)
+//
+// Por frontera (cruce por Codigo SIC) se toma:
+//   Del bloque SDL:
+//     - ENERGIA Exceso reactiva inductiva  -> energia_reactiva_ind_pen
+//     - ENERGIA Exceso reactiva capacitiva -> energia_reactiva_cap_pen
+//     - INGRESO Exceso reactiva ($)        -> valor_reactiva_cop
+//     - Factor M                           -> factor_m
+//     - Cargo por Uso ($/KWh)              -> tarifa_reactiva (parte SDL)
+//   Del bloque STR:
+//     - Cargo por Uso ($/KWh)              -> tarifa_reactiva (parte STR)
+//   tarifa_reactiva = cargo_uso_sdl + cargo_uso_str.
+//
+// Las filas de subtotal ("Total por nivel de tension...") no tienen Codigo SIC
+// valido y se ignoran.
+//
+// energia activa / valor activa quedan en 0: este archivo se fusiona con el
+// registro de activa ya cargado (merge por codigo_frontera en el confirmar).
+
+function leerRawRows(buffer: Buffer): (string | number)[][] {
+  const wb = XLSX.read(buffer, { type: "buffer", cellDates: false })
+  const ws = wb.Sheets[wb.SheetNames[0] ?? ""]
+  if (!ws) return []
+  return XLSX.utils.sheet_to_json<(string | number)[]>(ws, {
+    header: 1, defval: "", raw: true,
+  }) as unknown as (string | number)[][]
+}
+
+// Detecta si un buffer es el archivo de reactiva de EPM (tiene el titulo
+// "EXCESO DE ENERGIA REACTIVA" en alguna celda de las primeras filas).
+function esArchivoReactivaEpm(buffer: Buffer): boolean {
+  try {
+    const raw = leerRawRows(buffer)
+    const lim = Math.min(raw.length, 30)
+    for (let i = 0; i < lim; i++) {
+      for (const cell of raw[i] ?? []) {
+        if (typeof cell === "string" && norm(cell).includes("EXCESO DE ENERGIA REACTIVA")) {
+          return true
+        }
+      }
+    }
+  } catch { /* si no se puede leer, no es reactiva */ }
+  return false
+}
+
+const RE_FRONTERA = /^FRT?\s*\d+/i
+
+type EpmReacAcum = {
+  nombre_frontera:          string | null
+  nivel_tension:            string | null
+  energia_reactiva_ind_pen: number | null
+  energia_reactiva_cap_pen: number | null
+  valor_reactiva_cop:       number | null
+  factor_m:                 number | null
+  cargo_sdl:                number | null
+  cargo_str:                number | null
+}
+
+function procesarEpmReactiva(
+  buffer: Buffer,
+  anio: number,
+  mes: number,
+  alertas: string[],
+  erroresCriticos: string[],
+): FilaSDL[] {
+  const raw = leerRawRows(buffer)
+  if (raw.length === 0) {
+    erroresCriticos.push("Archivo de reactiva EPM vacio o ilegible.")
+    return []
+  }
+
+  // 1. Localizar fila de headers (primera con "Codigo SIC") y la fila del
+  //    titulo del bloque STR.
+  let headerRow = -1
+  let filaTituloStr = -1
+  for (let i = 0; i < raw.length; i++) {
+    const row = raw[i] ?? []
+    for (const cell of row) {
+      if (typeof cell !== "string") continue
+      const n = norm(cell)
+      if (headerRow === -1 && n.includes("CODIGO SIC")) headerRow = i
+      if (n.includes("REACTIVA STR XM")) filaTituloStr = i
+    }
+  }
+  if (headerRow === -1) {
+    erroresCriticos.push("Archivo de reactiva EPM: no se encontro la fila de headers (Codigo SIC).")
+    return []
+  }
+
+  // 2. Mapear headers -> indice de columna (ambos bloques comparten layout).
+  const headers = (raw[headerRow] ?? []).map(h => norm(String(h ?? "")))
+  const findIdx = (...needles: string[]): number => {
+    for (const nd of needles) {
+      const idx = headers.findIndex(h => h.includes(nd))
+      if (idx >= 0) return idx
+    }
+    return -1
+  }
+  const iCodigo = findIdx("CODIGO SIC")
+  const iNombre = findIdx("INSTALACION")
+  const iNivel  = findIdx("NIVEL DE TENSION")
+  const iCargo  = findIdx("CARGO POR USO")
+  const iFM     = headers.findIndex(h => h === "FACTOR M")
+  const iInd    = findIdx("EXCESO REACTIVA INDUCTIVA")
+  const iCap    = findIdx("EXCESO REACTIVA CAPACITIVA")
+  const iValor  = headers.findIndex(h => h.includes("INGRESO") && h.includes("EXCESO REACTIVA"))
+
+  if (iCodigo < 0) {
+    erroresCriticos.push("Archivo de reactiva EPM: no se ubico la columna Codigo SIC.")
+    return []
+  }
+
+  // 3. Recorrer filas, separando bloque SDL (antes del titulo STR) y STR.
+  const acum = new Map<string, EpmReacAcum>()
+  let nivelSdl = ""
+  let nivelStr = ""
+  const cellNum = (row: (string | number)[], idx: number): number | null =>
+    idx >= 0 ? toNum(String(row[idx] ?? "")) : null
+  const cellStr = (row: (string | number)[], idx: number): string =>
+    idx >= 0 ? String(row[idx] ?? "").trim() : ""
+
+  for (let i = headerRow + 1; i < raw.length; i++) {
+    const row = raw[i] ?? []
+    const enBloqueStr = filaTituloStr >= 0 && i > filaTituloStr
+
+    // forward-fill nivel (celda combinada). "nivel 2" -> "2"
+    const nivelRaw = cellStr(row, iNivel)
+    if (nivelRaw) {
+      const m = nivelRaw.match(/(\d+)/)
+      if (m) { if (enBloqueStr) nivelStr = m[1]!; else nivelSdl = m[1]! }
+    }
+
+    const cod = cellStr(row, iCodigo)
+    if (!RE_FRONTERA.test(cod)) continue // subtotal / fila vacia
+
+    const ent = acum.get(cod) ?? blankEpmReac()
+    if (!enBloqueStr) {
+      // Bloque SDL: campos de reactiva
+      ent.nombre_frontera          = cellStr(row, iNombre) || ent.nombre_frontera
+      ent.nivel_tension            = (nivelSdl || ent.nivel_tension) || null
+      ent.energia_reactiva_ind_pen = cellNum(row, iInd)
+      ent.energia_reactiva_cap_pen = cellNum(row, iCap)
+      ent.valor_reactiva_cop       = cellNum(row, iValor)
+      ent.factor_m                 = cellNum(row, iFM)
+      ent.cargo_sdl                = cellNum(row, iCargo)
+    } else {
+      // Bloque STR: solo el cargo por uso (para sumar a tarifa_reactiva)
+      ent.cargo_str = cellNum(row, iCargo)
+      if (!ent.nombre_frontera) ent.nombre_frontera = cellStr(row, iNombre) || null
+      if (!ent.nivel_tension)   ent.nivel_tension   = nivelStr || null
+    }
+    acum.set(cod, ent)
+  }
+
+  if (acum.size === 0) {
+    alertas.push("Archivo de reactiva EPM: no se encontraron fronteras con Codigo SIC valido.")
+  }
+
+  // 4. Construir FilaSDL[]. tarifa_reactiva = cargo_sdl + cargo_str.
+  const periodoStr = `${anio}-${String(mes).padStart(2, "0")}`
+  const filas: FilaSDL[] = []
+  for (const [cod, ent] of acum.entries()) {
+    const tarifaReactiva =
+      (ent.cargo_sdl != null || ent.cargo_str != null)
+        ? (ent.cargo_sdl ?? 0) + (ent.cargo_str ?? 0)
+        : null
+    filas.push({
+      codigo_frontera:          cod,
+      nombre_frontera:          ent.nombre_frontera,
+      periodo_sdl:              periodoStr,
+      // Activa va en 0/null: este archivo se fusiona con el de activa.
+      energia_sdl_kwh:          0,
+      valor_sdl_cop:            0,
+      tarifa_sdl:               0,
+      nivel_tension:            ent.nivel_tension,
+      propiedad_activos:        null,
+      energia_reactiva_ind_pen: ent.energia_reactiva_ind_pen,
+      energia_reactiva_cap_pen: ent.energia_reactiva_cap_pen,
+      valor_reactiva_cop:       ent.valor_reactiva_cop,
+      tarifa_reactiva:          tarifaReactiva,
+      factor_m:                 ent.factor_m,
+      es_duplicado:             false,
+    })
+  }
+  return filas
+}
+
+function blankEpmReac(): EpmReacAcum {
+  return {
+    nombre_frontera: null,
+    nivel_tension: null,
+    energia_reactiva_ind_pen: null,
+    energia_reactiva_cap_pen: null,
+    valor_reactiva_cop: null,
+    factor_m: null,
+    cargo_sdl: null,
+    cargo_str: null,
+  }
+}
+
 // ─── Main parser ──────────────────────────────────────────────────────────────
 
 export async function parsearSDL(
@@ -1656,6 +1861,16 @@ export async function parsearSDL(
     return { filas, alertas, erroresCriticos }
   }
   const buffer: Buffer = bufferOrBuffers
+
+  // EPM archivo de reactiva: estructura especial (2 bloques apilados SDL/STR).
+  // Se detecta por contenido. El de activa sigue el flujo normal (preEpm).
+  {
+    const codigoOR = (orCodigo ?? orId ?? "").toUpperCase()
+    if (codigoOR === "EPM" && esArchivoReactivaEpm(buffer)) {
+      const fs = procesarEpmReactiva(buffer, anio, mes, alertas, erroresCriticos)
+      return { filas: fs, alertas, erroresCriticos }
+    }
+  }
 
   // ── Read file ──────────────────────────────────────────────────────────────
   let rows: Row[]
