@@ -72,10 +72,19 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  // Codigo del OR (lo necesitamos para validar "agregar" y para decidir el
+  // merge de EPM mas abajo).
+  const orCodigo = meta.orId
+    ? (await db.configuracionOR.findUnique({
+        where: { id: meta.orId },
+        select: { codigo: true },
+      }))?.codigo ?? null
+    : null
+
   // "Agregar" solo permitido para SDL de ORs que reciben archivos en
   // momentos distintos para el mismo periodo:
-  //   - EEP_PEREIRA: archivos complementarios por NT.
-  //   - EPM: archivo de activa y archivo de reactiva por separado.
+  //   - EEP_PEREIRA: archivos complementarios por NT (coexisten).
+  //   - EPM: archivo de activa y archivo de reactiva (se fusionan por SIC).
   if (accion === "agregar") {
     if (meta.tipoFuente !== "SDL") {
       return NextResponse.json(
@@ -89,17 +98,17 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-    const or = await db.configuracionOR.findUnique({
-      where: { id: meta.orId },
-      select: { codigo: true },
-    })
-    if (or?.codigo !== "EEP_PEREIRA" && or?.codigo !== "EPM") {
+    if (orCodigo !== "EEP_PEREIRA" && orCodigo !== "EPM") {
       return NextResponse.json(
         { error: "La opción 'Agregar' solo está disponible para EEP Pereira y EPM." },
         { status: 400 }
       )
     }
   }
+
+  // EPM con accion "agregar" fusiona por codigo_frontera (activa + reactiva
+  // en un solo registro) en vez de coexistir como EEP Pereira.
+  const esMergeEpm = accion === "agregar" && orCodigo === "EPM"
 
   const ip = request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? undefined
 
@@ -213,6 +222,81 @@ export async function POST(request: NextRequest) {
         }
         case "SDL": {
           const filas = filasCompletas as FilaSDL[]
+
+          if (esMergeEpm) {
+            // EPM: fusionar por codigo_frontera con los registros existentes
+            // del periodo+or (ej. el archivo de reactiva completa el de activa
+            // ya cargado, o viceversa). Merge de campos no-null/no-cero: cada
+            // archivo aporta los campos que trae sin pisar los del otro.
+            const existentes = await tx.registroSDL.findMany({
+              where: { periodo_id: periodoStr, or_id: meta.orId! },
+            })
+            const porFrontera = new Map(existentes.map(e => [e.codigo_frontera, e]))
+
+            // Reglas de merge por tipo de campo (independiente de cual archivo
+            // llega primero):
+            // - Campos de ACTIVA (energia/valor/tarifa_sdl): conservar el valor
+            //   existente si es significativo (no null, no 0); el archivo de
+            //   reactiva los trae en 0 y no debe pisar los de activa.
+            // - Campos de REACTIVA (ind/cap/valor_reac/tarifa_reac/factor_m) y
+            //   strings: preferir el valor nuevo si no es null (incluido 0,
+            //   que es un dato valido); sino conservar el viejo.
+            const mantenerActiva = (nuevo: number | null | undefined, viejo: Prisma.Decimal | null) =>
+              (viejo != null && Number(viejo) !== 0) ? viejo : (nuevo ?? viejo)
+            const tomarReactiva = (nuevo: number | null | undefined, viejo: Prisma.Decimal | null) =>
+              nuevo != null ? nuevo : viejo
+            const strNuevo = (nuevo: string | null | undefined, viejo: string | null) =>
+              (nuevo && nuevo.trim()) ? nuevo : viejo
+
+            const aCrear: Prisma.RegistroSDLCreateManyInput[] = []
+            for (const f of filas) {
+              const prev = porFrontera.get(f.codigo_frontera)
+              if (prev) {
+                // UPDATE merge: completar campos que el archivo nuevo aporta.
+                await tx.registroSDL.update({
+                  where: { id: prev.id },
+                  data: {
+                    nombre_frontera:          strNuevo(f.nombre_frontera, prev.nombre_frontera),
+                    nivel_tension:            strNuevo(f.nivel_tension, prev.nivel_tension),
+                    propiedad_activos:        strNuevo(f.propiedad_activos, prev.propiedad_activos),
+                    energia_sdl_kwh:          mantenerActiva(f.energia_sdl_kwh, prev.energia_sdl_kwh) ?? prev.energia_sdl_kwh,
+                    valor_sdl_cop:            mantenerActiva(f.valor_sdl_cop, prev.valor_sdl_cop) ?? prev.valor_sdl_cop,
+                    tarifa_sdl:               mantenerActiva(f.tarifa_sdl, prev.tarifa_sdl) ?? prev.tarifa_sdl,
+                    energia_reactiva_ind_pen: tomarReactiva(f.energia_reactiva_ind_pen, prev.energia_reactiva_ind_pen),
+                    energia_reactiva_cap_pen: tomarReactiva(f.energia_reactiva_cap_pen, prev.energia_reactiva_cap_pen),
+                    valor_reactiva_cop:       tomarReactiva(f.valor_reactiva_cop, prev.valor_reactiva_cop),
+                    tarifa_reactiva:          tomarReactiva(f.tarifa_reactiva, prev.tarifa_reactiva),
+                    factor_m:                 tomarReactiva(f.factor_m, prev.factor_m),
+                  },
+                })
+              } else {
+                aCrear.push({
+                  carga_id: carga.id,
+                  periodo_id: periodoStr,
+                  or_id: meta.orId!,
+                  codigo_frontera: f.codigo_frontera,
+                  nombre_frontera: f.nombre_frontera ?? null,
+                  periodo_sdl: f.periodo_sdl,
+                  energia_sdl_kwh: f.energia_sdl_kwh,
+                  valor_sdl_cop: f.valor_sdl_cop,
+                  tarifa_sdl: f.tarifa_sdl,
+                  nivel_tension:            f.nivel_tension            ?? null,
+                  propiedad_activos:        f.propiedad_activos        ?? null,
+                  energia_reactiva_ind_pen: f.energia_reactiva_ind_pen ?? null,
+                  energia_reactiva_cap_pen: f.energia_reactiva_cap_pen ?? null,
+                  valor_reactiva_cop:       f.valor_reactiva_cop       ?? null,
+                  tarifa_reactiva:          f.tarifa_reactiva          ?? null,
+                  factor_m:                 f.factor_m                 ?? null,
+                  es_duplicado:             f.es_duplicado             ?? false,
+                })
+              }
+            }
+            if (aCrear.length > 0) {
+              await tx.registroSDL.createMany({ data: aCrear })
+            }
+            break
+          }
+
           await tx.registroSDL.createMany({
             data: filas.map((f) => ({
               carga_id: carga.id,
