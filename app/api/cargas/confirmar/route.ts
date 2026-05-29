@@ -225,74 +225,77 @@ export async function POST(request: NextRequest) {
 
           if (esMergeEpm) {
             // EPM: fusionar por codigo_frontera con los registros existentes
-            // del periodo+or (ej. el archivo de reactiva completa el de activa
-            // ya cargado, o viceversa). Merge de campos no-null/no-cero: cada
-            // archivo aporta los campos que trae sin pisar los del otro.
+            // del periodo+or (el archivo de reactiva completa el de activa ya
+            // cargado, o viceversa). Para evitar N updates dentro de la
+            // transaccion (causaba timeout "Transaction not found"), hacemos el
+            // merge EN MEMORIA y luego 1 deleteMany + 1 createMany.
             const existentes = await tx.registroSDL.findMany({
               where: { periodo_id: periodoStr, or_id: meta.orId! },
             })
             const porFrontera = new Map(existentes.map(e => [e.codigo_frontera, e]))
 
-            // Reglas de merge por tipo de campo (independiente de cual archivo
-            // llega primero):
-            // - Campos de ACTIVA (energia/valor/tarifa_sdl): conservar el valor
-            //   existente si es significativo (no null, no 0); el archivo de
-            //   reactiva los trae en 0 y no debe pisar los de activa.
-            // - Campos de REACTIVA (ind/cap/valor_reac/tarifa_reac/factor_m) y
-            //   strings: preferir el valor nuevo si no es null (incluido 0,
-            //   que es un dato valido); sino conservar el viejo.
-            const mantenerActiva = (nuevo: number | null | undefined, viejo: Prisma.Decimal | null) =>
-              (viejo != null && Number(viejo) !== 0) ? viejo : (nuevo ?? viejo)
-            const tomarReactiva = (nuevo: number | null | undefined, viejo: Prisma.Decimal | null) =>
-              nuevo != null ? nuevo : viejo
-            const strNuevo = (nuevo: string | null | undefined, viejo: string | null) =>
-              (nuevo && nuevo.trim()) ? nuevo : viejo
-
-            const aCrear: Prisma.RegistroSDLCreateManyInput[] = []
-            for (const f of filas) {
-              const prev = porFrontera.get(f.codigo_frontera)
-              if (prev) {
-                // UPDATE merge: completar campos que el archivo nuevo aporta.
-                await tx.registroSDL.update({
-                  where: { id: prev.id },
-                  data: {
-                    nombre_frontera:          strNuevo(f.nombre_frontera, prev.nombre_frontera),
-                    nivel_tension:            strNuevo(f.nivel_tension, prev.nivel_tension),
-                    propiedad_activos:        strNuevo(f.propiedad_activos, prev.propiedad_activos),
-                    energia_sdl_kwh:          mantenerActiva(f.energia_sdl_kwh, prev.energia_sdl_kwh) ?? prev.energia_sdl_kwh,
-                    valor_sdl_cop:            mantenerActiva(f.valor_sdl_cop, prev.valor_sdl_cop) ?? prev.valor_sdl_cop,
-                    tarifa_sdl:               mantenerActiva(f.tarifa_sdl, prev.tarifa_sdl) ?? prev.tarifa_sdl,
-                    energia_reactiva_ind_pen: tomarReactiva(f.energia_reactiva_ind_pen, prev.energia_reactiva_ind_pen),
-                    energia_reactiva_cap_pen: tomarReactiva(f.energia_reactiva_cap_pen, prev.energia_reactiva_cap_pen),
-                    valor_reactiva_cop:       tomarReactiva(f.valor_reactiva_cop, prev.valor_reactiva_cop),
-                    tarifa_reactiva:          tomarReactiva(f.tarifa_reactiva, prev.tarifa_reactiva),
-                    factor_m:                 tomarReactiva(f.factor_m, prev.factor_m),
-                  },
-                })
-              } else {
-                aCrear.push({
-                  carga_id: carga.id,
-                  periodo_id: periodoStr,
-                  or_id: meta.orId!,
-                  codigo_frontera: f.codigo_frontera,
-                  nombre_frontera: f.nombre_frontera ?? null,
-                  periodo_sdl: f.periodo_sdl,
-                  energia_sdl_kwh: f.energia_sdl_kwh,
-                  valor_sdl_cop: f.valor_sdl_cop,
-                  tarifa_sdl: f.tarifa_sdl,
-                  nivel_tension:            f.nivel_tension            ?? null,
-                  propiedad_activos:        f.propiedad_activos        ?? null,
-                  energia_reactiva_ind_pen: f.energia_reactiva_ind_pen ?? null,
-                  energia_reactiva_cap_pen: f.energia_reactiva_cap_pen ?? null,
-                  valor_reactiva_cop:       f.valor_reactiva_cop       ?? null,
-                  tarifa_reactiva:          f.tarifa_reactiva          ?? null,
-                  factor_m:                 f.factor_m                 ?? null,
-                  es_duplicado:             f.es_duplicado             ?? false,
-                })
-              }
+            // Reglas de merge por tipo de campo (robustas al orden de carga):
+            // - ACTIVA (energia/valor/tarifa_sdl): preferir el valor
+            //   significativo (no null y no 0). El archivo de reactiva los trae
+            //   en 0 y no debe pisar los de activa.
+            // - REACTIVA (ind/cap/valor_reac/tarifa_reac/factor_m): preferir el
+            //   valor nuevo si no es null (incluido 0, que es dato valido);
+            //   sino conservar el existente.
+            // - Strings: preferir el no vacio.
+            const numOf = (v: Prisma.Decimal | number | null | undefined): number | null =>
+              v == null ? null : Number(v)
+            const activaSig = (exist: Prisma.Decimal | null, nuevo: number | null | undefined): number => {
+              const e = numOf(exist), n = numOf(nuevo)
+              if (e != null && e !== 0) return e
+              if (n != null && n !== 0) return n
+              return e ?? n ?? 0
             }
-            if (aCrear.length > 0) {
-              await tx.registroSDL.createMany({ data: aCrear })
+            const reactivaMerge = (exist: Prisma.Decimal | null, nuevo: number | null | undefined): number | null => {
+              const n = numOf(nuevo)
+              if (n != null) return n
+              return numOf(exist)
+            }
+            const strMerge = (exist: string | null, nuevo: string | null | undefined): string | null =>
+              (nuevo && nuevo.trim()) ? nuevo : (exist ?? null)
+
+            // Conjunto union de fronteras (existentes + nuevas).
+            const nuevasPorFrontera = new Map(filas.map(f => [f.codigo_frontera, f]))
+            const todasFronteras = new Set<string>([
+              ...existentes.map(e => e.codigo_frontera),
+              ...filas.map(f => f.codigo_frontera),
+            ])
+
+            const merged: Prisma.RegistroSDLCreateManyInput[] = []
+            for (const cod of todasFronteras) {
+              const prev = porFrontera.get(cod)
+              const f    = nuevasPorFrontera.get(cod)
+              merged.push({
+                carga_id: carga.id,
+                periodo_id: periodoStr,
+                or_id: meta.orId!,
+                codigo_frontera: cod,
+                nombre_frontera:   strMerge(prev?.nombre_frontera ?? null, f?.nombre_frontera),
+                periodo_sdl:       f?.periodo_sdl ?? prev?.periodo_sdl ?? periodoStr,
+                energia_sdl_kwh:   activaSig(prev?.energia_sdl_kwh ?? null, f?.energia_sdl_kwh),
+                valor_sdl_cop:     activaSig(prev?.valor_sdl_cop ?? null, f?.valor_sdl_cop),
+                tarifa_sdl:        activaSig(prev?.tarifa_sdl ?? null, f?.tarifa_sdl),
+                nivel_tension:     strMerge(prev?.nivel_tension ?? null, f?.nivel_tension),
+                propiedad_activos: strMerge(prev?.propiedad_activos ?? null, f?.propiedad_activos),
+                energia_reactiva_ind_pen: reactivaMerge(prev?.energia_reactiva_ind_pen ?? null, f?.energia_reactiva_ind_pen),
+                energia_reactiva_cap_pen: reactivaMerge(prev?.energia_reactiva_cap_pen ?? null, f?.energia_reactiva_cap_pen),
+                valor_reactiva_cop:       reactivaMerge(prev?.valor_reactiva_cop ?? null, f?.valor_reactiva_cop),
+                tarifa_reactiva:          reactivaMerge(prev?.tarifa_reactiva ?? null, f?.tarifa_reactiva),
+                factor_m:                 reactivaMerge(prev?.factor_m ?? null, f?.factor_m),
+                es_duplicado: false,
+              })
+            }
+
+            // Reemplazar los existentes del periodo+or por el conjunto mergeado.
+            await tx.registroSDL.deleteMany({
+              where: { periodo_id: periodoStr, or_id: meta.orId! },
+            })
+            if (merged.length > 0) {
+              await tx.registroSDL.createMany({ data: merged })
             }
             break
           }
@@ -403,7 +406,7 @@ export async function POST(request: NextRequest) {
       })
 
       return { cargaId: carga.id, totalGuardados: filasCompletas.length }
-    })
+    }, { timeout: 60_000, maxWait: 10_000 })  // 60s para cargas grandes (merge EPM, etc.)
 
     return NextResponse.json(resultado)
   } catch (e) {
