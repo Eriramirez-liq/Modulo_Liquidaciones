@@ -43,8 +43,8 @@ const FUENTES: FuenteCard[] = [
     icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
   },
   {
-    tipo: "TC1", label: "TC1 — Conf. Técnica", requiresOR: false,
-    desc: "Archivo de configuración técnica de fronteras (XM/SUI).",
+    tipo: "TC1", label: "TC1 — Conf. Técnica", requiresOR: true,
+    desc: "Archivo de configuración técnica de fronteras por OR (XM/SUI).",
     icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01",
   },
   {
@@ -101,15 +101,14 @@ export function WizardCarga() {
     useState<"reemplazar" | "agregar">("reemplazar")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Lista de operadores: para SDL filtramos a los 21 que tienen mapeo de
-  // estructura (el resto no aplica al modulo). Para BALANCE/COT y demas
-  // fuentes que requieren OR seguimos mostrando todos los activos.
-  // Para SDL incluimos el mapeo en la respuesta para poder detectar si el OR
-  // requiere multi-archivo (ej. EMSA).
+  // Lista de operadores: SDL y TC1 usan la misma whitelist de 21 ORs. Para
+  // SDL incluimos el mapeo para detectar multi-archivo (ej. EMSA). Para
+  // BALANCE/COT y demas fuentes que requieren OR seguimos con todos los activos.
   useEffect(() => {
-    const url = tipoFuente === "SDL"
-      ? "/api/operadores?tipo=sdl&includeMapeo=true"
-      : "/api/operadores"
+    const url =
+      tipoFuente === "SDL" ? "/api/operadores?tipo=sdl&includeMapeo=true" :
+      tipoFuente === "TC1" ? "/api/operadores?tipo=sdl" :
+      "/api/operadores"
     fetch(url)
       .then((r) => r.json())
       .then((data) => setOperadores(Array.isArray(data) ? data : data.operadores ?? []))

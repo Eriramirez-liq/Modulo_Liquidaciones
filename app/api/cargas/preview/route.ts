@@ -6,6 +6,7 @@ import { parsearXM } from "@/lib/parsers/xm"
 import { parsearSDL } from "@/lib/parsers/sdl"
 import { parsearBalance } from "@/lib/parsers/balance"
 import { parsearInsumosSTR } from "@/lib/parsers/insumos-str"
+import { parsearTC1 } from "@/lib/parsers/tc1"
 import {
   previewBodySchema,
   extractPreviewBody,
@@ -150,6 +151,11 @@ export async function POST(request: NextRequest) {
         result = await parsearInsumosSTR(buffers, anio, mes)
         break
       }
+      case "TC1": {
+        if (!orId) return NextResponse.json({ error: "orId requerido para TC1" }, { status: 400 })
+        result = await parsearTC1(buffer)
+        break
+      }
       default:
         return NextResponse.json({ error: "Tipo de fuente inválido" }, { status: 400 })
     }
@@ -160,8 +166,18 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  // Para TC1 quitamos el objeto `detalle` del preview (se veria como
+  // [object Object] en la tabla). filasCompletas SI lo conserva para guardar.
+  const preview = tipoFuente === "TC1"
+    ? result.filas.slice(0, 20).map((f) => {
+        const { detalle, ...resto } = f as Record<string, unknown>
+        void detalle
+        return resto
+      })
+    : result.filas.slice(0, 20)
+
   return NextResponse.json({
-    preview: result.filas.slice(0, 20),
+    preview,
     filasCompletas: result.filas,
     total: result.filas.length,
     alertas: result.alertas,

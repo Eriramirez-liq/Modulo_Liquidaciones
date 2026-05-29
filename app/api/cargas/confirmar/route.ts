@@ -7,6 +7,7 @@ import {
   FilaXM,
   FilaSDL,
   FilaBalance,
+  FilaTC1,
 } from "@/lib/parsers/types"
 import type { FilaSTR } from "@/lib/parsers/insumos-str"
 import { confirmarBodySchema } from "@/lib/validation/cargas"
@@ -339,6 +340,33 @@ export async function POST(request: NextRequest) {
               valor_balance_cop: f.valor_balance_cop,
               tarifa_balance: f.tarifa_balance,
               periodo_tarifa: f.periodo_tarifa,
+            })),
+          })
+          break
+        }
+        case "TC1": {
+          // Sobrescritura por periodo+or: cada carga reemplaza la anterior del
+          // mismo OR para el periodo (el TC1 es una foto del estado actual).
+          const filas = filasCompletas as FilaTC1[]
+          await tx.registroTC1.deleteMany({
+            where: { periodo_id: periodoStr, or_id: meta.orId! },
+          })
+          if (filas.length === 0) break
+          await tx.registroTC1.createMany({
+            data: filas.map((f) => ({
+              carga_id:               carga.id,
+              periodo_id:             periodoStr,
+              or_id:                  meta.orId!,
+              codigo_frontera:        f.codigo_frontera,
+              niu:                    f.niu,
+              nivel_tension:          f.nivel_tension,
+              nivel_tension_primario: f.nivel_tension_primario,
+              pct_propiedad_activo:   f.pct_propiedad_activo,
+              propiedad_activos:      f.propiedad_activos,
+              tipo_conexion:          f.tipo_conexion,
+              conexion_red:           f.conexion_red,
+              id_comercializador:     f.id_comercializador,
+              detalle_json:           (f.detalle as Prisma.InputJsonValue) ?? Prisma.JsonNull,
             })),
           })
           break
