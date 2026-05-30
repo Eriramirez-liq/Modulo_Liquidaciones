@@ -35,6 +35,31 @@ interface ResumenConciliacion {
   incompletas:   number
 }
 
+type IndicadorTC1 = "sin_diferencia" | "nivel_tension" | "propiedad" | "incompletas"
+
+interface ResumenTC1 {
+  periodoId: string
+  periodoStr: string
+  totalFronteras: number
+  sinDiferencia: number
+  diffNivelTension: number
+  diffPropiedad: number
+  incompletas: number
+}
+
+interface FilaDetalleTC1 {
+  id: string
+  codigo_frontera: string
+  operador_red: string | null
+  nombre_usuario: string | null
+  nivel_tension_fac: string | null
+  nivel_tension_tc1: string | null
+  propiedad_fac: string | null
+  propiedad_tc1: string | null
+  caso: string
+  observaciones: string | null
+}
+
 interface FilaDetalle {
   id: string
   codigo_frontera: string
@@ -92,6 +117,34 @@ export default function ConciliacionesPage() {
   const [resumen, setResumen]       = useState<ResumenConciliacion | null>(null)
   const [indicadorSel, setIndicadorSel] = useState<Indicador | null>(null)
   const [descargando, setDescargando] = useState(false)
+  // TC1: resumen y seleccion propios (la conciliacion TC1 es otro motor).
+  const [resumenTC1, setResumenTC1] = useState<ResumenTC1 | null>(null)
+  const [indicadorTC1Sel, setIndicadorTC1Sel] = useState<IndicadorTC1 | null>(null)
+
+  async function descargarExcelTC1() {
+    if (!resumenTC1) return
+    setDescargando(true)
+    try {
+      const qs = new URLSearchParams({ periodoId: resumenTC1.periodoId })
+      if (orId) qs.set("orId", orId)
+      const res = await fetch(`/api/conciliaciones/exportar-tc1?${qs}`)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.error ?? "No se pudo generar el Excel."); return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `conciliacion_tc1_${resumenTC1.periodoStr}.xlsx`
+      document.body.appendChild(a); a.click(); a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setError(`Error al descargar el Excel: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setDescargando(false)
+    }
+  }
 
   async function descargarExcel() {
     if (!resumen) return
@@ -138,10 +191,12 @@ export default function ConciliacionesPage() {
     setError(null)
     setMensaje(null)
     setResumen(null)
+    setResumenTC1(null)
     setIndicadorSel(null)
+    setIndicadorTC1Sel(null)
     if (!periodoId) { setError("Selecciona un período para continuar."); return }
-    if (tipo !== "SDL") {
-      setError(`El motor para "${tipo}" aún no está implementado. Solo SDL está disponible.`)
+    if (tipo !== "SDL" && tipo !== "TC1") {
+      setError(`El motor para "${tipo}" aún no está implementado. Disponibles: SDL y TC1.`)
       return
     }
     const periodo = periodos.find(p => p.id === periodoId)
@@ -156,6 +211,7 @@ export default function ConciliacionesPage() {
           anio: periodo.anio,
           mes:  periodo.mes,
           orId: orId || undefined,
+          tipo,
         }),
       })
       const data = await res.json()
@@ -163,9 +219,13 @@ export default function ConciliacionesPage() {
         setError(data.error ?? "Error al ejecutar la conciliación.")
         return
       }
-      setResumen(data.resumen)
+      if (tipo === "TC1") {
+        setResumenTC1(data.resumen)
+      } else {
+        setResumen(data.resumen)
+      }
       setMensaje(
-        `Conciliación completada: ${data.resumen.totalFronteras} fronteras procesadas. ` +
+        `Conciliación ${tipo} completada: ${data.resumen.totalFronteras} fronteras procesadas. ` +
         `Hacé click en una KPI para ver el detalle.`,
       )
     } catch (e) {
@@ -330,7 +390,158 @@ export default function ConciliacionesPage() {
           )}
         </div>
       )}
+
+      {/* ── Resumen conciliacion TC1 ───────────────────────────────────────── */}
+      {resumenTC1 && (
+        <div style={{
+          background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "24px",
+          display: "flex", flexDirection: "column", gap: 20,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+            <div>
+              <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#111827", margin: "0 0 4px" }}>
+                Resumen TC1 — {resumenTC1.periodoStr}
+              </h2>
+              <p style={{ fontSize: "0.85rem", color: "#6b7280", margin: 0 }}>
+                {resumenTC1.totalFronteras} fronteras procesadas. Se concilian nivel de tensión y propiedad de activos.
+              </p>
+            </div>
+            <button
+              onClick={descargarExcelTC1}
+              disabled={descargando}
+              style={{
+                background: "#fff", color: "#15803d", border: "1px solid #86efac",
+                borderRadius: 8, padding: "8px 16px", fontSize: "0.85rem", fontWeight: 600,
+                cursor: descargando ? "default" : "pointer", display: "flex", alignItems: "center",
+                gap: 8, opacity: descargando ? 0.7 : 1, whiteSpace: "nowrap",
+              }}
+            >
+              <Download size={15} />
+              {descargando ? "Generando…" : "Descargar Excel"}
+            </button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12 }}>
+            <KpiCardTC1 label="Sin diferencia"     indicador="sin_diferencia" selected={indicadorTC1Sel} onSelect={setIndicadorTC1Sel}
+              main={resumenTC1.sinDiferencia} color="#10b981" />
+            <KpiCardTC1 label="Nivel de tensión"   indicador="nivel_tension"  selected={indicadorTC1Sel} onSelect={setIndicadorTC1Sel}
+              main={resumenTC1.diffNivelTension} color="#f59e0b" />
+            <KpiCardTC1 label="Propiedad activos"  indicador="propiedad"      selected={indicadorTC1Sel} onSelect={setIndicadorTC1Sel}
+              main={resumenTC1.diffPropiedad} color="#d97706" />
+            <KpiCardTC1 label="Incompletas"        indicador="incompletas"    selected={indicadorTC1Sel} onSelect={setIndicadorTC1Sel}
+              main={resumenTC1.incompletas} color="#6b7280" />
+          </div>
+
+          {indicadorTC1Sel && (
+            <PanelDetalleTC1
+              indicador={indicadorTC1Sel}
+              periodoId={resumenTC1.periodoId}
+              orId={orId || undefined}
+            />
+          )}
+        </div>
+      )}
     </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Panel de detalle TC1
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PanelDetalleTC1({
+  indicador, periodoId, orId,
+}: { indicador: IndicadorTC1; periodoId: string; orId?: string }) {
+  const [rows, setRows] = useState<FilaDetalleTC1[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setLoading(true); setError(null)
+    const qs = new URLSearchParams({ periodoId, indicador })
+    if (orId) qs.set("orId", orId)
+    fetch(`/api/conciliaciones/detalle-tc1?${qs}`)
+      .then(r => r.json())
+      .then(data => { if (data.error) setError(data.error); else setRows(data.rows ?? []) })
+      .catch(e => setError(String(e)))
+      .finally(() => setLoading(false))
+  }, [indicador, periodoId, orId])
+
+  const titulo =
+    indicador === "sin_diferencia" ? "Sin diferencia" :
+    indicador === "nivel_tension"  ? "NIVEL DE TENSIÓN — detalle" :
+    indicador === "propiedad"      ? "PROPIEDAD DE ACTIVOS — detalle" :
+    "Incompletas"
+
+  return (
+    <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "16px", display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <h3 style={{ fontSize: "0.95rem", fontWeight: 700, color: "#111827", margin: 0 }}>{titulo}</h3>
+        <span style={{ fontSize: "0.78rem", color: "#6b7280" }}>
+          {loading ? "Cargando…" : `${rows.length} ${rows.length === 1 ? "frontera" : "fronteras"}`}
+        </span>
+      </div>
+      {error && <div style={{ color: "#b91c1c", fontSize: "0.85rem" }}>{error}</div>}
+      {!loading && !error && rows.length === 0 && (
+        <div style={{ fontSize: "0.85rem", color: "#6b7280", padding: 16, textAlign: "center" }}>
+          No hay fronteras para este indicador.
+        </div>
+      )}
+      {!loading && rows.length > 0 && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", borderRadius: 6 }}>
+            <thead>
+              <tr>
+                <th style={th}>SIC</th>
+                <th style={th}>Operador</th>
+                {indicador === "nivel_tension" && <>
+                  <th style={th}>Nivel T. Fac</th><th style={th}>Nivel T. TC1</th>
+                </>}
+                {indicador === "propiedad" && <>
+                  <th style={th}>Propiedad Fac</th><th style={th}>Propiedad TC1</th>
+                </>}
+                {indicador === "incompletas" && <th style={th}>Motivo</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.id}>
+                  <td style={tdSic}>{r.codigo_frontera}</td>
+                  <td style={td}>{r.operador_red ?? "—"}</td>
+                  {indicador === "nivel_tension" && <>
+                    <td style={td}>{txt(r.nivel_tension_fac)}</td><td style={td}>{txt(r.nivel_tension_tc1)}</td>
+                  </>}
+                  {indicador === "propiedad" && <>
+                    <td style={td}>{txt(r.propiedad_fac)}</td><td style={td}>{txt(r.propiedad_tc1)}</td>
+                  </>}
+                  {indicador === "incompletas" && <td style={td}>{r.observaciones ?? "—"}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function KpiCardTC1({
+  label, main, color, indicador, selected, onSelect,
+}: {
+  label: string; main: number; color: string
+  indicador: IndicadorTC1; selected: IndicadorTC1 | null; onSelect: (i: IndicadorTC1) => void
+}) {
+  const isSel = selected === indicador
+  return (
+    <button onClick={() => onSelect(indicador)} style={{
+      background: isSel ? "#f0f9ff" : "#fff",
+      border: isSel ? `2px solid ${color}` : "1px solid #e5e7eb",
+      borderRadius: 10, padding: "14px 16px", display: "flex", flexDirection: "column",
+      gap: 4, cursor: "pointer", textAlign: "left",
+    }}>
+      <span style={{ fontSize: "0.7rem", fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
+      <span style={{ fontSize: "1.5rem", fontWeight: 700, color, lineHeight: 1.15 }}>{main.toLocaleString("es-CO")}</span>
+    </button>
   )
 }
 
