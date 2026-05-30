@@ -460,6 +460,34 @@ model ResultadoConciliacion {
   @@map("resultados_conciliacion")
 }
 
+// Resultado de la conciliacion TC1 (configuracion tecnica) contra Facturacion.
+// Solo se concilian nivel de tension y propiedad de activos, cruzando por
+// codigo de frontera. Sin relaciones Prisma (campos planos) para no tocar
+// otros modelos; el nombre del OR se guarda como texto (operador_red).
+model ResultadoConciliacionTC1 {
+  id                 String   @id @default(cuid())
+  periodo_id         String
+  or_id              String?
+  codigo_frontera    String
+  nombre_usuario     String?
+  operador_red       String?
+  nivel_tension_fac  String?
+  nivel_tension_tc1  String?
+  diff_nivel_tension Boolean  @default(false)
+  propiedad_fac      String?
+  propiedad_tc1      String?
+  diff_propiedad     Boolean  @default(false)
+  // SIN_DIFERENCIA | DIFERENCIA | INCOMPLETA
+  caso               String
+  observaciones      String?
+  conciliado_por_id  String?
+  createdAt          DateTime @default(now())
+
+  @@unique([periodo_id, codigo_frontera], name: "uq_tc1_periodo_frontera")
+  @@index([periodo_id, or_id])
+  @@map("resultados_conciliacion_tc1")
+}
+
 model Provision {
   id                     String          @id @default(cuid())
   resultado_id           String
