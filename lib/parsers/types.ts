@@ -65,9 +65,12 @@ export type FilaBalance = {
   periodo_tarifa: string
 }
 
-// Columnas conocidas del formato TC1 (configuracion tecnica del OR). Las
-// columnas extra del archivo se omiten. Se concilian solo nivel_tension y
-// propiedad_activos contra Facturacion, pero se guardan todas (detalle).
+// Columnas canonicas del formato TC1 (estandar regulatorio CREG), EN ORDEN.
+// El TC1 de cada OR se estandariza a estas columnas por POSICION (el layout
+// es fijo; solo cambian los nombres de header y las columnas extra van al
+// final). Este es el shape que despues se envia a Metabase.
+// Se concilian solo NIVEL_DE_TENSION y PORC_PROPIEDAD_DEL_ACTIVO contra
+// Facturacion, pero se guardan las 33.
 export const TC1_COLUMNAS = [
   "NIU", "CODIGO_DE_CONEXION", "TIPO_DE_CONEXION", "NIVEL_DE_TENSION",
   "NIVEL_DE_TENSION_PRIMARIO", "PORC_PROPIEDAD_DEL_ACTIVO", "CONEXION_RED",
@@ -77,7 +80,7 @@ export const TC1_COLUMNAS = [
   "TIPO_AREA_ESPECIAL", "CODIGO_AREA_ESPECIAL", "ESTRATO_ID", "ALTITUD",
   "LONGITUD", "LATITUD", "AUTOGENERADOR", "EXPORTA_ENERGIA", "POTENCIA",
   "TIPO_GENERACION", "CODIGO_FRONTERA_AUTO_GEN", "INICIO_OPERACION",
-  "CONTRATO_RESPALDO",
+  "CONTRATO_RESPALDO", "CAPACIDAD_CONTRATO_RESPALDO", "CICLO", "NODO",
 ] as const
 
 export type FilaTC1 = {

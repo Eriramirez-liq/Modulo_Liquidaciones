@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx"
-import { type FilaTC1, type ResultadoParser } from "./types"
+import { type FilaTC1, type ResultadoParser, TC1_COLUMNAS } from "./types"
 
 /**
  * Parser del archivo TC1 (configuracion tecnica por OR).
@@ -9,8 +9,7 @@ import { type FilaTC1, type ResultadoParser } from "./types"
  * EMCALI usa "SIC" para la frontera, etc.) y algunos archivos traen filas
  * vacias antes del header (ESSA). Por eso:
  *   - Se detecta la fila de header escaneando las primeras filas.
- *   - El match de columnas clave es por patrones (tokens incluidos/excluidos),
- *     no por nombre exacto.
+ *   - El match de columnas clave es por patrones (tokens incluidos/excluidos).
  *
  * - Acepta CSV y XLSX (SheetJS detecta el formato del buffer).
  * - Filtra por ID_COMERCIALIZADOR = 62371 (BIA) SI existe esa columna; si el
@@ -18,9 +17,24 @@ import { type FilaTC1, type ResultadoParser } from "./types"
  * - codigo_frontera = Codigo Frontera Comercial (clave de cruce con Facturacion).
  * - propiedad_activos se deriva de PORC_PROPIEDAD_DEL_ACTIVO:
  *     0 o 101 -> USUARIO, 50 -> COMPARTIDO, 100 -> OR.
+ * - detalle ESTANDARIZADO a las 33 columnas canonicas TC1 por POSICION
+ *   (layout CREG fijo), para el posterior push a Metabase.
  */
 
 const ID_COMERCIALIZADOR_BIA = 62371
+
+// Quita caracteres de control (< 0x20) y DEL (0x7F). Algunos CSV (AFINIA)
+// traen null bytes \x00 alrededor de los valores; sin limpiarlos el cruce de
+// fronteras fallaria. Conserva acentos, espacios internos y demas.
+function limpiar(v: unknown): string {
+  const s = String(v ?? "")
+  let out = ""
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    if (c >= 32 && c !== 127) out += s[i]
+  }
+  return out.trim()
+}
 
 function normCol(s: string): string {
   return s
@@ -104,7 +118,7 @@ export async function parsearTC1(data: Uint8Array): Promise<ResultadoParser<Fila
     return { filas, alertas, erroresCriticos }
   }
 
-  const headersOrig = (raw[hRow] ?? []).map(h => String(h ?? "").trim())
+  const headersOrig = (raw[hRow] ?? []).map(h => limpiar(h))
   const headersNorm = headersOrig.map(normCol)
 
   // Codigo frontera comercial. Evitar columnas de autogeneracion/exportacion.
@@ -138,7 +152,7 @@ export async function parsearTC1(data: Uint8Array): Promise<ResultadoParser<Fila
   }
 
   const cell = (row: (string | number)[], idx: number): string =>
-    idx >= 0 ? String(row[idx] ?? "").trim() : ""
+    idx >= 0 ? limpiar(row[idx]) : ""
 
   const filtraId = idxIdCom >= 0
   if (!filtraId) {
@@ -160,11 +174,24 @@ export async function parsearTC1(data: Uint8Array): Promise<ResultadoParser<Fila
     const cod = cell(row, idxCodigo)
     if (!cod) continue
 
-    // detalle: todas las columnas del archivo (los nombres varian entre OR).
+    // detalle ESTANDARIZADO: las 33 columnas canonicas TC1 mapeadas por
+    // POSICION (el layout CREG es fijo; los nombres de header varian). Asi
+    // el shape que va a Metabase es identico para todos los OR.
     const detalle: Record<string, string> = {}
-    headersOrig.forEach((h, j) => {
-      if (h) detalle[h] = String(row[j] ?? "").trim()
+    TC1_COLUMNAS.forEach((canon, j) => {
+      detalle[canon] = limpiar(row[j])
     })
+    // Override de seguridad: para las columnas criticas usamos el valor
+    // detectado por nombre (validado en los 21 OR), por si algun archivo
+    // tuviera el orden corrido.
+    detalle["COD_FRONTERA_COMERCIAL"]    = cod
+    if (idxNivel  >= 0) detalle["NIVEL_DE_TENSION"]          = cell(row, idxNivel)
+    if (idxPorc   >= 0) detalle["PORC_PROPIEDAD_DEL_ACTIVO"] = cell(row, idxPorc)
+    if (idxIdCom  >= 0) detalle["ID_COMERCIALIZADOR"]        = cell(row, idxIdCom)
+    if (idxNTP    >= 0) detalle["NIVEL_DE_TENSION_PRIMARIO"] = cell(row, idxNTP)
+    if (idxTipoCx >= 0) detalle["TIPO_DE_CONEXION"]          = cell(row, idxTipoCx)
+    if (idxConRed >= 0) detalle["CONEXION_RED"]              = cell(row, idxConRed)
+    if (idxNiu    >= 0) detalle["NIU"]                       = cell(row, idxNiu)
 
     const porc = cell(row, idxPorc) || null
     filas.push({
