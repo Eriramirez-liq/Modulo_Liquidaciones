@@ -74,14 +74,17 @@ function detectarHeaderRow(raw: (string | number)[][]): number {
   return bestScore >= 3 ? best : 0
 }
 
-export async function parsearTC1(buffer: Buffer): Promise<ResultadoParser<FilaTC1>> {
+// Acepta Uint8Array (Buffer en server lo satisface) para poder parsear tanto
+// en el servidor como en el navegador (archivos grandes que superan el limite
+// de upload de Vercel; igual que XM).
+export async function parsearTC1(data: Uint8Array): Promise<ResultadoParser<FilaTC1>> {
   const alertas: string[]         = []
   const erroresCriticos: string[] = []
   const filas: FilaTC1[]          = []
 
   let raw: (string | number)[][]
   try {
-    const wb = XLSX.read(buffer, { type: "buffer", cellDates: false })
+    const wb = XLSX.read(data, { type: "array", cellDates: false })
     const ws = wb.Sheets[wb.SheetNames[0] ?? ""]
     if (!ws) {
       erroresCriticos.push("El archivo no tiene hojas.")

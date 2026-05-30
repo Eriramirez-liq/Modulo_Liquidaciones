@@ -278,6 +278,53 @@ export function WizardCarga() {
       return
     }
 
+    // ── TC1: parsear en el navegador igual que XM. Los TC1 de algunos OR
+    // (CELSIA, CHEC) superan los 100 MB y no se pueden subir a Vercel (limite
+    // 4.5 MB). El parser filtra por ID_COMERCIALIZADOR 62371, asi que solo se
+    // envian al servidor las filas de BIA (payload chico).
+    if (tipoFuente === "TC1" && file) {
+      try {
+        const [{ parsearTC1 }, checkRes] = await Promise.all([
+          import("@/lib/parsers/tc1"),
+          fetch("/api/cargas/check-previa", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ anio, mes, tipoFuente, orId: orId || undefined }),
+          }),
+        ])
+        if (!checkRes.ok) {
+          const t = await checkRes.text()
+          let msg = "Error al validar el periodo."
+          try { const j = JSON.parse(t); msg = j.error ?? msg } catch { /* keep default */ }
+          setError(msg); return
+        }
+        const checkData = await checkRes.json()
+        const ab = await file.arrayBuffer()
+        const u8 = new Uint8Array(ab)
+        const result = await parsearTC1(u8)
+        // El objeto `detalle` no se muestra en la tabla de preview.
+        const previewSinDetalle = result.filas.slice(0, 20).map((f) => {
+          const { detalle, ...resto } = f as Record<string, unknown>
+          void detalle
+          return resto
+        })
+        setPreview(previewSinDetalle)
+        setFilasCompletas(result.filas)
+        setTotal(result.filas.length)
+        setAlertas(result.alertas)
+        setErroresCriticos(result.erroresCriticos)
+        setExisteCargaPrevia(checkData.existeCargaPrevia ?? false)
+        setCargaPreviaId(checkData.cargaPreviaId)
+        setStep(2)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        setError(`Error al parsear el archivo TC1 en el navegador: ${msg}`)
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+
     try {
       const fd = new FormData()
       if (isMultiFile) {
