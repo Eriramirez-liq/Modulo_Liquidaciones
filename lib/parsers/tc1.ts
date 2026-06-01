@@ -125,6 +125,17 @@ export async function parsearTC1(data: Uint8Array): Promise<ResultadoParser<Fila
   const headersOrig = (raw[hRow] ?? []).map(h => limpiar(h))
   const headersNorm = headersOrig.map(normCol)
 
+  // Columnas "ruido" que algunos OR intercalan y que NO son parte del formato
+  // canonico (ej. ENEL mete "CX" = sigla del comercializador entre
+  // ID_COMERCIALIZADOR e ID_MERCADO, desalineando el mapeo por posicion).
+  // Se descartan: el mapeo posicional usa solo las columnas "mantenidas".
+  const DESCARTAR_HEADER = new Set([
+    "CX", "SIGLA", "SIGLAS", "SIGLAAGENTE", "SIGLASAGENTE", "SIGLACOMERCIALIZADOR",
+  ])
+  // Indices de columnas a conservar para el mapeo posicional a las 33 canonicas.
+  const idxMantener: number[] = []
+  headersNorm.forEach((h, i) => { if (!DESCARTAR_HEADER.has(h)) idxMantener.push(i) })
+
   // Codigo frontera comercial. Evitar columnas de autogeneracion/exportacion.
   // "FROTERA" cubre el typo de CEDENAR (COD_FROTERA_COMERCIAL, sin la N).
   let idxCodigo = buscar(headersNorm, [["FRONT", "COMERC"], ["FROTERA", "COMERC"]], ["AUTO", "GENERA", "EXPORT"])
@@ -180,10 +191,13 @@ export async function parsearTC1(data: Uint8Array): Promise<ResultadoParser<Fila
 
     // detalle ESTANDARIZADO: las 33 columnas canonicas TC1 mapeadas por
     // POSICION (el layout CREG es fijo; los nombres de header varian). Asi
-    // el shape que va a Metabase es identico para todos los OR.
+    // el shape que va a Metabase es identico para todos los OR. Se mapea
+    // sobre las columnas "mantenidas" (sin las ruido intercaladas como la
+    // sigla "CX" de ENEL), lo que realinea las posiciones.
     const detalle: Record<string, string> = {}
-    TC1_COLUMNAS.forEach((canon, j) => {
-      detalle[canon] = limpiar(row[j])
+    TC1_COLUMNAS.forEach((canon, k) => {
+      const colIdx = idxMantener[k]
+      detalle[canon] = colIdx != null ? limpiar(row[colIdx]) : ""
     })
     // Override de seguridad: para las columnas criticas usamos el valor
     // detectado por nombre (validado en los 21 OR), por si algun archivo
