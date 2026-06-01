@@ -89,7 +89,14 @@ export async function ejecutarConciliacionTC1(opts: OpcionesTC1): Promise<Resume
   const resultados: Row[] = []
   let sinDif = 0, diffNT = 0, diffProp = 0, incompletas = 0
 
+  // Deduplicar por codigo_frontera: Facturacion puede traer la misma frontera
+  // en varias filas; el resultado es uno por frontera (unique periodo+frontera).
+  const fronterasVistas = new Set<string>()
+
   for (const f of facturacion) {
+    if (fronterasVistas.has(f.codigo_frontera)) continue
+    fronterasVistas.add(f.codigo_frontera)
+
     const t = tc1ByFrontera.get(normKey(f.codigo_frontera))
 
     // Nivel de tension TC1 puede venir "1","2",... ; propiedad "USUARIO"/"OR"/"COMPARTIDO".
@@ -179,7 +186,7 @@ export async function ejecutarConciliacionTC1(opts: OpcionesTC1): Promise<Resume
   return {
     periodoId:        periodo.id,
     periodoStr,
-    totalFronteras:   facturacion.length,
+    totalFronteras:   resultados.length,  // fronteras unicas conciliadas
     sinDiferencia:    sinDif,
     diffNivelTension: diffNT,
     diffPropiedad:    diffProp,
