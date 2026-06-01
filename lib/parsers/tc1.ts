@@ -98,7 +98,11 @@ export async function parsearTC1(data: Uint8Array): Promise<ResultadoParser<Fila
 
   let raw: (string | number)[][]
   try {
-    const wb = XLSX.read(data, { type: "array", cellDates: false })
+    // dense:true almacena la hoja como array de arrays (no un objeto con una
+    // clave por celda). Imprescindible para CSV gigantes como CELSIA_VALLE
+    // (102MB) / CELSIA_TOLIMA (82MB): sin dense, XLSX crea millones de
+    // propiedades y V8 lanza "Too many properties to enumerate".
+    const wb = XLSX.read(data, { type: "array", cellDates: false, dense: true })
     const ws = wb.Sheets[wb.SheetNames[0] ?? ""]
     if (!ws) {
       erroresCriticos.push("El archivo no tiene hojas.")
