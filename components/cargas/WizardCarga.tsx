@@ -302,13 +302,14 @@ export function WizardCarga() {
         const ab = await file.arrayBuffer()
         const u8 = new Uint8Array(ab)
         const result = await parsearTC1(u8)
-        // El objeto `detalle` no se muestra en la tabla de preview.
-        const previewSinDetalle = result.filas.slice(0, 20).map((f) => {
-          const { detalle, ...resto } = f as Record<string, unknown>
-          void detalle
-          return resto
-        })
-        setPreview(previewSinDetalle)
+        // En la previa mostramos el `detalle`: las 33 columnas canonicas
+        // estandarizadas que se envian a Metabase. Los campos internos
+        // (propiedad_activos derivado, etc.) NO se muestran; solo se usan
+        // para la conciliacion con Facturacion.
+        const previewCanonico = result.filas.slice(0, 20).map(
+          (f) => (f as { detalle: Record<string, string> }).detalle,
+        )
+        setPreview(previewCanonico)
         setFilasCompletas(result.filas)
         setTotal(result.filas.length)
         setAlertas(result.alertas)
