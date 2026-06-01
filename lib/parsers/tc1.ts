@@ -91,10 +91,17 @@ function detectarHeaderRow(raw: (string | number)[][]): number {
 // Acepta Uint8Array (Buffer en server lo satisface) para poder parsear tanto
 // en el servidor como en el navegador (archivos grandes que superan el limite
 // de upload de Vercel; igual que XM).
-export async function parsearTC1(data: Uint8Array): Promise<ResultadoParser<FilaTC1>> {
+export async function parsearTC1(
+  data: Uint8Array,
+  anio: number,
+  mes: number,
+): Promise<ResultadoParser<FilaTC1>> {
   const alertas: string[]         = []
   const erroresCriticos: string[] = []
   const filas: FilaTC1[]          = []
+  // Periodo (metadata): primera columna del shape de Metabase, formato "M-AAAA"
+  // (ej. febrero 2026 -> "2-2026"). NO viene en el archivo del OR.
+  const periodoMeta = `${mes}-${anio}`
 
   let raw: (string | number)[][]
   try {
@@ -189,12 +196,12 @@ export async function parsearTC1(data: Uint8Array): Promise<ResultadoParser<Fila
     const cod = cell(row, idxCodigo)
     if (!cod) continue
 
-    // detalle ESTANDARIZADO: las 33 columnas canonicas TC1 mapeadas por
-    // POSICION (el layout CREG es fijo; los nombres de header varian). Asi
-    // el shape que va a Metabase es identico para todos los OR. Se mapea
-    // sobre las columnas "mantenidas" (sin las ruido intercaladas como la
-    // sigla "CX" de ENEL), lo que realinea las posiciones.
+    // detalle ESTANDARIZADO = shape de Metabase: "Periodo" (metadata) + las 33
+    // columnas canonicas TC1 mapeadas por POSICION (el layout CREG es fijo;
+    // los nombres de header varian). Se mapea sobre las columnas "mantenidas"
+    // (sin las ruido intercaladas como la sigla "CX" de ENEL), realineando.
     const detalle: Record<string, string> = {}
+    detalle["Periodo"] = periodoMeta
     TC1_COLUMNAS.forEach((canon, k) => {
       const colIdx = idxMantener[k]
       detalle[canon] = colIdx != null ? limpiar(row[colIdx]) : ""

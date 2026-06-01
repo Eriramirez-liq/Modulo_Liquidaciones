@@ -301,7 +301,7 @@ export function WizardCarga() {
         const checkData = await checkRes.json()
         const ab = await file.arrayBuffer()
         const u8 = new Uint8Array(ab)
-        const result = await parsearTC1(u8)
+        const result = await parsearTC1(u8, anio, mes)
         // En la previa mostramos el `detalle`: las 33 columnas canonicas
         // estandarizadas que se envian a Metabase. Los campos internos
         // (propiedad_activos derivado, etc.) NO se muestran; solo se usan

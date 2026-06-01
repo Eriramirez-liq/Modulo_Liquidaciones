@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
       }
       case "TC1": {
         if (!orId) return NextResponse.json({ error: "orId requerido para TC1" }, { status: 400 })
-        result = await parsearTC1(buffer)
+        result = await parsearTC1(buffer, anio, mes)
         break
       }
       default:
