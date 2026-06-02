@@ -153,16 +153,39 @@ function parsearUso(nombre: string, data: Uint8Array): { or: string; datos: Dato
 }
 
 // Parsea un archivo ADD: devuelve el cargo (DT) del area-nivel.
+// Robusto: ubica la fila de encabezado ("Operador" / "Cargo") y toma el primer
+// valor numerico de las filas de datos, sin asumir columna ni fila fijas
+// (el layout puede variar entre periodos).
 function parsearAdd(nombre: string, data: Uint8Array): { area: AreaDistribucion; nivel: number; dt: number } | null {
   const area = areaDelNombre(nombre)
   const nivel = nivelDelNombre(nombre)
   if (!area || !nivel) return null
   const raw = leerHoja(data)
-  // El cargo (col C idx2) es el mismo para todos los OR del area-nivel; tomamos
-  // el primer valor numerico desde la fila 5 (idx 4).
-  for (let i = 4; i < raw.length; i++) {
-    const v = toNum(raw[i]?.[2])
-    if (v != null && v > 0) return { area, nivel, dt: v }
+
+  // Fila de encabezado: la que menciona "OPERADOR" (el header real, no el
+  // titulo "Cargos ADD" que tambien contiene "CARGO").
+  let hdr = -1
+  for (let i = 0; i < Math.min(raw.length, 20); i++) {
+    const fila = (raw[i] ?? []).map(c => norm(String(c ?? "")))
+    if (fila.some(c => c.includes("OPERADOR"))) { hdr = i; break }
+  }
+  const start = hdr >= 0 ? hdr + 1 : 4
+
+  // Solo celdas NUMERICAS puras (no extraer digitos de texto como "Nivel 1").
+  const numPuro = (v: unknown): number | null => {
+    if (typeof v === "number") return isNaN(v) ? null : v
+    const s = String(v ?? "").trim()
+    if (!s || !/^[$\s]*-?[\d.,]+[$\s%]*$/.test(s)) return null
+    return toNum(s)
+  }
+
+  // El cargo es el primer numero puro > 1 en una fila de datos (la fila trae el
+  // operador en texto + el cargo). Es el mismo para todos los OR del area-nivel.
+  for (let i = start; i < raw.length; i++) {
+    for (const celda of raw[i] ?? []) {
+      const v = numPuro(celda)
+      if (v != null && v > 1) return { area, nivel, dt: v }
+    }
   }
   return null
 }
