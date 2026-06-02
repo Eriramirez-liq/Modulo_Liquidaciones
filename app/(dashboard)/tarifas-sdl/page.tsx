@@ -1,5 +1,6 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
+import { MultiSelect } from "@/components/ui/MultiSelect"
 
 interface FilaTarifa {
   id: string
@@ -10,7 +11,15 @@ interface FilaTarifa {
   tarifa_activa: string
   tarifa_reactiva: string
 }
+type Periodo = { id: string; anio: number; mes: number }
+type Operador = { id: string; codigo: string; nombre: string }
 
+const MES_NOMBRE = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+
+function periodoStr(anio: number, mes: number): string {
+  return `${anio}-${String(mes).padStart(2, "0")}`
+}
 function num(v: string | number | null): string {
   if (v == null) return "—"
   const n = typeof v === "number" ? v : parseFloat(v)
@@ -18,43 +27,67 @@ function num(v: string | number | null): string {
   return n.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-const selectStyle: React.CSSProperties = {
-  border: "1px solid #d1d5db", borderRadius: 8, padding: "8px 12px",
-  fontSize: "0.875rem", background: "#fff", cursor: "pointer", minWidth: 160,
-}
-
 export default function TarifasSDLPage() {
-  const [periodo, setPeriodo]   = useState("")
-  const [orCodigo, setOrCodigo] = useState("")
-  const [nivel, setNivel]       = useState("")
-  const [energia, setEnergia]   = useState<"todas" | "activa" | "reactiva">("todas")
+  const [periodos, setPeriodos]     = useState<Periodo[]>([])
+  const [operadores, setOperadores] = useState<Operador[]>([])
+  // Selecciones (multi). Periodos como "AAAA-MM"; ORs como codigo.
+  const [periodoSel, setPeriodoSel] = useState<string[]>([])
+  const [orSel, setOrSel]           = useState<string[]>([])
+  const [nivel, setNivel]           = useState("")
+  const [energia, setEnergia]       = useState<"todos" | "activa" | "reactiva">("todos")
 
-  const [rows, setRows]           = useState<FilaTarifa[]>([])
-  const [periodos, setPeriodos]   = useState<string[]>([])
-  const [operadores, setOperadores] = useState<string[]>([])
-  const [loading, setLoading]     = useState(false)
-  const [error, setError]         = useState<string | null>(null)
+  const [rows, setRows]       = useState<FilaTarifa[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState<string | null>(null)
+
+  // Opciones: mismos periodos que Cargos STR (de /api/periodos) y los 21 OR SDL.
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/periodos").then(r => r.json()),
+      fetch("/api/operadores?tipo=sdl").then(r => r.json()),
+    ]).then(([ps, ors]) => {
+      setPeriodos(Array.isArray(ps) ? ps : [])
+      setOperadores(Array.isArray(ors) ? ors : [])
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     setLoading(true); setError(null)
     const qs = new URLSearchParams()
-    if (periodo)  qs.set("periodo", periodo)
-    if (orCodigo) qs.set("orCodigo", orCodigo)
-    if (nivel)    qs.set("nivel", nivel)
+    if (periodoSel.length > 0) qs.set("periodos", periodoSel.join(","))
+    if (orSel.length      > 0) qs.set("orCodigos", orSel.join(","))
+    if (nivel) qs.set("nivel", nivel)
     fetch(`/api/tarifas-sdl?${qs}`)
       .then(r => r.json())
       .then(data => {
         if (data.error) { setError(data.error); return }
         setRows(data.rows ?? [])
-        setPeriodos(data.periodos ?? [])
-        setOperadores(data.operadores ?? [])
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [periodo, orCodigo, nivel])
+  }, [periodoSel, orSel, nivel])
 
-  const verActiva   = energia === "todas" || energia === "activa"
-  const verReactiva = energia === "todas" || energia === "reactiva"
+  const periodoOpts = useMemo(
+    () => periodos.map(p => ({ id: periodoStr(p.anio, p.mes), label: `${MES_NOMBRE[p.mes]} ${p.anio}` })),
+    [periodos],
+  )
+  const orOpts = useMemo(
+    () => operadores.map(o => ({ id: o.codigo, label: o.nombre })),
+    [operadores],
+  )
+
+  const periodoSummary = periodoSel.length === 0 ? "Todos"
+    : periodoSel.length === 1 ? (periodoOpts.find(p => p.id === periodoSel[0])?.label ?? "1 mes")
+    : `${periodoSel.length} meses`
+  const orSummary = orSel.length === 0 ? "Todos"
+    : orSel.length === 1 ? (orOpts.find(o => o.id === orSel[0])?.label ?? "1 OR")
+    : `${orSel.length} ORs`
+
+  const toggle = (set: React.Dispatch<React.SetStateAction<string[]>>) => (id: string) =>
+    set(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+
+  const verActiva   = energia === "todos" || energia === "activa"
+  const verReactiva = energia === "todos" || energia === "reactiva"
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -70,36 +103,46 @@ export default function TarifasSDLPage() {
 
       {/* Filtros */}
       <div style={{
-        background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "20px",
+        background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "16px 20px",
         display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end",
       }}>
-        <Filtro label="Mes de consumo">
-          <select value={periodo} onChange={e => setPeriodo(e.target.value)} style={selectStyle}>
-            <option value="">Todos</option>
-            {periodos.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-        </Filtro>
-        <Filtro label="Operador de red">
-          <select value={orCodigo} onChange={e => setOrCodigo(e.target.value)} style={selectStyle}>
-            <option value="">Todos</option>
-            {operadores.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
-        </Filtro>
-        <Filtro label="Nivel de tensión">
-          <select value={nivel} onChange={e => setNivel(e.target.value)} style={selectStyle}>
+        <MultiSelect
+          label="Mes de consumo"
+          summary={periodoSummary}
+          options={periodoOpts}
+          selected={periodoSel}
+          onToggle={toggle(setPeriodoSel)}
+          onSelectAll={() => setPeriodoSel(periodoOpts.map(p => p.id))}
+          onClear={() => setPeriodoSel([])}
+        />
+        <MultiSelect
+          label="Operador de red"
+          summary={orSummary}
+          options={orOpts}
+          selected={orSel}
+          onToggle={toggle(setOrSel)}
+          onSelectAll={() => setOrSel(orOpts.map(o => o.id))}
+          onClear={() => setOrSel([])}
+        />
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label style={{ fontSize: "0.78rem", fontWeight: 500, color: "#374151" }}>Nivel de tensión</label>
+          <select value={nivel} onChange={e => setNivel(e.target.value)}
+            style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "8px 12px", fontSize: "0.875rem", background: "#fff", minWidth: 140 }}>
             <option value="">Todos</option>
             <option value="1">Nivel 1</option>
             <option value="2">Nivel 2</option>
             <option value="3">Nivel 3</option>
           </select>
-        </Filtro>
-        <Filtro label="Energía">
-          <select value={energia} onChange={e => setEnergia(e.target.value as "todas" | "activa" | "reactiva")} style={selectStyle}>
-            <option value="todas">Activa y reactiva</option>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label style={{ fontSize: "0.78rem", fontWeight: 500, color: "#374151" }}>Energía</label>
+          <select value={energia} onChange={e => setEnergia(e.target.value as "todos" | "activa" | "reactiva")}
+            style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "8px 12px", fontSize: "0.875rem", background: "#fff", minWidth: 140 }}>
             <option value="activa">Activa</option>
             <option value="reactiva">Reactiva</option>
+            <option value="todos">Todos</option>
           </select>
-        </Filtro>
+        </div>
       </div>
 
       {/* Tabla */}
@@ -147,14 +190,6 @@ export default function TarifasSDLPage() {
   )
 }
 
-function Filtro({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <label style={{ fontSize: "0.8rem", fontWeight: 500, color: "#374151" }}>{label}</label>
-      {children}
-    </div>
-  )
-}
 function Th({ children, right }: { children: React.ReactNode; right?: boolean }) {
   return (
     <th style={{

@@ -16,14 +16,15 @@ export async function GET(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
 
   const { searchParams } = new URL(request.url)
-  const periodo   = searchParams.get("periodo")   ?? undefined
-  const orCodigo  = searchParams.get("orCodigo")  ?? undefined
-  const nivel     = searchParams.get("nivel")     ?? undefined
+  // Listas separadas por coma (multi-seleccion). Vacio = todos.
+  const periodos  = (searchParams.get("periodos")  ?? "").split(",").filter(Boolean)
+  const orCodigos = (searchParams.get("orCodigos") ?? "").split(",").filter(Boolean)
+  const nivel     = searchParams.get("nivel") ?? undefined
 
   const where: Prisma.TarifaSDLWhereInput = {
-    ...(periodo  ? { periodo } : {}),
-    ...(orCodigo ? { or_codigo: orCodigo } : {}),
-    ...(nivel    ? { nivel_tension: nivel } : {}),
+    ...(periodos.length  > 0 ? { periodo: { in: periodos } } : {}),
+    ...(orCodigos.length > 0 ? { or_codigo: { in: orCodigos } } : {}),
+    ...(nivel ? { nivel_tension: nivel } : {}),
   }
 
   const [rows, periodosRaw, orsRaw] = await Promise.all([
