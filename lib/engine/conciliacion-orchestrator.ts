@@ -148,8 +148,14 @@ export async function ejecutarConciliacion(
   const detalleIncompletas:  DetalleFrontera[] = []
   const detalleAlertaManual: DetalleFrontera[] = []
 
+  // Deduplicar: Facturacion puede traer la misma frontera en varias filas;
+  // el resultado es uno por frontera (unique periodo_id+codigo_frontera).
+  const fronterasVistas = new Set<string>()
+
   for (const f of facturacion) {
     const fKey   = normKey(f.codigo_frontera)
+    if (fronterasVistas.has(fKey)) continue
+    fronterasVistas.add(fKey)
     const xmRec  = xmByFrontera.get(fKey)
     const sdlRec = sdlByFrontera.get(fKey)
 
@@ -524,7 +530,7 @@ export async function ejecutarConciliacion(
   return {
     periodoId:    periodo.id,
     periodoStr,
-    totalFronteras: facturacion.length + huerfanasByKey.size,
+    totalFronteras: fronterasVistas.size + huerfanasByKey.size,  // unicas (sin duplicados de Facturacion)
     porCaso,
     sinDiferencia,
     indicadores: {
