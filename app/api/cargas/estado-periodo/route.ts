@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { SDL_OPERADORES } from "@/lib/constants/operadores"
 
 export async function GET(request: NextRequest) {
   const session = await auth()
@@ -19,8 +20,9 @@ export async function GET(request: NextRequest) {
     select: { id: true },
   })
 
+  // SDL y TC1 aplican solo a los 21 ORs de la whitelist.
   const operadores = await db.configuracionOR.findMany({
-    where: { activo: true },
+    where: { activo: true, codigo: { in: SDL_OPERADORES } },
     select: { id: true, codigo: true, nombre: true },
     orderBy: { codigo: "asc" },
   })
@@ -33,7 +35,7 @@ export async function GET(request: NextRequest) {
     cargaId?: string
   }
 
-  async function estadoDe(tipoFuente: "FACTURACION" | "XM" | "SDL" | "BALANCE", orId?: string): Promise<EstadoFuente> {
+  async function estadoDe(tipoFuente: "FACTURACION" | "XM" | "SDL" | "BALANCE" | "TC1", orId?: string): Promise<EstadoFuente> {
     if (!periodo) return { estado: "pendiente" }
 
     const carga = await db.cargaFuente.findFirst({
@@ -79,10 +81,20 @@ export async function GET(request: NextRequest) {
     }))
   )
 
+  const tc1Resultados = await Promise.all(
+    operadores.map(async (or: { id: string; codigo: string; nombre: string }) => ({
+      orId: or.id,
+      codigo: or.codigo,
+      nombre: or.nombre,
+      ...(await estadoDe("TC1", or.id)),
+    }))
+  )
+
   return NextResponse.json({
     facturacion,
     xm,
     sdl: sdlResultados,
+    tc1: tc1Resultados,
     balance: balanceResultados,
   })
 }
