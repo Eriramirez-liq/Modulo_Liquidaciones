@@ -10,6 +10,7 @@ import {
   FilaTC1,
 } from "@/lib/parsers/types"
 import type { FilaSTR } from "@/lib/parsers/insumos-str"
+import type { FilaTarifaSDL } from "@/lib/parsers/insumos-tarifas-sdl"
 import { confirmarBodySchema } from "@/lib/validation/cargas"
 import { esPeriodoPermitido } from "@/lib/utils/periodos"
 
@@ -365,6 +366,25 @@ export async function POST(request: NextRequest) {
               conexion_red:           f.conexion_red,
               id_comercializador:     f.id_comercializador,
               detalle_json:           (f.detalle as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+            })),
+          })
+          break
+        }
+        case "INSUMOS_TARIFAS_SDL": {
+          // Sobrescritura por periodo: la carga trae todos los OR del periodo
+          // (Cargos ADD + Uso de la red). Reemplaza las tarifas del periodo.
+          const filas = filasCompletas as FilaTarifaSDL[]
+          await tx.tarifaSDL.deleteMany({ where: { periodo: periodoStr } })
+          if (filas.length === 0) break
+          await tx.tarifaSDL.createMany({
+            data: filas.map((f) => ({
+              periodo:           periodoStr,
+              or_codigo:         f.or_codigo,
+              nivel_tension:     f.nivel_tension,
+              propiedad_activos: f.propiedad_activos,
+              tarifa_activa:     f.tarifa_activa,
+              tarifa_reactiva:   f.tarifa_reactiva,
+              carga_id:          carga.id,
             })),
           })
           break

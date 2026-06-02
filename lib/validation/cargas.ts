@@ -24,6 +24,7 @@ export const tipoFuenteSchema = z.enum([
   "BALANCE",
   "INSUMOS_STR",
   "TC1",
+  "INSUMOS_TARIFAS_SDL",
 ])
 export type TipoFuenteInput = z.infer<typeof tipoFuenteSchema>
 

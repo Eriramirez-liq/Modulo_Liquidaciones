@@ -11,7 +11,7 @@ const MESES = [
   "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
 ]
 
-type TipoFuente = "FACTURACION" | "XM" | "SDL" | "BALANCE" | "TC1" | "COT" | "INSUMOS_STR"
+type TipoFuente = "FACTURACION" | "XM" | "SDL" | "BALANCE" | "TC1" | "COT" | "INSUMOS_STR" | "INSUMOS_TARIFAS_SDL"
 
 interface FuenteCard {
   tipo: TipoFuente
@@ -56,6 +56,11 @@ const FUENTES: FuenteCard[] = [
   {
     tipo: "INSUMOS_STR", label: "Insumos STR", requiresOR: false, multiFile: true,
     desc: "Múltiples archivos de insumos para el cálculo de cargos STR.",
+    icon: "M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z",
+  },
+  {
+    tipo: "INSUMOS_TARIFAS_SDL", label: "Insumos Tarifas SDL", requiresOR: false, multiFile: true,
+    desc: "Cargos ADD + Uso de la red. Calcula las tarifas SDL por OR, nivel y propiedad.",
     icon: "M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z",
   },
 ]

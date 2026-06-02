@@ -7,6 +7,7 @@ import { parsearSDL } from "@/lib/parsers/sdl"
 import { parsearBalance } from "@/lib/parsers/balance"
 import { parsearInsumosSTR } from "@/lib/parsers/insumos-str"
 import { parsearTC1 } from "@/lib/parsers/tc1"
+import { parsearInsumosTarifasSDL } from "@/lib/parsers/insumos-tarifas-sdl"
 import {
   previewBodySchema,
   extractPreviewBody,
@@ -152,6 +153,22 @@ export async function POST(request: NextRequest) {
       case "TC1": {
         if (!orId) return NextResponse.json({ error: "orId requerido para TC1" }, { status: 400 })
         result = await parsearTC1(buffer, anio, mes)
+        break
+      }
+      case "INSUMOS_TARIFAS_SDL": {
+        if (filesMulti.length === 0) {
+          return NextResponse.json(
+            { error: "Insumos Tarifas SDL requiere los archivos (Cargos ADD + Uso de la red)." },
+            { status: 400 }
+          )
+        }
+        const archivos = await Promise.all(
+          filesMulti.map(async (f) => ({
+            nombre: f.name,
+            data: new Uint8Array(await f.arrayBuffer()),
+          }))
+        )
+        result = parsearInsumosTarifasSDL(archivos)
         break
       }
       default:
