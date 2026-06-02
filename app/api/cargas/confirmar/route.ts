@@ -11,6 +11,7 @@ import {
 } from "@/lib/parsers/types"
 import type { FilaSTR } from "@/lib/parsers/insumos-str"
 import { confirmarBodySchema } from "@/lib/validation/cargas"
+import { esPeriodoPermitido } from "@/lib/utils/periodos"
 
 export async function POST(request: NextRequest) {
   const session = await auth()
@@ -54,13 +55,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Datos incompletos" }, { status: 400 })
   }
 
-  // No permitir cargas para períodos futuros (safety net si llaman a confirmar directo)
-  const ahora = new Date()
-  const anioActual = ahora.getFullYear()
-  const mesActual  = ahora.getMonth() + 1
-  if (meta.anio > anioActual || (meta.anio === anioActual && meta.mes > mesActual)) {
+  // Solo se puede cargar hasta el mes anterior (periodo de consumo cerrado).
+  if (!esPeriodoPermitido(meta.anio, meta.mes)) {
     return NextResponse.json(
-      { error: "No se pueden cargar archivos para períodos futuros." },
+      { error: "Solo se puede cargar hasta el mes anterior (mes de consumo). No se permite el mes en curso ni futuros." },
       { status: 400 }
     )
   }

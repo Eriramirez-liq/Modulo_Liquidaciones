@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
+import { periodoMaximo, mesesValidos } from "@/lib/utils/periodos"
 
 const ACCENT = "#07c5a8"
 
@@ -71,14 +72,15 @@ interface Operador {
 
 const now = new Date()
 const CURRENT_YEAR  = now.getFullYear()
-const CURRENT_MONTH = now.getMonth() + 1
+// Periodo maximo = mes anterior (mes de consumo cerrado). Es el default.
+const PERIODO_MAX   = periodoMaximo()
 
 export function WizardCarga() {
   const router = useRouter()
 
   const [step, setStep]                 = useState(0)
-  const [anio, setAnio]                 = useState(CURRENT_YEAR)
-  const [mes, setMes]                   = useState(CURRENT_MONTH)
+  const [anio, setAnio]                 = useState(PERIODO_MAX.anio)
+  const [mes, setMes]                   = useState(PERIODO_MAX.mes)
   const [tipoFuente, setTipoFuente]     = useState<TipoFuente | null>(null)
   const [orId, setOrId]                 = useState("")
   const [operadores, setOperadores]     = useState<Operador[]>([])
@@ -115,11 +117,12 @@ export function WizardCarga() {
       .catch(() => {})
   }, [tipoFuente])
 
-  // Si el usuario cambia el año y el mes seleccionado quedó en el futuro,
-  // lo clamp al mes actual para que la selección sea siempre válida.
+  // Si el mes seleccionado supera el periodo maximo (mes anterior) para el año
+  // elegido, lo clamp al ultimo mes valido de ese año.
   useEffect(() => {
-    if (anio === CURRENT_YEAR && mes > CURRENT_MONTH) {
-      setMes(CURRENT_MONTH)
+    const validos = mesesValidos(anio)
+    if (validos.length > 0 && !validos.includes(mes)) {
+      setMes(validos[validos.length - 1]!)
     }
   }, [anio, mes])
 
@@ -507,17 +510,14 @@ export function WizardCarga() {
                     onChange={(e) => setMes(Number(e.target.value))}
                     style={{ width: "160px", padding: "7px 10px", borderRadius: "7px", border: "1px solid #d1d5db", fontSize: "0.875rem" }}
                   >
-                    {MESES.map((m, i) => {
-                      // Si el año seleccionado es el actual, sólo permitir meses hasta el actual
-                      const futuro = anio === CURRENT_YEAR && i + 1 > CURRENT_MONTH
-                      if (futuro) return null
-                      return <option key={i + 1} value={i + 1}>{m}</option>
-                    })}
+                    {mesesValidos(anio).map((m) => (
+                      <option key={m} value={m}>{MESES[m - 1]}</option>
+                    ))}
                   </select>
                 </div>
               </div>
               <p style={{ fontSize: "0.72rem", color: "#9ca3af", marginTop: "6px" }}>
-                No se permiten cargas para períodos futuros.
+                Solo hasta el mes anterior (mes de consumo). No se permite el mes en curso ni futuros.
               </p>
             </div>
 

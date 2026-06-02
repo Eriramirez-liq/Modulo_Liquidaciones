@@ -11,6 +11,7 @@ import {
   previewBodySchema,
   extractPreviewBody,
 } from "@/lib/validation/cargas"
+import { esPeriodoPermitido } from "@/lib/utils/periodos"
 
 import { TipoFuente } from "@prisma/client"
 
@@ -48,13 +49,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Parámetros incompletos" }, { status: 400 })
   }
 
-  // No permitir cargas para períodos futuros
-  const ahora = new Date()
-  const anioActual = ahora.getFullYear()
-  const mesActual  = ahora.getMonth() + 1
-  if (anio > anioActual || (anio === anioActual && mes > mesActual)) {
+  // Solo se puede cargar hasta el mes anterior (periodo de consumo cerrado).
+  if (!esPeriodoPermitido(anio, mes)) {
     return NextResponse.json(
-      { error: "No se pueden cargar archivos para períodos futuros." },
+      { error: "Solo se puede cargar hasta el mes anterior (mes de consumo). No se permite el mes en curso ni futuros." },
       { status: 400 }
     )
   }

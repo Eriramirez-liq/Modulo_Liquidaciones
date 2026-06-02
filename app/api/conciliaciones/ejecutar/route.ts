@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { ejecutarConciliacion } from "@/lib/engine/conciliacion-orchestrator"
 import { ejecutarConciliacionTC1 } from "@/lib/engine/conciliacion-tc1"
+import { esPeriodoPermitido } from "@/lib/utils/periodos"
 
 /**
  * POST /api/conciliaciones/ejecutar
@@ -41,11 +42,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Parámetros anio y mes son obligatorios." }, { status: 400 })
   }
 
-  // No permitir conciliar períodos futuros (espejo del check de cargas)
-  const ahora = new Date()
-  if (anio > ahora.getFullYear() || (anio === ahora.getFullYear() && mes > ahora.getMonth() + 1)) {
+  // Solo conciliar hasta el mes anterior (periodo de consumo cerrado).
+  if (!esPeriodoPermitido(anio, mes)) {
     return NextResponse.json(
-      { error: "No se puede conciliar un período futuro." },
+      { error: "Solo se puede conciliar hasta el mes anterior (mes de consumo)." },
       { status: 400 }
     )
   }

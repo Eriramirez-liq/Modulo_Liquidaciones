@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { TipoFuente } from "@prisma/client"
+import { esPeriodoPermitido } from "@/lib/utils/periodos"
 
 /**
  * POST /api/cargas/check-previa
@@ -32,11 +33,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Parametros incompletos" }, { status: 400 })
   }
 
-  // Rechazar periodos futuros
-  const ahora = new Date()
-  if (anio > ahora.getFullYear() || (anio === ahora.getFullYear() && mes > ahora.getMonth() + 1)) {
+  // Solo hasta el mes anterior (periodo de consumo cerrado).
+  if (!esPeriodoPermitido(anio, mes)) {
     return NextResponse.json(
-      { error: "No se pueden cargar archivos para periodos futuros." },
+      { error: "Solo se puede cargar hasta el mes anterior (mes de consumo)." },
       { status: 400 }
     )
   }

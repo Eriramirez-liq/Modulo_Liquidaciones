@@ -1,5 +1,6 @@
 "use client"
 import { useState, useEffect } from "react"
+import { periodoMaximo, mesesValidos, aniosValidos } from "@/lib/utils/periodos"
 
 type Estado = "pendiente" | "cargada" | "error"
 type FuenteEstado = {
@@ -19,11 +20,11 @@ type PeriodoEstado = {
   balance: SDLEstado[]
 }
 
-const now = new Date()
+const PERIODO_MAX = periodoMaximo()
 
 export function PanelEstadoPeriodo() {
-  const [anio, setAnio] = useState(now.getFullYear())
-  const [mes, setMes]   = useState(now.getMonth() + 1)
+  const [anio, setAnio] = useState(PERIODO_MAX.anio)
+  const [mes, setMes]   = useState(PERIODO_MAX.mes)
   const [data, setData] = useState<PeriodoEstado | null>(null)
   // KPI de pendientes seleccionado (muestra la lista de OR pendientes).
   const [verPendientes, setVerPendientes] = useState<"sdl" | "tc1" | null>(null)
@@ -51,7 +52,15 @@ export function PanelEstadoPeriodo() {
   }
 
   const meses = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
-  const years = [now.getFullYear() - 1, now.getFullYear()]
+  const years = aniosValidos()
+  const mesesDelAnio = mesesValidos(anio)
+
+  // Si el mes seleccionado dejo de ser valido para el año elegido, ajustar.
+  useEffect(() => {
+    if (mesesDelAnio.length > 0 && !mesesDelAnio.includes(mes)) {
+      setMes(mesesDelAnio[mesesDelAnio.length - 1]!)
+    }
+  }, [anio]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
@@ -68,7 +77,7 @@ export function PanelEstadoPeriodo() {
             onChange={e => setMes(Number(e.target.value))}
             style={{ border: "1px solid #d1d5db", borderRadius: 6, padding: "4px 8px", fontSize: "0.8rem", background: "#fff" }}
           >
-            {meses.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+            {mesesDelAnio.map((m) => <option key={m} value={m}>{meses[m - 1]}</option>)}
           </select>
           <select
             value={anio}
