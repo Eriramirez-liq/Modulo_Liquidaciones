@@ -20,11 +20,13 @@ export async function GET(request: NextRequest) {
   const periodos  = (searchParams.get("periodos")  ?? "").split(",").filter(Boolean)
   const orCodigos = (searchParams.get("orCodigos") ?? "").split(",").filter(Boolean)
   const nivel     = searchParams.get("nivel") ?? undefined
+  const propiedad = searchParams.get("propiedad") ?? undefined
 
   const where: Prisma.TarifaSDLWhereInput = {
     ...(periodos.length  > 0 ? { periodo: { in: periodos } } : {}),
     ...(orCodigos.length > 0 ? { or_codigo: { in: orCodigos } } : {}),
     ...(nivel ? { nivel_tension: nivel } : {}),
+    ...(propiedad ? { propiedad_activos: propiedad } : {}),
   }
 
   const [rows, periodosRaw, orsRaw] = await Promise.all([

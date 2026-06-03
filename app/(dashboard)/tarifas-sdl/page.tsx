@@ -34,10 +34,12 @@ export default function TarifasSDLPage() {
   const [periodoSel, setPeriodoSel] = useState<string[]>([])
   const [orSel, setOrSel]           = useState<string[]>([])
   const [nivel, setNivel]           = useState("")
+  const [propiedad, setPropiedad]   = useState("")
   const [energia, setEnergia]       = useState<"todos" | "activa" | "reactiva">("todos")
 
   const [rows, setRows]       = useState<FilaTarifa[]>([])
   const [loading, setLoading] = useState(false)
+  const [filtrado, setFiltrado] = useState(false)
   const [error, setError]     = useState<string | null>(null)
 
   // Opciones: mismos periodos que Cargos STR (de /api/periodos) y los 21 OR SDL.
@@ -51,21 +53,25 @@ export default function TarifasSDLPage() {
     }).catch(() => {})
   }, [])
 
-  useEffect(() => {
-    setLoading(true); setError(null)
+  // El filtrado se aplica solo al presionar "Filtrar" (como en Cargos STR).
+  async function filtrar() {
+    setLoading(true); setError(null); setFiltrado(true)
     const qs = new URLSearchParams()
     if (periodoSel.length > 0) qs.set("periodos", periodoSel.join(","))
     if (orSel.length      > 0) qs.set("orCodigos", orSel.join(","))
-    if (nivel) qs.set("nivel", nivel)
-    fetch(`/api/tarifas-sdl?${qs}`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.error) { setError(data.error); return }
-        setRows(data.rows ?? [])
-      })
-      .catch(e => setError(String(e)))
-      .finally(() => setLoading(false))
-  }, [periodoSel, orSel, nivel])
+    if (nivel)     qs.set("nivel", nivel)
+    if (propiedad) qs.set("propiedad", propiedad)
+    try {
+      const res = await fetch(`/api/tarifas-sdl?${qs}`)
+      const data = await res.json()
+      if (data.error) { setError(data.error); return }
+      setRows(data.rows ?? [])
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const periodoOpts = useMemo(
     () => periodos.map(p => ({ id: periodoStr(p.anio, p.mes), label: `${MES_NOMBRE[p.mes]} ${p.anio}` })),
@@ -135,6 +141,16 @@ export default function TarifasSDLPage() {
           </select>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label style={{ fontSize: "0.78rem", fontWeight: 500, color: "#374151" }}>Propiedad de activos</label>
+          <select value={propiedad} onChange={e => setPropiedad(e.target.value)}
+            style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "8px 12px", fontSize: "0.875rem", background: "#fff", minWidth: 140 }}>
+            <option value="">Todas</option>
+            <option value="OR">OR</option>
+            <option value="COMPARTIDO">Compartido</option>
+            <option value="USUARIO">Usuario</option>
+          </select>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <label style={{ fontSize: "0.78rem", fontWeight: 500, color: "#374151" }}>Energía</label>
           <select value={energia} onChange={e => setEnergia(e.target.value as "todos" | "activa" | "reactiva")}
             style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "8px 12px", fontSize: "0.875rem", background: "#fff", minWidth: 140 }}>
@@ -143,15 +159,26 @@ export default function TarifasSDLPage() {
             <option value="todos">Todos</option>
           </select>
         </div>
+        <button
+          onClick={filtrar}
+          disabled={loading}
+          style={{
+            background: "#07c5a8", color: "#fff", border: "none", borderRadius: 8,
+            padding: "9px 24px", fontSize: "0.875rem", fontWeight: 600,
+            cursor: loading ? "default" : "pointer", opacity: loading ? 0.7 : 1, alignSelf: "flex-end",
+          }}
+        >
+          {loading ? "Filtrando…" : "Filtrar"}
+        </button>
       </div>
 
       {/* Tabla */}
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "20px" }}>
         <div style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: 12 }}>
-          {loading ? "Cargando…" : `${rows.length} ${rows.length === 1 ? "registro" : "registros"}`}
+          {loading ? "Cargando…" : filtrado ? `${rows.length} ${rows.length === 1 ? "registro" : "registros"}` : "Aplicá los filtros y presioná Filtrar."}
         </div>
         {error && <div style={{ color: "#b91c1c", fontSize: "0.85rem" }}>{error}</div>}
-        {!loading && !error && rows.length === 0 && (
+        {!loading && !error && filtrado && rows.length === 0 && (
           <div style={{ padding: 24, textAlign: "center", color: "#6b7280", fontSize: "0.9rem" }}>
             No hay tarifas para los filtros seleccionados. Cargá los insumos en el módulo de Cargas
             (fuente &quot;Insumos Tarifas SDL&quot;).
