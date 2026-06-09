@@ -1626,7 +1626,8 @@ function procesarEnelMulti(
       energia_reactiva_cap_pen: ent.energia_reactiva_cap_pen,
       valor_reactiva_cop:       ent.valor_reactiva_cop,
       tarifa_reactiva:          null,
-      factor_m:                 ent.factor_m,
+      // Default factor_m = 1 cuando el archivo de reactiva no lo trae.
+      factor_m:                 ent.factor_m ?? 1,
       es_duplicado:             false,
     })
   }
