@@ -1349,6 +1349,21 @@ function procesarEmsaMulti(
       continue
     }
 
+    // Filtrar por "AGENTE COMERCIAL QUE IMPORTA" = BIAC. Las filas de otros
+    // agentes (ej. CMMC) se omiten en los 3 archivos.
+    const colAgente = resolveCol(headers, "AGENTE COMERCIAL QUE IMPORTA")
+      ?? resolveCol(headers, "AGENTE COMERCIAL")
+    if (colAgente) {
+      const antes = rows.length
+      rows = rows.filter(r => norm(String(r[colAgente] ?? "")) === "BIAC")
+      const omitidas = antes - rows.length
+      if (omitidas > 0) {
+        alertas.push(`Archivo ${i + 1} (${tipo}): ${omitidas} filas omitidas (AGENTE COMERCIAL QUE IMPORTA distinto de BIAC).`)
+      }
+    } else {
+      alertas.push(`Archivo ${i + 1} (${tipo}): no se halló la columna "AGENTE COMERCIAL QUE IMPORTA"; se cargan todas las filas.`)
+    }
+
     if (tipo === "ACTIVA") {
       const colKwh = resolveCol(headers, "kWhR")
       for (const r of rows) {
