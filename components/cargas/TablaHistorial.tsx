@@ -88,18 +88,19 @@ export function TablaHistorial() {
               <th style={thStyle}>Estado</th>
               <th style={thStyle}>Cargado por</th>
               <th style={thStyle}>Fecha</th>
+              <th style={thStyle}></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={8} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>
+                <td colSpan={9} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>
                   Cargando...
                 </td>
               </tr>
             ) : cargas.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "40px" }}>
+                <td colSpan={9} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "40px" }}>
                   No hay cargas registradas. Haz clic en &quot;+ Nueva carga&quot; para comenzar.
                 </td>
               </tr>
@@ -143,6 +144,21 @@ export function TablaHistorial() {
                   </td>
                   <td style={tdStyle}>{c.cargado_por.nombre}</td>
                   <td style={{ ...tdStyle, color: "#9ca3af", fontSize: "0.8rem" }}>{fecha}</td>
+                  <td style={{ ...tdStyle, textAlign: "right" }}>
+                    {c.tipo_fuente === "SDL" && c.estado === "COMPLETADA" && (
+                      <a
+                        href={`/api/cargas/exportar-sdl?cargaId=${c.id}`}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 5,
+                          border: "1px solid #86efac", color: "#15803d", background: "#fff",
+                          borderRadius: 7, padding: "4px 10px", fontSize: "0.78rem",
+                          fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap",
+                        }}
+                      >
+                        ↓ Excel
+                      </a>
+                    )}
+                  </td>
                 </tr>
               )
             })}
