@@ -577,9 +577,11 @@ export function WizardCarga() {
                   color: paso1Ok && !loading ? "#050f0d" : "#9ca3af",
                 }}
               >
-                {loading
-                  ? (tipoFuente === "FACTURACION" ? "Consultando Metabase…" : "Procesando…")
-                  : (tipoFuente === "FACTURACION" ? "Consultar Metabase" : "Siguiente")}
+                {(() => {
+                  const esMetabase = tipoFuente === "FACTURACION" || tipoFuente === "XM"
+                  if (loading) return esMetabase ? "Consultando Metabase…" : "Procesando…"
+                  return esMetabase ? "Consultar Metabase" : "Siguiente"
+                })()}
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
                      fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="9 18 15 12 9 6"/>
