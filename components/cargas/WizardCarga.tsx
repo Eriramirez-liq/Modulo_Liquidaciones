@@ -30,7 +30,7 @@ const FUENTES: FuenteCard[] = [
   },
   {
     tipo: "XM", label: "Reporte CGM/XM", requiresOR: false,
-    desc: "Energía reportada por XM por frontera.",
+    desc: "Se consulta directo desde Metabase (sin carga de archivo). Energía AENC por frontera, versión TxF.",
     icon: "M13 10V3L4 14h7v7l9-11h-7z",
   },
   {
@@ -189,13 +189,16 @@ export function WizardCarga() {
   async function handleSiguienteStep1() {
     if (!paso1Ok) return
 
-    // FACTURACION: no se sube archivo, se consulta directo a Metabase y se
+    // FACTURACION y XM: no se sube archivo, se consulta directo a Metabase y se
     // salta al paso 2 con el preview.
-    if (tipoFuente === "FACTURACION") {
+    if (tipoFuente === "FACTURACION" || tipoFuente === "XM") {
+      const endpoint = tipoFuente === "FACTURACION"
+        ? "/api/cargas/preview-facturacion"
+        : "/api/cargas/preview-xm-metabase"
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch("/api/cargas/preview-facturacion", {
+        const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ anio, mes }),
@@ -246,45 +249,8 @@ export function WizardCarga() {
     }
     setLoading(true)
     setError(null)
-
-    // ── XM: parsear en el navegador para evitar el limite de 4.5 MB de Vercel
-    // (los archivos XM con datos diarios suelen superarlo).
-    if (tipoFuente === "XM" && file) {
-      try {
-        const [{ parsearXM }, checkRes] = await Promise.all([
-          import("@/lib/parsers/xm"),
-          fetch("/api/cargas/check-previa", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ anio, mes, tipoFuente, orId: orId || undefined }),
-          }),
-        ])
-        if (!checkRes.ok) {
-          const t = await checkRes.text()
-          let msg = "Error al validar el periodo."
-          try { const j = JSON.parse(t); msg = j.error ?? msg } catch { /* keep default */ }
-          setError(msg); return
-        }
-        const checkData = await checkRes.json()
-        const ab = await file.arrayBuffer()
-        const u8 = new Uint8Array(ab)
-        const result = await parsearXM(u8, null, anio, mes)
-        setPreview((result.filas as unknown as Record<string, unknown>[]).slice(0, 20))
-        setFilasCompletas(result.filas)
-        setTotal(result.filas.length)
-        setAlertas(result.alertas)
-        setErroresCriticos(result.erroresCriticos)
-        setExisteCargaPrevia(checkData.existeCargaPrevia ?? false)
-        setCargaPreviaId(checkData.cargaPreviaId)
-        setStep(2)
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e)
-        setError(`Error al parsear el archivo XM en el navegador: ${msg}`)
-      } finally {
-        setLoading(false)
-      }
-      return
-    }
+    // Nota: XM ya no se carga por archivo — se consulta a Metabase en el
+    // paso 1 (handleSiguienteStep1), igual que Facturacion.
 
     // ── TC1: parsear en el navegador igual que XM. Los TC1 de algunos OR
     // (CELSIA, CHEC) superan los 100 MB y no se pueden subir a Vercel (limite
