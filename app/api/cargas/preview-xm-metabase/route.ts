@@ -49,12 +49,14 @@ export async function POST(request: NextRequest) {
   const fechaInicio  = `${anio}-${mm}-01`
   const fechaFin     = `${anio}-${mm}-${String(ultimoDia).padStart(2, "0")}`
 
-  // Parametros de la card (template-tags): fecha_inicio, fecha_fin, version.
+  // Parametros de la card (template-tags). El tipo debe coincidir con el widget
+  // de cada template-tag: fecha_inicio/fecha_fin son de tipo fecha
+  // (date/single); version es de tipo texto (string/=, segun exige Metabase).
   // codigo_sic se omite para traer todos.
   const parameters = [
     { type: "date/single", target: ["variable", ["template-tag", "fecha_inicio"]], value: fechaInicio },
     { type: "date/single", target: ["variable", ["template-tag", "fecha_fin"]],    value: fechaFin },
-    { type: "category",    target: ["variable", ["template-tag", "version"]],      value: "TxF" },
+    { type: "string/=",    target: ["variable", ["template-tag", "version"]],      value: "TxF" },
   ] as Array<Record<string, unknown>>
 
   let resultado
