@@ -61,7 +61,9 @@ export async function POST(request: NextRequest) {
 
   let resultado
   try {
-    resultado = await ejecutarCardMetabase({ cardId: METABASE_CARD_ID, parameters })
+    // La card de XM (todos los SIC del mes) puede tardar; subimos el timeout
+    // del cliente a 55s (dentro del maxDuration de 60s de la funcion).
+    resultado = await ejecutarCardMetabase({ cardId: METABASE_CARD_ID, parameters, timeoutMs: 55_000 })
   } catch (e) {
     if (e instanceof MetabaseError) {
       return NextResponse.json(
