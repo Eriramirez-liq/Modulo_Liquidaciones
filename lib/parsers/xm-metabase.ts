@@ -76,8 +76,9 @@ export function mapearFilasXMMetabase(
 
   // Agregar por SIC. La card trae varias filas por frontera (una por
   // combinacion de agente comercial); nos quedamos solo con las del agente
-  // que importa = BIAC y sumamos por frontera.
+  // que importa = BIAC y tomamos una sola fila por frontera.
   let omitidasNoBiac = 0
+  let duplicadasSic  = 0
   const porSic = new Map<string, { nombre: string | null; total: number }>()
   for (const r of rows) {
     if (colImporta) {
@@ -86,15 +87,16 @@ export function mapearFilasXMMetabase(
     }
     const sic = String(r[colSic!] ?? "").trim()
     if (!sic) continue
+    // Una sola fila por frontera: si ya existe, se conserva la primera.
+    if (porSic.has(sic)) { duplicadasSic++; continue }
     const energia = toNum(r[colEnergia!]) ?? 0
     const nombre = colNombre ? (String(r[colNombre] ?? "").trim() || null) : null
-    const prev = porSic.get(sic)
-    if (prev) {
-      prev.total += energia
-      if (!prev.nombre && nombre) prev.nombre = nombre
-    } else {
-      porSic.set(sic, { nombre, total: energia })
-    }
+    porSic.set(sic, { nombre, total: energia })
+  }
+  if (duplicadasSic > 0) {
+    alertas.push(
+      `${duplicadasSic} filas BIAC adicionales por frontera repetida fueron ignoradas (se toma una sola).`,
+    )
   }
 
   if (colImporta) {
