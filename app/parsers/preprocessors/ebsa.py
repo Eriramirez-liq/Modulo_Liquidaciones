@@ -43,9 +43,13 @@ def preprocesar(buffer: bytes, df: pd.DataFrame, mapeo: dict) -> tuple[pd.DataFr
     col_mes     = _find_col(df, "MES")
     col_per     = _find_col(df, "PERIODO")
     col_valor_m = _find_col(df, "VALOR M")
+    col_cliente = _find_col(df, "CLIENTE")  # nombre de la frontera
 
     if not col_sic or not col_eng:
         return df, mapeo
+
+    if col_cliente:
+        cols["nombre_frontera"] = col_cliente
 
     # Normalizar columna ENERGIA
     df["__ENG__"] = df[col_eng].astype(str).str.strip().str.upper()

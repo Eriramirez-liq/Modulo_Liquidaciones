@@ -642,8 +642,12 @@ function preEbsa(rows: Row[], mapeo: MapeoSDL, _buf: Buffer): PreResult {
   const colMes    = resolveCol(headers, "MES")
   const colPer    = resolveCol(headers, "PERIODO")
   const colValorM = resolveCol(headers, "VALOR M")
+  // Nombre de la frontera: columna "CLIENTE" del archivo EBSA.
+  const colCliente = resolveColMulti(headers, ["CLIENTE", "NOMBRE CLIENTE", "NOMBRE"])
 
   if (!colSic || !colEng) return { rows, mapeo: m }
+
+  if (colCliente) cols["nombre_frontera"] = colCliente
 
   const activas:  Row[] = []
   const reactivas: Row[] = []
