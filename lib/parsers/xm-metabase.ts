@@ -48,13 +48,20 @@ export function mapearFilasXMMetabase(
   if (rows.length === 0) return { filas, alertas, erroresCriticos }
 
   const findCol = construirFindCol(columnas)
-  const colSic    = findCol("codigo_sic", "codigosic", "SIC", "codigo_frontera", "frontera")
+  const colSic    = findCol("sic", "codigo_sic", "codigosic", "codigo_frontera", "frontera")
   // Dato de energia: "total aenc_div_perdidas".
   const colEnergia = findCol(
     "total aenc_div_perdidas", "total_aenc_div_perdidas", "totalaencdivperdidas",
     "aenc_div_perdidas", "aencdivperdidas",
   )
   const colNombre = findCol("nombre", "nombre_frontera", "frontera_nombre")
+  // Agente comercial que IMPORTA: solo nos quedamos con las filas de BIA (BIAC).
+  // La card trae varias filas por frontera (una por combinacion de agentes);
+  // sin este filtro se sumarian todas y el total quedaria inflado.
+  const colImporta = findCol(
+    "importing_commercial_agent_code", "importing_commercial_agent", "importing_agent_code",
+    "agente_comercial_que_importa", "agente comercial que importa", "agente_importa",
+  )
 
   const faltantes: string[] = []
   if (!colSic)     faltantes.push("codigo_sic")
@@ -67,9 +74,16 @@ export function mapearFilasXMMetabase(
     return { filas, alertas, erroresCriticos }
   }
 
-  // Agregar por SIC (la card puede traer varias filas por frontera, ej. diarias).
+  // Agregar por SIC. La card trae varias filas por frontera (una por
+  // combinacion de agente comercial); nos quedamos solo con las del agente
+  // que importa = BIAC y sumamos por frontera.
+  let omitidasNoBiac = 0
   const porSic = new Map<string, { nombre: string | null; total: number }>()
   for (const r of rows) {
+    if (colImporta) {
+      const importa = String(r[colImporta] ?? "").trim().toUpperCase()
+      if (importa !== "BIAC") { omitidasNoBiac++; continue }
+    }
     const sic = String(r[colSic!] ?? "").trim()
     if (!sic) continue
     const energia = toNum(r[colEnergia!]) ?? 0
@@ -81,6 +95,17 @@ export function mapearFilasXMMetabase(
     } else {
       porSic.set(sic, { nombre, total: energia })
     }
+  }
+
+  if (colImporta) {
+    alertas.push(
+      `Filtro agente que importa = BIAC: ${omitidasNoBiac} filas omitidas (otros agentes).`,
+    )
+  } else {
+    alertas.push(
+      "No se encontro la columna del agente que importa (importing_commercial_agent_code); " +
+      "no se pudo filtrar por BIAC — verifica que el total por frontera sea correcto.",
+    )
   }
 
   for (const [sic, v] of porSic.entries()) {
