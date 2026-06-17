@@ -73,12 +73,12 @@ export class RealNetsuiteClient implements NetsuiteClient {
       recordPath:
         process.env.NETSUITE_RECORD_PATH ??
         "/services/rest/record/v1/purchaseOrder",
-      // IDs de la prueba (subsidiary=2, item=10); overridables por env.
+      // IDs de la prueba (subsidiary=2, item=488); overridables por env.
       // location NO se envía por defecto (no requerida); set NETSUITE_LOCATION_ID
       // solo si en el futuro hiciera falta.
       subsidiaryId: process.env.NETSUITE_SUBSIDIARY_ID ?? "2",
       locationId: process.env.NETSUITE_LOCATION_ID ?? null,
-      itemId: process.env.NETSUITE_ITEM_ID ?? "10",
+      itemId: process.env.NETSUITE_ITEM_ID ?? "488",
       quantity: Number(process.env.NETSUITE_DEFAULT_QUANTITY ?? "1"),
     }
   }
