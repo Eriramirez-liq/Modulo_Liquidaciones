@@ -29,6 +29,7 @@ import type {
   EnvioDto,
   EstadoEnvioPorCargoDto,
   LoteDto,
+  LoteResumenDto,
 } from "./types"
 import {
   CargoYaProcesadoError,
@@ -617,6 +618,30 @@ export async function obtenerLote(loteId: string): Promise<LoteDto> {
   })
   if (!lote) throw new LoteNoEncontradoError()
   return loteToDto(lote)
+}
+
+/**
+ * Lista lotes para el historial, ordenados por `iniciado_at` desc. Devuelve
+ * resúmenes (sin envíos): los totales se leen de las columnas persistidas del
+ * lote. El detalle con envíos sale de `obtenerLote`.
+ */
+export async function listarLotes(limite = 50): Promise<LoteResumenDto[]> {
+  const lotes = await db.loteNetsuite.findMany({
+    orderBy: { iniciado_at: "desc" },
+    take: limite,
+    include: { iniciado_por: { select: { id: true, nombre: true } } },
+  })
+
+  return lotes.map((l) => ({
+    id: l.id,
+    estado: l.estado,
+    totalEnvios: l.total_envios,
+    totalOk: l.total_ok,
+    totalError: l.total_error,
+    iniciadoAt: l.iniciado_at.toISOString(),
+    finalizadoAt: l.finalizado_at ? l.finalizado_at.toISOString() : null,
+    iniciadoPor: { id: l.iniciado_por.id, nombre: l.iniciado_por.nombre },
+  }))
 }
 
 /** Devuelve el lote EN_PROGRESO actual, o null si no hay ninguno. */

@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
     },
     select: {
       id: true, codigo: true, nombre: true, nit: true, activo: true,
+      netsuite_vendor_id: true,
       ...(includeMapeo ? { mapeo_sdl_json: true } : {}),
     },
     orderBy: { codigo: "asc" },

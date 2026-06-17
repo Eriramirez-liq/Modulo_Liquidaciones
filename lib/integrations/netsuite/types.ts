@@ -67,6 +67,22 @@ export interface LoteDto {
 }
 
 /**
+ * Resumen de un lote para el historial (lista, sin envíos). Lo consume el
+ * endpoint plural `GET /api/cargos-str/netsuite/lotes`; el detalle con envíos
+ * sigue saliendo del endpoint `GET /api/cargos-str/netsuite/lote/:loteId`.
+ */
+export interface LoteResumenDto {
+  id: string
+  estado: EstadoLoteNetsuite
+  totalEnvios: number
+  totalOk: number
+  totalError: number
+  iniciadoAt: string // ISO
+  finalizadoAt: string | null
+  iniciadoPor: { id: string; nombre: string }
+}
+
+/**
  * Último estado de envío por cargo `(periodoId, orCodigo)`.
  * Lo consume el endpoint 4 para pintar los badges del pivot.
  */
