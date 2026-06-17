@@ -75,11 +75,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(e.toResponse(), { status: e.httpStatus })
     }
     console.error("[netsuite/lote POST] error inesperado:", e)
-    // TEMPORAL (diagnóstico de la prueba): exponer el mensaje real del error.
-    // Revertir a "Error interno" una vez identificada la causa.
-    const detalle = e instanceof Error ? e.message : String(e)
     return NextResponse.json(
-      { error: "INTERNAL_ERROR", message: detalle },
+      { error: "INTERNAL_ERROR", message: "Error interno" },
       { status: 500 },
     )
   }
