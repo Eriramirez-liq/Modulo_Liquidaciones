@@ -2,6 +2,8 @@
 // Solo usa la anon key implícita (cookie de sesión same-origin) — NUNCA service role aquí.
 // Shape de respuesta idéntico al LoteResponse del backend (BE-3).
 
+import type { EstadoEnvioUI } from "@/components/cargos-str/types"
+
 // ---------------------------------------------------------------------------
 // Tipos
 // ---------------------------------------------------------------------------
@@ -99,5 +101,55 @@ export async function procesarLoteReal(loteId: string): Promise<void> {
 export async function getLoteReal(loteId: string): Promise<LoteResponse> {
   const res = await fetch(`/api/cargos-str/netsuite/lote/${loteId}`)
   await throwIfNotOk(res)
+  return res.json() as Promise<LoteResponse>
+}
+
+// ---------------------------------------------------------------------------
+// getEstadosReal
+// GET /api/cargos-str/netsuite/estados?periodoIds=a,b&orCodigos=X,Y
+// Respuesta 200: Record<`${periodoId}|${orCodigo}`, EstadoEnvioUI>
+// Si no hay datos devuelve {} (objeto vacío).
+// ---------------------------------------------------------------------------
+
+export async function getEstadosReal(
+  periodoIds: string[],
+  orCodigos: string[],
+): Promise<Record<string, EstadoEnvioUI>> {
+  const params = new URLSearchParams({
+    periodoIds: periodoIds.map(encodeURIComponent).join(","),
+    orCodigos: orCodigos.map(encodeURIComponent).join(","),
+  })
+  const res = await fetch(`/api/cargos-str/netsuite/estados?${params}`)
+  if (!res.ok) {
+    let body: unknown
+    try {
+      body = await res.json()
+    } catch {
+      body = { error: "NETWORK_ERROR", message: res.statusText }
+    }
+    throw body
+  }
+  return res.json() as Promise<Record<string, EstadoEnvioUI>>
+}
+
+// ---------------------------------------------------------------------------
+// getLoteActivoReal
+// GET /api/cargos-str/netsuite/lote/activo
+// Respuesta 200: LoteResponse con el lote en curso
+// Respuesta 204: sin body → devuelve null (no hay lote activo)
+// ---------------------------------------------------------------------------
+
+export async function getLoteActivoReal(): Promise<LoteResponse | null> {
+  const res = await fetch("/api/cargos-str/netsuite/lote/activo")
+  if (res.status === 204) return null
+  if (!res.ok) {
+    let body: unknown
+    try {
+      body = await res.json()
+    } catch {
+      body = { error: "NETWORK_ERROR", message: res.statusText }
+    }
+    throw body
+  }
   return res.json() as Promise<LoteResponse>
 }

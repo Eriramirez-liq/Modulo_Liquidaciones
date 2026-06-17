@@ -6,8 +6,8 @@ import DetalleEnvioModal from "@/components/cargos-str/DetalleEnvioModal"
 import ModalConfirmarLote from "@/components/cargos-str/ModalConfirmarLote"
 import Toast from "@/components/cargos-str/Toast"
 import type { EstadoEnvioKey, EstadoEnvioUI, DetalleEnvio, LoteEnCursoUI, CargoSeleccionado, CargoParaEnviar } from "@/components/cargos-str/types"
-import { MOCK_DETALLE_ENVIO_OK, MOCK_DETALLE_ENVIO_ERROR, mockGetEstados, mockGetLoteActivo, mockPostCancelar } from "@/_dev/mocks/netsuite"
-import { crearLoteReal, procesarLoteReal, getLoteReal } from "@/lib/api/netsuite-cargos"
+import { mockPostCancelar } from "@/_dev/mocks/netsuite"
+import { crearLoteReal, procesarLoteReal, getLoteReal, getEstadosReal, getLoteActivoReal } from "@/lib/api/netsuite-cargos"
 import type { LoteResponse } from "@/lib/api/netsuite-cargos"
 import PanelLoteEnCurso from "@/components/cargos-str/PanelLoteEnCurso"
 import type { ToastData } from "@/components/cargos-str/Toast"
@@ -80,6 +80,9 @@ export default function CargosSTRPage() {
   const [lastProgressAt, setLastProgressAt] = useState<Date | null>(null)
   // Ref para comparar totales entre ticks del polling sin causar re-renders
   const totalesRef = useRef<{ procesados: number; errores: number; pendientes: number } | null>(null)
+  // Ref para guardar el último LoteResponse completo del polling (incluye envíos con todos los campos)
+  // Permite al modal de detalle leer campos como montoSnapshotCop/mesConsumo sin fetch adicional
+  const ultimoLoteResponseRef = useRef<LoteResponse | null>(null)
 
   // -- Estado DetalleEnvioModal (FE-3) --
   const [detalleEnvioId, setDetalleEnvioId] = useState<string | null>(null)
@@ -151,10 +154,9 @@ export default function CargosSTRPage() {
     if (loteEnCurso?.estado === "EN_PROGRESO") return
 
     const orCodigos = data.operadores.map(o => o.codigo)
-    mockGetEstados([periodoUnicoId], orCodigos)
-      .then(setEstadosEnvio)
+    getEstadosReal([periodoUnicoId], orCodigos)
+      .then(estados => setEstadosEnvio(estados as Record<EstadoEnvioKey, EstadoEnvioUI>))
       .catch(console.error)
-    // TODO FE-6: reemplazar por fetch real a /api/cargos-str/netsuite/estados
   }, [data, modoSeleccion, periodoUnicoId, loteEnCurso?.estado])
 
   // -- useEffect B: Polling del lote en curso --
@@ -172,6 +174,10 @@ export default function CargosSTRPage() {
       try {
         const lote = await getLoteReal(loteId)
         if (stop) return
+
+        // Guardar el LoteResponse completo para que el modal de detalle pueda
+        // acceder a campos como montoSnapshotCop, mesConsumo, intentos, etc.
+        ultimoLoteResponseRef.current = lote
 
         // Actualizar loteEnCurso con nuevos totales
         setLoteEnCurso(adaptToLoteEnCursoUI(lote))
@@ -215,11 +221,12 @@ export default function CargosSTRPage() {
   }, [loteEnCurso?.id, loteEnCurso?.estado]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // -- useEffect C: Detección de lote activo al montar --
-  // TODO FE-6: mockGetLoteActivo → fetch real a /api/cargos-str/netsuite/lote/activo
   useEffect(() => {
-    mockGetLoteActivo()
-      .then(lote => {
-        if (lote) {
+    getLoteActivoReal()
+      .then(loteResponse => {
+        if (loteResponse) {
+          // Adaptar LoteResponse → LoteEnCursoUI usando el mismo helper que usa el polling
+          const lote = adaptToLoteEnCursoUI(loteResponse)
           setLoteEnCurso(lote)
           setPanelLoteVisible(true)
           // FE-5.5: asumimos el peor caso — el último progreso fue al iniciar el lote
@@ -233,8 +240,7 @@ export default function CargosSTRPage() {
         }
       })
       .catch(console.error)
-    // TODO FE-6: reemplazar por fetch real a /api/cargos-str/netsuite/lote/activo
-  }, []) // solo al montar
+  }, []) // solo al montar — eslint-disable-line react-hooks/exhaustive-deps
 
   // Limpiar selección cuando cambia el período filtrado
   useEffect(() => {
@@ -300,31 +306,36 @@ export default function CargosSTRPage() {
     setCargandoDetalle(true)
     setDetalleEnvio(null)
 
-    // TODO FE-6: reemplazar por fetch a /api/cargos-str/netsuite/envio/:id
-    // Mock temporal: seleccionar el mock según el estado del envío
-    const mockDetalle: DetalleEnvio =
-      estadoEnvioEntrada.estado === "PROCESADO"
-        ? {
-            ...MOCK_DETALLE_ENVIO_OK,
-            id: envioId,
-            numeroOc: estadoEnvioEntrada.numeroOc ?? MOCK_DETALLE_ENVIO_OK.numeroOc,
-          }
-        : {
-            ...MOCK_DETALLE_ENVIO_ERROR,
-            id: envioId,
-            errorMensaje:
-              estadoEnvioEntrada.errorMensaje ?? MOCK_DETALLE_ENVIO_ERROR.errorMensaje,
-          }
+    // Buscar el EnvioDto completo en el último LoteResponse del polling si está disponible.
+    // El ref almacena el último LoteResponse recibido en el polling (incluye el array `envios`
+    // con campos que LoteEnCursoUI no expone: montoSnapshotCop, mesConsumo, mesFacturacion, etc.)
+    const envioDePolling = ultimoLoteResponseRef.current?.envios.find(
+      e => e.id === envioId
+    )
 
-    const timer = setTimeout(() => {
-      setDetalleEnvio(mockDetalle)
-      setCargandoDetalle(false)
-    }, 300)
+    // Construir DetalleEnvio desde los datos reales disponibles en memoria.
+    // requestPayloadJson y responsePayloadJson no están expuestos por ningún endpoint
+    // todavía (pendiente BE-5) → se dejan en null. El modal los muestra como "No disponible".
+    const detalle: DetalleEnvio = {
+      id: envioId,
+      estado: estadoEnvioEntrada.estado,
+      numeroOc: estadoEnvioEntrada.numeroOc ?? null,
+      netsuiteInternalId: null,                          // no expuesto por BE-4
+      montoSnapshotCop: envioDePolling?.montoSnapshotCop ?? "",
+      mesConsumo: envioDePolling?.mesConsumo ?? "",
+      mesFacturacion: envioDePolling?.mesFacturacion ?? "",
+      enviadoAt: envioDePolling?.enviadoAt ?? null,
+      respondidoAt: envioDePolling?.respondidoAt ?? null,
+      intentos: envioDePolling?.intentos ?? 1,
+      errorCodigo: null,                                 // no expuesto por BE-4
+      errorMensaje: estadoEnvioEntrada.errorMensaje ?? null,
+      requestPayloadJson: null,                          // no expuesto por BE-4 (pendiente BE-5)
+      responsePayloadJson: null,                         // no expuesto por BE-4 (pendiente BE-5)
+    }
 
-    // Guardar el timer en una variable local no es necesario para cleanup
-    // ya que el modal se desmonta si se cierra antes; el setState es no-op en ese caso.
-    // Si en FE-6 se usa fetch, cancelar con AbortController.
-    void timer
+    // Mostrar inmediatamente — no hay fetch, los datos ya están en memoria
+    setDetalleEnvio(detalle)
+    setCargandoDetalle(false)
   }
 
   function handleCerrarDetalle() {
