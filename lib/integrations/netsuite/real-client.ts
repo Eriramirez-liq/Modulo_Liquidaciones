@@ -55,9 +55,14 @@ export class RealNetsuiteClient implements NetsuiteClient {
   private cfg: RealClientConfig
 
   constructor() {
+    // Cuenta 8312907 (producción). Host y realm derivados del accountId, según
+    // la doc de Oracle: <accountID>.suitetalk.api.netsuite.com. Overridables.
     this.cfg = {
-      baseUrl: leerEnv("NETSUITE_BASE_URL").replace(/\/$/, ""),
-      accountId: leerEnv("NETSUITE_ACCOUNT_ID"),
+      baseUrl: (
+        process.env.NETSUITE_BASE_URL ??
+        "https://8312907.suitetalk.api.netsuite.com"
+      ).replace(/\/$/, ""),
+      accountId: process.env.NETSUITE_ACCOUNT_ID ?? "8312907",
       consumerKey: leerEnv("NETSUITE_CONSUMER_KEY"),
       consumerSecret: leerEnv("NETSUITE_CONSUMER_SECRET"),
       tokenId: leerEnv("NETSUITE_TOKEN_ID"),
