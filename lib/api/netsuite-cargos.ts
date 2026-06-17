@@ -150,3 +150,35 @@ export async function listarLotesReal(limite = 50): Promise<LoteResumenDto[]> {
   const data = await res.json() as { lotes: LoteResumenDto[] }
   return data.lotes
 }
+
+// ---------------------------------------------------------------------------
+// cancelarLoteReal
+// POST /api/cargos-str/netsuite/lote/:loteId/cancelar
+// Sin body. Respuesta 200: { loteId, estado: "CANCELADO" }
+// Errores: 404 LOTE_NO_ENCONTRADO, 409 LOTE_NO_CANCELABLE, 401, 500
+// ---------------------------------------------------------------------------
+
+export async function cancelarLoteReal(
+  loteId: string,
+): Promise<{ loteId: string; estado: string }> {
+  const res = await fetch(`/api/cargos-str/netsuite/lote/${loteId}/cancelar`, {
+    method: "POST",
+  })
+  await throwIfNotOk(res)
+  return res.json() as Promise<{ loteId: string; estado: string }>
+}
+
+// ---------------------------------------------------------------------------
+// reenviarEnvioReal
+// POST /api/cargos-str/netsuite/envio/:envioId/reenviar
+// Sin body. Respuesta 200: EnvioDto (síncrono, puede tardar ~30s)
+// Errores: 404 ENVIO_NO_ENCONTRADO, 409 ENVIO_NO_REENVIABLE, 401, 500
+// ---------------------------------------------------------------------------
+
+export async function reenviarEnvioReal(envioId: string): Promise<EnvioDto> {
+  const res = await fetch(`/api/cargos-str/netsuite/envio/${envioId}/reenviar`, {
+    method: "POST",
+  })
+  await throwIfNotOk(res)
+  return res.json() as Promise<EnvioDto>
+}

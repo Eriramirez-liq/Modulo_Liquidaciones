@@ -7,8 +7,7 @@ import DetalleEnvioModal from "@/components/cargos-str/DetalleEnvioModal"
 import ModalConfirmarLote from "@/components/cargos-str/ModalConfirmarLote"
 import Toast from "@/components/cargos-str/Toast"
 import type { EstadoEnvioKey, EstadoEnvioUI, DetalleEnvio, LoteEnCursoUI, CargoSeleccionado, CargoParaEnviar } from "@/components/cargos-str/types"
-import { mockPostCancelar } from "@/_dev/mocks/netsuite"
-import { crearLoteReal, procesarLoteReal, getLoteReal, getEstadosReal, getLoteActivoReal } from "@/lib/api/netsuite-cargos"
+import { crearLoteReal, procesarLoteReal, getLoteReal, getEstadosReal, getLoteActivoReal, cancelarLoteReal, reenviarEnvioReal } from "@/lib/api/netsuite-cargos"
 import type { LoteResponse } from "@/lib/api/netsuite-cargos"
 import PanelLoteEnCurso from "@/components/cargos-str/PanelLoteEnCurso"
 import type { ToastData } from "@/components/cargos-str/Toast"
@@ -89,6 +88,8 @@ export default function CargosSTRPage() {
   const [detalleEnvioId, setDetalleEnvioId] = useState<string | null>(null)
   const [detalleEnvio, setDetalleEnvio] = useState<DetalleEnvio | null>(null)
   const [cargandoDetalle, setCargandoDetalle] = useState(false)
+  // Flag de reenvío en curso (puede tardar ~30s) — deshabilita el botón Reenviar
+  const [reenviando, setReenviando] = useState(false)
 
   // -- Estado ModalConfirmarLote + flujo lote (FE-4) --
   const [loteEnCurso, setLoteEnCurso] = useState<LoteEnCursoUI | null>(null)
@@ -345,28 +346,81 @@ export default function CargosSTRPage() {
     setCargandoDetalle(false)
   }
 
-  function handleReenviar() {
-    // eslint-disable-next-line no-alert
-    alert("Reenviar disponible cuando FE-4/Backend estén listos. Funcionalidad pendiente.")
+  async function handleReenviar() {
+    // El envioId es el id real del envío (ultimoEnvioId guardado en detalleEnvio.id)
+    const envioId = detalleEnvio?.id
+    if (!envioId) return
+
+    setReenviando(true)
+    try {
+      const envioDto = await reenviarEnvioReal(envioId)
+
+      // Actualizar estadosEnvio para la celda correspondiente
+      const key = cargoKey(envioDto.periodoId, envioDto.orCodigo)
+      setEstadosEnvio(prev => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          ultimoEnvioId: envioDto.id,
+          estado: envioDto.estado,
+          numeroOc: envioDto.numeroOc ?? null,
+          errorMensaje: envioDto.errorMensaje ?? null,
+        } as EstadoEnvioUI,
+      }))
+
+      // Refrescar detalleEnvio si el modal sigue abierto
+      if (detalleEnvioId !== null) {
+        setDetalleEnvio(prev => prev
+          ? {
+              ...prev,
+              estado: envioDto.estado,
+              numeroOc: envioDto.numeroOc ?? null,
+              errorMensaje: envioDto.errorMensaje ?? null,
+              errorCodigo: envioDto.errorCodigo ?? null,
+              intentos: envioDto.intentos,
+              enviadoAt: envioDto.enviadoAt ?? null,
+              respondidoAt: envioDto.respondidoAt ?? null,
+            }
+          : prev
+        )
+      }
+
+      // Toast según resultado
+      if (envioDto.estado === "PROCESADO") {
+        setToast({ tipo: "ok", mensaje: `OC creada: ${envioDto.numeroOc ?? "—"}` })
+      } else {
+        setToast({
+          tipo: "warning",
+          mensaje: envioDto.errorMensaje ?? "Reenvío completado con error.",
+        })
+      }
+    } catch (e: unknown) {
+      const errObj = e as Record<string, unknown>
+      const msg = errObj?.error === "ENVIO_NO_REENVIABLE"
+        ? (typeof errObj.message === "string" ? errObj.message : "Este envío no se puede reenviar.")
+        : "Error al reenviar. Intentá de nuevo en unos segundos."
+      setToast({ tipo: "error", mensaje: msg })
+    } finally {
+      setReenviando(false)
+    }
   }
 
-  // -- Handler FE-5: cancelar lote --
-  // TODO FE-6: mockPostCancelar → fetch real a /api/cargos-str/netsuite/lote/:id/cancelar
+  // -- Handler: cancelar lote --
 
   async function handleCancelarLote() {
     if (!loteEnCurso?.id) return
     try {
-      await mockPostCancelar(loteEnCurso.id)
-      // TODO FE-6: reemplazar por fetch real a /api/cargos-str/netsuite/lote/:id/cancelar
+      await cancelarLoteReal(loteEnCurso.id)
       setLoteEnCurso(prev => prev ? { ...prev, estado: "CANCELADO" } : null)
-      // FE-5.5: limpiar tracking de progreso — el lote ya no está activo
+      // Limpiar tracking de progreso — el lote ya no está activo
       setLastProgressAt(null)
       totalesRef.current = null
       setToast({ tipo: "warning", mensaje: "Lote cancelado." })
       // El polling se detiene solo en el próximo tick (loteEnCurso.estado !== EN_PROGRESO)
     } catch (e: unknown) {
+      // throwIfNotOk lanza el JSON del body: { error, message }. No hay campo status.
       const errObj = e as Record<string, unknown>
-      const msg = errObj?.status === 409
+      const msg = errObj?.error === "LOTE_NO_CANCELABLE"
         ? "No se puede cancelar: hay envíos en proceso. Esperá un momento e intentá de nuevo."
         : "Error al cancelar el lote. Reintentá en unos segundos."
       setToast({ tipo: "error", mensaje: msg })
@@ -708,9 +762,9 @@ export default function CargosSTRPage() {
       <DetalleEnvioModal
         abierto={detalleEnvioId !== null}
         envio={detalleEnvio}
-        cargando={cargandoDetalle}
+        cargando={cargandoDetalle || reenviando}
         onCerrar={handleCerrarDetalle}
-        onReenviar={detalleEnvio?.estado === "ERROR" ? handleReenviar : undefined}
+        onReenviar={detalleEnvio?.estado === "ERROR" && !reenviando ? handleReenviar : undefined}
       />
 
       {/* ModalConfirmarLote — FE-4 */}
