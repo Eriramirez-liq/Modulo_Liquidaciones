@@ -27,8 +27,12 @@ export const MAX_ENVIOS_POR_LOTE = 25
  *
  * El valor es una constante arbitraria pero estable: cambiarla rompería la
  * exclusión mutua con transacciones que ya estén usando el valor anterior.
+ *
+ * DEBE estar dentro del rango de `bigint` CON SIGNO de Postgres
+ * (−2^63 .. 2^63−1). El valor anterior (0xCA90577210000001) excedía 2^63−1 y
+ * Postgres lo rechazaba ("bigint out of range").
  */
-export const NETSUITE_LOTE_LOCK_KEY = BigInt("0xCA90577210000001")
+export const NETSUITE_LOTE_LOCK_KEY = BigInt("8312907210000001")
 
 /**
  * Timeout por llamada HTTP a NetSuite (T1, confirmado 2026-05-25).

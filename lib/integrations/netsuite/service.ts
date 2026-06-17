@@ -124,7 +124,13 @@ export async function crearLote(
 
   const loteId = await db.$transaction(async (tx) => {
     // 1. Advisory lock — PRIMERA sentencia. Serializa la creación de lotes.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${NETSUITE_LOTE_LOCK_KEY})`
+    // Se usa $executeRawUnsafe con la clave interpolada: pasar un BigInt como
+    // parámetro de $executeRaw dispara un bug de serialización de Prisma
+    // ("Expected Flat JSON array"). La clave es una constante del código (no
+    // input de usuario), así que la interpolación es segura.
+    await tx.$executeRawUnsafe(
+      `SELECT pg_advisory_xact_lock(${NETSUITE_LOTE_LOCK_KEY.toString()})`,
+    )
 
     // 2. ¿Ya hay un lote EN_PROGRESO?
     const enCurso = await tx.loteNetsuite.findFirst({
