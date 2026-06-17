@@ -34,7 +34,9 @@ interface RealClientConfig {
   recordPath: string
   // IDs internos NetSuite de la OC (fijos de la cuenta, no por OR).
   subsidiaryId: string
-  locationId: string
+  // location es OPCIONAL: NetSuite confirmó que esta transacción no la requiere
+  // (artículos no inventariables). Solo se envía si NETSUITE_LOCATION_ID está set.
+  locationId: string | null
   itemId: string
   /** Cantidad de la línea; por defecto 1 (cargo a tanto alzado). */
   quantity: number
@@ -71,9 +73,11 @@ export class RealNetsuiteClient implements NetsuiteClient {
       recordPath:
         process.env.NETSUITE_RECORD_PATH ??
         "/services/rest/record/v1/purchaseOrder",
-      // IDs de la prueba (subsidiary=2, location=1, item=10); overridables por env.
+      // IDs de la prueba (subsidiary=2, item=10); overridables por env.
+      // location NO se envía por defecto (no requerida); set NETSUITE_LOCATION_ID
+      // solo si en el futuro hiciera falta.
       subsidiaryId: process.env.NETSUITE_SUBSIDIARY_ID ?? "2",
-      locationId: process.env.NETSUITE_LOCATION_ID ?? "1",
+      locationId: process.env.NETSUITE_LOCATION_ID ?? null,
       itemId: process.env.NETSUITE_ITEM_ID ?? "10",
       quantity: Number(process.env.NETSUITE_DEFAULT_QUANTITY ?? "1"),
     }
@@ -168,12 +172,11 @@ function construirCuerpoOrden(
   payload: NetsuitePayload,
   cfg: RealClientConfig,
 ): Record<string, unknown> {
-  return {
+  const cuerpo: Record<string, unknown> = {
     // externalId permite idempotencia del lado NetSuite (si la cuenta lo respeta).
     externalId: payload.externalId,
     entity: { id: payload.vendorId },
     subsidiary: { id: cfg.subsidiaryId },
-    location: { id: cfg.locationId },
     currency: { refName: payload.currency },
     memo: payload.memo,
     tranDate: payload.date,
@@ -187,6 +190,9 @@ function construirCuerpoOrden(
       ],
     },
   }
+  // location solo si está configurada (no requerida por esta transacción).
+  if (cfg.locationId) cuerpo.location = { id: cfg.locationId }
+  return cuerpo
 }
 
 /**
