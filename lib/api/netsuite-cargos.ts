@@ -3,26 +3,10 @@
 // Shape de respuesta idéntico al LoteResponse del backend (BE-3).
 
 import type { EstadoEnvioUI } from "@/components/cargos-str/types"
+import type { LoteResumenDto, EnvioDto } from "@/lib/integrations/netsuite/types"
 
-// ---------------------------------------------------------------------------
-// Tipos
-// ---------------------------------------------------------------------------
-
-export interface EnvioDto {
-  id: string
-  periodoId: string
-  orCodigo: string
-  orNombre: string
-  montoSnapshotCop: string
-  mesConsumo: string
-  mesFacturacion: string
-  estado: "PENDIENTE" | "PROCESANDO" | "PROCESADO" | "ERROR"
-  intentos: number
-  numeroOc: string | null
-  errorMensaje: string | null
-  enviadoAt: string | null
-  respondidoAt: string | null
-}
+// Re-exportar tipos del módulo canónico para que las páginas los importen desde aquí
+export type { LoteResumenDto, EnvioDto }
 
 export interface LoteResponse {
   loteId: string
@@ -152,4 +136,17 @@ export async function getLoteActivoReal(): Promise<LoteResponse | null> {
     throw body
   }
   return res.json() as Promise<LoteResponse>
+}
+
+// ---------------------------------------------------------------------------
+// listarLotesReal
+// GET /api/cargos-str/netsuite/lotes?limite=N
+// Respuesta 200: { lotes: LoteResumenDto[] }
+// ---------------------------------------------------------------------------
+
+export async function listarLotesReal(limite = 50): Promise<LoteResumenDto[]> {
+  const res = await fetch(`/api/cargos-str/netsuite/lotes?limite=${limite}`)
+  await throwIfNotOk(res)
+  const data = await res.json() as { lotes: LoteResumenDto[] }
+  return data.lotes
 }

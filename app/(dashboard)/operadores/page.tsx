@@ -4,17 +4,76 @@ import { useState, useEffect } from "react"
 type Operador = {
   id: string; codigo: string; nombre: string; nit: string | null; activo: boolean
   mapeo_sdl_json: Record<string, unknown> | null
+  netsuite_vendor_id: string | null
+}
+
+// Estado de edición inline por operador
+type EditState = {
+  editing: boolean
+  value: string
+  saving: boolean
+  error: string | null
 }
 
 export default function OperadoresPage() {
   const [operadores, setOperadores] = useState<Operador[]>([])
   const [loading, setLoading]       = useState(true)
+  // Map de id → estado de edición de vendor id
+  const [editStates, setEditStates] = useState<Record<string, EditState>>({})
 
   useEffect(() => {
     fetch("/api/operadores?includeMapeo=true")
       .then(r => r.json())
       .then((data: Operador[]) => { setOperadores(data); setLoading(false) })
   }, [])
+
+  function startEdit(id: string, currentValue: string | null) {
+    setEditStates(prev => ({
+      ...prev,
+      [id]: { editing: true, value: currentValue ?? "", saving: false, error: null },
+    }))
+  }
+
+  function cancelEdit(id: string) {
+    setEditStates(prev => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }
+
+  async function saveVendorId(id: string) {
+    const state = editStates[id]
+    if (!state) return
+    const newValue = state.value.trim()
+
+    setEditStates(prev => ({ ...prev, [id]: { ...prev[id]!, saving: true, error: null } }))
+
+    try {
+      const res = await fetch(`/api/operadores/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ netsuite_vendor_id: newValue === "" ? null : newValue }),
+      })
+      if (!res.ok) {
+        let msg = `Error ${res.status}`
+        try { const body = await res.json(); msg = (body as { message?: string }).message ?? msg } catch { /* noop */ }
+        setEditStates(prev => ({ ...prev, [id]: { ...prev[id]!, saving: false, error: msg } }))
+        return
+      }
+      const updated = await res.json() as { id: string; codigo: string; nombre: string; netsuite_vendor_id: string | null }
+      // Actualizar la fila en el estado local con el valor devuelto por el backend
+      setOperadores(prev => prev.map(o => o.id === updated.id ? { ...o, netsuite_vendor_id: updated.netsuite_vendor_id } : o))
+      // Cerrar el editor
+      setEditStates(prev => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+    } catch {
+      setEditStates(prev => ({ ...prev, [id]: { ...prev[id]!, saving: false, error: "Error de red. Reintentá." } }))
+    }
+  }
 
   const thStyle: React.CSSProperties = {
     padding: "10px 14px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280",
@@ -81,12 +140,13 @@ export default function OperadoresPage() {
                 <th style={thStyle}>Mapeo SDL</th>
                 <th style={thStyle}>Tipo archivo</th>
                 <th style={thStyle}>Fila inicio</th>
+                <th style={thStyle}>Vendor NetSuite</th>
                 <th style={thStyle}>Estado</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>Cargando operadores...</td></tr>
+                <tr><td colSpan={8} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>Cargando operadores...</td></tr>
               ) : operadores.map(o => {
                 const mapeo = o.mapeo_sdl_json
                 const tipoArchivo = (mapeo?.tipo_archivo as string | undefined) ?? "—"
@@ -105,6 +165,19 @@ export default function OperadoresPage() {
                     <td style={{ ...tdStyle, textAlign: "center", color: mapeo ? "#374151" : "#9ca3af" }}>
                       {mapeo ? filaInicio : "—"}
                     </td>
+                    <td style={{ ...tdStyle, minWidth: 180 }}>
+                      <VendorCell
+                        operadorId={o.id}
+                        vendorId={o.netsuite_vendor_id}
+                        editState={editStates[o.id] ?? null}
+                        onStartEdit={() => startEdit(o.id, o.netsuite_vendor_id)}
+                        onCancelEdit={() => cancelEdit(o.id)}
+                        onSave={() => saveVendorId(o.id)}
+                        onChangeValue={(v: string) =>
+                          setEditStates(prev => ({ ...prev, [o.id]: { ...prev[o.id]!, value: v } }))
+                        }
+                      />
+                    </td>
                     <td style={tdStyle}>
                       {o.activo
                         ? <span style={{ background: "#f0fdf4", color: "#15803d", padding: "2px 8px", borderRadius: 999, fontSize: "0.72rem", fontWeight: 600 }}>Activo</span>
@@ -118,6 +191,106 @@ export default function OperadoresPage() {
           </table>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// VendorCell — celda editable inline para netsuite_vendor_id
+// ---------------------------------------------------------------------------
+
+interface VendorCellProps {
+  operadorId: string
+  vendorId: string | null
+  editState: EditState | null
+  onStartEdit: () => void
+  onCancelEdit: () => void
+  onSave: () => void
+  onChangeValue: (v: string) => void
+}
+
+function VendorCell({
+  vendorId,
+  editState,
+  onStartEdit,
+  onCancelEdit,
+  onSave,
+  onChangeValue,
+}: VendorCellProps) {
+  if (!editState) {
+    // Modo lectura
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ fontFamily: "monospace", fontSize: "0.82rem", color: vendorId ? "#374151" : "#9ca3af" }}>
+          {vendorId ?? "—"}
+        </span>
+        <button
+          type="button"
+          onClick={onStartEdit}
+          title="Editar Vendor NetSuite"
+          style={{
+            background: "none", border: "1px solid #e5e7eb", borderRadius: 4,
+            padding: "1px 6px", fontSize: "0.7rem", color: "#6b7280",
+            cursor: "pointer", lineHeight: 1.4,
+          }}
+        >
+          Editar
+        </button>
+      </div>
+    )
+  }
+
+  // Modo edición
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <input
+          type="text"
+          value={editState.value}
+          onChange={e => onChangeValue(e.target.value)}
+          disabled={editState.saving}
+          placeholder="ej. 12345"
+          style={{
+            border: "1px solid #07c5a8", borderRadius: 4, padding: "3px 7px",
+            fontSize: "0.82rem", fontFamily: "monospace", width: 110,
+            outline: "none", color: "#111827",
+          }}
+          onKeyDown={e => {
+            if (e.key === "Enter") onSave()
+            if (e.key === "Escape") onCancelEdit()
+          }}
+          autoFocus
+        />
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={editState.saving}
+          style={{
+            background: "#07c5a8", color: "#fff", border: "none", borderRadius: 4,
+            padding: "3px 8px", fontSize: "0.75rem", fontWeight: 600,
+            cursor: editState.saving ? "not-allowed" : "pointer",
+            opacity: editState.saving ? 0.7 : 1,
+          }}
+        >
+          {editState.saving ? "Guardando…" : "Guardar"}
+        </button>
+        {!editState.saving && (
+          <button
+            type="button"
+            onClick={onCancelEdit}
+            style={{
+              background: "none", border: "1px solid #e5e7eb", borderRadius: 4,
+              padding: "3px 7px", fontSize: "0.75rem", color: "#6b7280",
+              cursor: "pointer",
+            }}
+          >
+            ✕
+          </button>
+        )}
+      </div>
+      {editState.error && (
+        <span style={{ fontSize: "0.72rem", color: "#b91c1c" }}>{editState.error}</span>
+      )}
     </div>
   )
 }

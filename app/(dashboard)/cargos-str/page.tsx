@@ -1,5 +1,6 @@
 "use client"
 import { useState, useEffect, useMemo, useRef } from "react"
+import Link from "next/link"
 import { FilaOperador } from "@/components/cargos-str/FilaOperador"
 import { BotonCrearOC } from "@/components/cargos-str/BotonCrearOC"
 import DetalleEnvioModal from "@/components/cargos-str/DetalleEnvioModal"
@@ -587,13 +588,27 @@ export default function CargosSTRPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <div>
-        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#111827", margin: "0 0 4px" }}>
-          Cargos STR
-        </h1>
-        <p style={{ fontSize: "0.875rem", color: "#6b7280", margin: 0 }}>
-          Cargos calculados a partir de los Insumos STR, totalizados por operador.
-        </p>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#111827", margin: "0 0 4px" }}>
+            Cargos STR
+          </h1>
+          <p style={{ fontSize: "0.875rem", color: "#6b7280", margin: 0 }}>
+            Cargos calculados a partir de los Insumos STR, totalizados por operador.
+          </p>
+        </div>
+        <Link
+          href="/cargos-str/historial"
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            fontSize: "0.82rem", color: "#6b7280", fontWeight: 500,
+            textDecoration: "none", padding: "5px 12px",
+            border: "1px solid #e5e7eb", borderRadius: 8,
+            background: "#fff",
+          }}
+        >
+          Historial de envíos
+        </Link>
       </div>
 
       {/* Panel lote en curso — FE-5 */}
