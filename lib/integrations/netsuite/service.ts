@@ -22,6 +22,7 @@ import { Prisma } from "@prisma/client"
 import { db } from "@/lib/db"
 import { NETSUITE_LOTE_LOCK_KEY, NETSUITE_TIMEOUT_MS } from "./config"
 import { getNetsuiteClient } from "./client"
+import { auditNetsuite, logNetsuite } from "./audit"
 import { envioToDto, snapshotToPayload, type EnvioConOperador } from "./mapper"
 import { netsuiteResponseSchema, type NetsuiteResponse } from "./types"
 import type {
@@ -139,6 +140,10 @@ export async function crearLote(
       include: { iniciado_por: { select: { id: true, nombre: true } } },
     })
     if (enCurso) {
+      logNetsuite("lote.en_curso_conflicto", "warn", {
+        loteEnCursoId: enCurso.id,
+        intentadoPorId: userId,
+      })
       throw new LoteEnCursoError(
         enCurso.id,
         enCurso.iniciado_at.toISOString(),
@@ -289,7 +294,25 @@ export async function crearLote(
   })
 
   // Releer fuera de la tx para devolver el DTO completo (el lock ya se liberó).
-  return obtenerLote(loteId)
+  const dto = await obtenerLote(loteId)
+
+  // Observabilidad + auditoría — DESPUÉS del commit. Ambas best-effort: el audit
+  // no relanza; el log es síncrono y nunca falla.
+  const totalEnvios = dto.totales.total
+  logNetsuite("lote.creado", "info", {
+    loteId,
+    totalEnvios,
+    iniciadoPorId: userId,
+  })
+  await auditNetsuite({
+    usuarioId: userId,
+    accion: "ENVIAR_LOTE_NETSUITE",
+    entidad: "LoteNetsuite",
+    entidadId: loteId,
+    detalle: { totalEnvios },
+  })
+
+  return dto
 }
 
 // ─── procesarLote ─────────────────────────────────────────────────────────────────
@@ -324,13 +347,26 @@ function datosError(params: {
 }
 
 /**
+ * Resumen del resultado de procesar un envío, para que el caller logee/audite
+ * sin re-leer la fila. No incluye payloads crudos (R10).
+ */
+interface ResultadoEnvio {
+  estado: "PROCESADO" | "ERROR"
+  numeroOc: string | null
+  errorCodigo: string | null
+  durationMs: number
+}
+
+/**
  * Procesa un único envío: llama al cliente con timeout, valida la respuesta con
  * Zod (R4) y persiste el resultado. Devuelve sin lanzar: cualquier fallo se
- * traduce en persistencia de ERROR.
+ * traduce en persistencia de ERROR. Retorna un resumen para observabilidad.
  */
-async function procesarEnvio(envio: EnvioConOperador): Promise<void> {
+async function procesarEnvio(envio: EnvioConOperador): Promise<ResultadoEnvio> {
   const client = getNetsuiteClient()
   const payload = snapshotToPayload(envio)
+  // Medición de latencia por envío (código de app normal, no workflow).
+  const inicio = Date.now()
 
   let resp: NetsuiteResponse
   try {
@@ -347,7 +383,7 @@ async function procesarEnvio(envio: EnvioConOperador): Promise<void> {
           payload: { request: payload } as unknown as Prisma.InputJsonValue,
         }),
       })
-      return
+      return { estado: "ERROR", numeroOc: null, errorCodigo: "TIMEOUT", durationMs: Date.now() - inicio }
     }
     // Excepción de red u otra → ERROR NETWORK.
     await db.envioNetsuiteCargoSTR.update({
@@ -358,7 +394,7 @@ async function procesarEnvio(envio: EnvioConOperador): Promise<void> {
         payload: { request: payload } as unknown as Prisma.InputJsonValue,
       }),
     })
-    return
+    return { estado: "ERROR", numeroOc: null, errorCodigo: "NETWORK", durationMs: Date.now() - inicio }
   }
 
   // R4: validar la respuesta. Si no cumple el schema (p.ej. OK sin
@@ -376,7 +412,7 @@ async function procesarEnvio(envio: EnvioConOperador): Promise<void> {
         } as unknown as Prisma.InputJsonValue,
       }),
     })
-    return
+    return { estado: "ERROR", numeroOc: null, errorCodigo: "RESPUESTA_INVALIDA", durationMs: Date.now() - inicio }
   }
 
   if (parsed.data.status === "ok") {
@@ -384,19 +420,26 @@ async function procesarEnvio(envio: EnvioConOperador): Promise<void> {
       where: { id: envio.id },
       data: datosOk(parsed.data),
     })
-  } else {
-    await db.envioNetsuiteCargoSTR.update({
-      where: { id: envio.id },
-      data: datosError({
-        codigo: parsed.data.code,
-        mensaje: parsed.data.message,
-        payload: {
-          request: payload,
-          response: parsed.data,
-        } as unknown as Prisma.InputJsonValue,
-      }),
-    })
+    return {
+      estado: "PROCESADO",
+      numeroOc: parsed.data.documentNumber,
+      errorCodigo: null,
+      durationMs: Date.now() - inicio,
+    }
   }
+
+  await db.envioNetsuiteCargoSTR.update({
+    where: { id: envio.id },
+    data: datosError({
+      codigo: parsed.data.code,
+      mensaje: parsed.data.message,
+      payload: {
+        request: payload,
+        response: parsed.data,
+      } as unknown as Prisma.InputJsonValue,
+    }),
+  })
+  return { estado: "ERROR", numeroOc: null, errorCodigo: parsed.data.code, durationMs: Date.now() - inicio }
 }
 
 /**
@@ -440,10 +483,59 @@ export async function procesarLote(loteId: string): Promise<void> {
     })
     if (!envio) continue
 
-    await procesarEnvio(envio as EnvioConOperador)
+    const resultado = await procesarEnvio(envio as EnvioConOperador)
+    const orCodigo = envio.operador_red.codigo
+
+    // Observabilidad por envío. OK → info, ERROR → warn (no es un fallo del
+    // sistema, es un cargo que NetSuite rechazó/no respondió).
+    if (resultado.estado === "PROCESADO") {
+      logNetsuite("envio.procesado_ok", "info", {
+        envioId: envio.id,
+        loteId,
+        orCodigo,
+        numeroOc: resultado.numeroOc,
+        durationMs: resultado.durationMs,
+      })
+    } else {
+      logNetsuite("envio.procesado_error", "warn", {
+        envioId: envio.id,
+        loteId,
+        orCodigo,
+        errorCodigo: resultado.errorCodigo,
+        durationMs: resultado.durationMs,
+      })
+    }
+
+    // Auditoría a nivel envío (best-effort). El usuario es quien inició el lote.
+    await auditNetsuite({
+      usuarioId: lote.iniciado_por_id,
+      accion: "PROCESAR_ENVIO_NETSUITE",
+      entidad: "EnvioNetsuiteCargoSTR",
+      entidadId: envio.id,
+      detalle: {
+        loteId,
+        orCodigo,
+        estado: resultado.estado,
+        numeroOc: resultado.numeroOc,
+        errorCodigo: resultado.errorCodigo,
+      },
+    })
   }
 
   await actualizarEstadoLote(loteId)
+
+  // Si el lote quedó COMPLETADO, logear el cierre con totales OK/ERROR.
+  const cerrado = await db.loteNetsuite.findUnique({
+    where: { id: loteId },
+    select: { estado: true, total_ok: true, total_error: true },
+  })
+  if (cerrado && cerrado.estado === "COMPLETADO") {
+    logNetsuite("lote.completado", "info", {
+      loteId,
+      totalOk: cerrado.total_ok,
+      totalError: cerrado.total_error,
+    })
+  }
 }
 
 /**
@@ -489,7 +581,7 @@ async function actualizarEstadoLote(loteId: string): Promise<void> {
 export async function reenviar(envioId: string): Promise<EnvioDto> {
   const envio = await db.envioNetsuiteCargoSTR.findUnique({
     where: { id: envioId },
-    include: { lote: { select: { estado: true } } },
+    include: { lote: { select: { estado: true, iniciado_por_id: true } } },
   })
   if (!envio) throw new EnvioNoEncontradoError()
   if (envio.estado !== "ERROR" || envio.lote.estado !== "EN_PROGRESO") {
@@ -509,8 +601,34 @@ export async function reenviar(envioId: string): Promise<EnvioDto> {
   })
   if (!conOperador) throw new EnvioNoEncontradoError()
 
-  await procesarEnvio(conOperador as EnvioConOperador)
+  const resultado = await procesarEnvio(conOperador as EnvioConOperador)
   await actualizarEstadoLote(conOperador.lote_id)
+
+  const orCodigo = conOperador.operador_red.codigo
+
+  // Observabilidad del reenvío. OK → info, ERROR → warn.
+  logNetsuite(
+    "envio.reenviado",
+    resultado.estado === "PROCESADO" ? "info" : "warn",
+    {
+      envioId,
+      loteId: conOperador.lote_id,
+      orCodigo,
+      estado: resultado.estado,
+      numeroOc: resultado.numeroOc,
+      errorCodigo: resultado.errorCodigo,
+      durationMs: resultado.durationMs,
+    },
+  )
+
+  // Auditoría del reenvío (best-effort). Usuario = quien inició el lote.
+  await auditNetsuite({
+    usuarioId: envio.lote.iniciado_por_id ?? "sistema",
+    accion: "REENVIAR_ENVIO_NETSUITE",
+    entidad: "EnvioNetsuiteCargoSTR",
+    entidadId: envioId,
+    detalle: { estado: resultado.estado, numeroOc: resultado.numeroOc },
+  })
 
   const actualizado = await db.envioNetsuiteCargoSTR.findUnique({
     where: { id: envioId },
@@ -527,10 +645,10 @@ export async function reenviar(envioId: string): Promise<EnvioDto> {
  * Cancela un lote EN_PROGRESO sin envíos PROCESANDO. Marca CANCELADO.
  */
 export async function cancelarLote(loteId: string): Promise<LoteDto> {
-  await db.$transaction(async (tx) => {
+  const iniciadoPorId = await db.$transaction(async (tx) => {
     const lote = await tx.loteNetsuite.findUnique({
       where: { id: loteId },
-      select: { estado: true },
+      select: { estado: true, iniciado_por_id: true },
     })
     if (!lote) throw new LoteNoEncontradoError()
     if (lote.estado !== "EN_PROGRESO") throw new LoteNoCancelableError()
@@ -544,6 +662,18 @@ export async function cancelarLote(loteId: string): Promise<LoteDto> {
       where: { id: loteId },
       data: { estado: "CANCELADO", finalizado_at: new Date() },
     })
+
+    return lote.iniciado_por_id
+  })
+
+  // Observabilidad + auditoría — DESPUÉS del commit. Ambas best-effort.
+  logNetsuite("lote.cancelado", "warn", { loteId })
+  await auditNetsuite({
+    usuarioId: iniciadoPorId ?? "sistema",
+    accion: "CANCELAR_LOTE_NETSUITE",
+    entidad: "LoteNetsuite",
+    entidadId: loteId,
+    detalle: {},
   })
 
   return obtenerLote(loteId)
