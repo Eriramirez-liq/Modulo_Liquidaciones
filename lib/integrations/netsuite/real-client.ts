@@ -32,6 +32,12 @@ interface RealClientConfig {
   tokenId: string
   tokenSecret: string
   recordPath: string
+  // IDs internos NetSuite de la OC (fijos de la cuenta, no por OR).
+  subsidiaryId: string
+  locationId: string
+  itemId: string
+  /** Cantidad de la línea; por defecto 1 (cargo a tanto alzado). */
+  quantity: number
 }
 
 function leerEnv(nombre: string): string {
@@ -56,10 +62,14 @@ export class RealNetsuiteClient implements NetsuiteClient {
       consumerSecret: leerEnv("NETSUITE_CONSUMER_SECRET"),
       tokenId: leerEnv("NETSUITE_TOKEN_ID"),
       tokenSecret: leerEnv("NETSUITE_TOKEN_SECRET"),
-      // Default: orden de compra vía REST record API. CONFIRMAR el registro real.
+      // Default: orden de compra vía REST record API.
       recordPath:
         process.env.NETSUITE_RECORD_PATH ??
         "/services/rest/record/v1/purchaseOrder",
+      subsidiaryId: leerEnv("NETSUITE_SUBSIDIARY_ID"),
+      locationId: leerEnv("NETSUITE_LOCATION_ID"),
+      itemId: leerEnv("NETSUITE_ITEM_ID"),
+      quantity: Number(process.env.NETSUITE_DEFAULT_QUANTITY ?? "1"),
     }
   }
 
@@ -75,7 +85,7 @@ export class RealNetsuiteClient implements NetsuiteClient {
     }
 
     const url = `${this.cfg.baseUrl}${this.cfg.recordPath}`
-    const cuerpo = construirCuerpoOrden(payload)
+    const cuerpo = construirCuerpoOrden(payload, this.cfg)
 
     const res = await this.fetchFirmado("POST", url, cuerpo)
     return parsearRespuesta(res, payload, (location) =>
@@ -129,29 +139,47 @@ export class RealNetsuiteClient implements NetsuiteClient {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * CONFIRMAR: arma el JSON del registro que NetSuite espera para crear la OC.
- *
- * El payload genérico trae { externalId, vendor (or.codigo), amount (string),
- * currency, memo, date }. Falta saber:
- *   - Qué registro es (purchaseOrder / vendorBill / RESTlet custom).
- *   - Cómo se identifica el vendor (internalId / externalId) → mapeo OR→vendor (R9).
- *   - Campos obligatorios de la cuenta (subsidiary, location, item/expense lines…).
- *
- * Estructura tentativa para purchaseOrder REST (AJUSTAR con el ejemplo real):
+ * Convierte el monto (string con 2 decimales) al number que exige el campo
+ * numérico `rate` de NetSuite. ÚNICO punto sancionado de conversión a Number:
+ * el valor ya es un Decimal finalizado (toFixed(2)) y los montos COP están muy
+ * por debajo del rango seguro de enteros de JS (2^53). No usar Number() sobre
+ * Decimals en ningún otro lado del módulo (R5).
  */
-function construirCuerpoOrden(payload: NetsuitePayload): Record<string, unknown> {
+function montoANumero(amount: string): number {
+  return Number(amount)
+}
+
+/**
+ * Arma el JSON de la Purchase Order para la REST record API de NetSuite.
+ *
+ * Campos (confirmados para la prueba):
+ *   - entity      → vendor por internalId (ConfiguracionOR.netsuite_vendor_id).
+ *   - subsidiary  → internalId fijo de la cuenta (env).
+ *   - location    → internalId fijo de la cuenta (env).
+ *   - item.items[]→ una línea con item (internalId), rate (monto) y quantity.
+ */
+function construirCuerpoOrden(
+  payload: NetsuitePayload,
+  cfg: RealClientConfig,
+): Record<string, unknown> {
   return {
     // externalId permite idempotencia del lado NetSuite (si la cuenta lo respeta).
     externalId: payload.externalId,
-    // Vendor por internalId (confirmado): ConfiguracionOR.netsuite_vendor_id.
     entity: { id: payload.vendorId },
+    subsidiary: { id: cfg.subsidiaryId },
+    location: { id: cfg.locationId },
     currency: { refName: payload.currency },
     memo: payload.memo,
     tranDate: payload.date,
-    // CONFIRMAR con el ejemplo de Postman: campos obligatorios de la cuenta
-    // (subsidiary, location…) y las líneas con el monto.
-    // amount viaja como string → NUNCA Number(payload.amount).
-    // item: { items: [{ amount: payload.amount, ... }] },
+    item: {
+      items: [
+        {
+          item: { id: cfg.itemId },
+          quantity: cfg.quantity,
+          rate: montoANumero(payload.amount),
+        },
+      ],
+    },
   }
 }
 
