@@ -460,7 +460,14 @@ export default function CargosSTRPage() {
       } else if (errObj?.error === "MONTO_CERO") {
         setErrorLote("Algún cargo seleccionado tiene monto cero. Revisá los datos.")
       } else {
-        setErrorLote("Error al crear el lote. Reintentá en unos segundos.")
+        // Mostrar el código/mensaje real del backend para poder diagnosticar.
+        const codigo  = typeof errObj?.error === "string" ? errObj.error : null
+        const mensaje = typeof errObj?.message === "string" ? errObj.message : null
+        setErrorLote(
+          codigo || mensaje
+            ? `Error al crear el lote${codigo ? ` [${codigo}]` : ""}${mensaje ? `: ${mensaje}` : ""}`
+            : "Error al crear el lote. Reintentá en unos segundos.",
+        )
       }
     } finally {
       setEnviandoLote(false)
