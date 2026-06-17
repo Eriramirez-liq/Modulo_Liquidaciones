@@ -250,10 +250,33 @@ async function parsearRespuesta(
     }
   }
 
+  // NetSuite devuelve el detalle real en `o:errorDetails[].detail`. Lo usamos
+  // como mensaje para que la UI muestre la causa concreta (ej. campo inválido),
+  // no solo "400 Bad Request".
+  const detalleNs = extraerDetalleNetsuite(detalle)
+
   return {
     status: "error",
     code: `HTTP_${res.status}`,
-    message: `NetSuite respondió ${res.status} ${res.statusText}`,
+    message: detalleNs
+      ? `NetSuite ${res.status}: ${detalleNs}`
+      : `NetSuite respondió ${res.status} ${res.statusText}`,
     raw: { externalId: payload.externalId, detalle },
   }
+}
+
+/** Extrae el primer `o:errorDetails[].detail` (o el `title`) del cuerpo de error. */
+function extraerDetalleNetsuite(detalle: unknown): string | null {
+  if (!detalle || typeof detalle !== "object") {
+    return typeof detalle === "string" && detalle.trim() ? detalle.trim() : null
+  }
+  const obj = detalle as Record<string, unknown>
+  const errores = obj["o:errorDetails"]
+  if (Array.isArray(errores) && errores.length > 0) {
+    const primero = errores[0] as Record<string, unknown>
+    const det = primero?.["detail"]
+    if (typeof det === "string" && det.trim()) return det.trim()
+  }
+  const title = obj["title"]
+  return typeof title === "string" && title.trim() ? title.trim() : null
 }
