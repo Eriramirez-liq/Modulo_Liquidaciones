@@ -25,6 +25,9 @@ export type EnvioConOperador = EnvioNetsuiteCargoSTR & {
 export function snapshotToPayload(envio: EnvioConOperador): NetsuitePayload {
   return {
     externalId: envio.idempotency_key,
+    // internalId del vendor en NetSuite. Si está vacío, el cliente real lo
+    // marca como error (VENDOR_SIN_ID) — el OR no tiene vendor configurado.
+    vendorId: envio.operador_red.netsuite_vendor_id ?? "",
     vendor: envio.operador_red.codigo,
     // PRECISION: Decimal → "123456.78". NUNCA Number(envio.monto_snapshot_cop).
     amount: envio.monto_snapshot_cop.toFixed(2),

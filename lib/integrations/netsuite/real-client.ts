@@ -64,6 +64,16 @@ export class RealNetsuiteClient implements NetsuiteClient {
   }
 
   async enviarOrden(payload: NetsuitePayload): Promise<NetsuiteResponse> {
+    if (!payload.vendorId) {
+      // El OR no tiene netsuite_vendor_id configurado → no se puede crear la OC.
+      return {
+        status: "error",
+        code: "VENDOR_SIN_ID",
+        message: `El operador ${payload.vendor} no tiene netsuite_vendor_id configurado.`,
+        raw: { externalId: payload.externalId },
+      }
+    }
+
     const url = `${this.cfg.baseUrl}${this.cfg.recordPath}`
     const cuerpo = construirCuerpoOrden(payload)
 
@@ -133,11 +143,14 @@ function construirCuerpoOrden(payload: NetsuitePayload): Record<string, unknown>
   return {
     // externalId permite idempotencia del lado NetSuite (si la cuenta lo respeta).
     externalId: payload.externalId,
-    entity: { refName: payload.vendor }, // CONFIRMAR: ¿internalId o externalId del vendor?
+    // Vendor por internalId (confirmado): ConfiguracionOR.netsuite_vendor_id.
+    entity: { id: payload.vendorId },
     currency: { refName: payload.currency },
     memo: payload.memo,
     tranDate: payload.date,
-    // CONFIRMAR: líneas (item/expense) y monto. amount es string → NUNCA Number().
+    // CONFIRMAR con el ejemplo de Postman: campos obligatorios de la cuenta
+    // (subsidiary, location…) y las líneas con el monto.
+    // amount viaja como string → NUNCA Number(payload.amount).
     // item: { items: [{ amount: payload.amount, ... }] },
   }
 }

@@ -104,6 +104,9 @@ export type NetsuiteTestOverride = "always-ok" | "always-error"
  */
 export interface NetsuitePayload {
   externalId: string
+  /** internalId del vendor en NetSuite (de ConfiguracionOR.netsuite_vendor_id). */
+  vendorId: string
+  /** codigo del OR (ej. "OR-AFINIA") — para memo/auditoría, no para el entity. */
   vendor: string
   amount: string
   currency: string

@@ -197,6 +197,8 @@ model ConfiguracionOR {
   activo             Boolean  @default(true)
   mapeo_sdl_json     Json?
   mapeo_balance_json Json?
+  // InternalId del vendor en NetSuite (para crear la OC). Lo carga Erika por OR.
+  netsuite_vendor_id String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
