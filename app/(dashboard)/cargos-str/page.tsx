@@ -6,9 +6,10 @@ import DetalleEnvioModal from "@/components/cargos-str/DetalleEnvioModal"
 import ModalConfirmarLote from "@/components/cargos-str/ModalConfirmarLote"
 import Toast from "@/components/cargos-str/Toast"
 import type { EstadoEnvioKey, EstadoEnvioUI, DetalleEnvio, LoteEnCursoUI, CargoSeleccionado, CargoParaEnviar } from "@/components/cargos-str/types"
-import { MOCK_ESTADOS_ENVIO, MOCK_DETALLE_ENVIO_OK, MOCK_DETALLE_ENVIO_ERROR, mockPostLote, mockPostProcesar, mockGetLote, mockGetEstados, mockGetLoteActivo, mockPostCancelar } from "@/_dev/mocks/netsuite"
+import { MOCK_DETALLE_ENVIO_OK, MOCK_DETALLE_ENVIO_ERROR, mockGetEstados, mockGetLoteActivo, mockPostCancelar } from "@/_dev/mocks/netsuite"
+import { crearLoteReal, procesarLoteReal, getLoteReal } from "@/lib/api/netsuite-cargos"
+import type { LoteResponse } from "@/lib/api/netsuite-cargos"
 import PanelLoteEnCurso from "@/components/cargos-str/PanelLoteEnCurso"
-import type { LoteResponse } from "@/_dev/mocks/netsuite"
 import type { ToastData } from "@/components/cargos-str/Toast"
 
 // ---------------------------------------------------------------------------
@@ -156,30 +157,7 @@ export default function CargosSTRPage() {
     // TODO FE-6: reemplazar por fetch real a /api/cargos-str/netsuite/estados
   }, [data, modoSeleccion, periodoUnicoId, loteEnCurso?.estado])
 
-  // Fallback estático para FE-2/FE-3: cuando el Map de mocks está vacío,
-  // usar los datos hardcodeados de MOCK_ESTADOS_ENVIO mapeados a los operadores reales.
-  // Este bloque solo actúa cuando mockGetEstados no devolvió nada (primer render sin lote).
-  useEffect(() => {
-    if (!data || !modoSeleccion || !periodoUnicoId) return
-    if (data.operadores.length === 0) return
-    if (Object.keys(estadosEnvio).length > 0) return // ya hay estados, no pisar
-
-    const codigosReales = data.operadores.slice(0, 4).map(o => o.codigo)
-    const mockKeys = Object.keys(MOCK_ESTADOS_ENVIO) as EstadoEnvioKey[]
-    const estadosAdaptados: Record<EstadoEnvioKey, EstadoEnvioUI> = {}
-    mockKeys.forEach((mockKey, index) => {
-      const codigoReal = codigosReales[index]
-      if (!codigoReal) return
-      const estadoMock = MOCK_ESTADOS_ENVIO[mockKey]
-      if (!estadoMock) return
-      estadosAdaptados[cargoKey(periodoUnicoId, codigoReal)] = estadoMock
-    })
-    setEstadosEnvio(estadosAdaptados)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, modoSeleccion, periodoUnicoId])
-
   // -- useEffect B: Polling del lote en curso --
-  // TODO FE-6: mockGetLote → fetch real a /api/cargos-str/netsuite/lote/:id
   useEffect(() => {
     if (!loteEnCurso?.id || loteEnCurso.estado !== "EN_PROGRESO") return
 
@@ -192,8 +170,7 @@ export default function CargosSTRPage() {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return
 
       try {
-        const lote = await mockGetLote(loteId)
-        // TODO FE-6: reemplazar por fetch real a /api/cargos-str/netsuite/lote/:id
+        const lote = await getLoteReal(loteId)
         if (stop) return
 
         // Actualizar loteEnCurso con nuevos totales
@@ -442,11 +419,11 @@ export default function CargosSTRPage() {
     setErrorLote(null)
 
     try {
-      // POST /lote (mock)
-      const response = await mockPostLote(cargosParaEnviar)
+      // POST /lote (real)
+      const response = await crearLoteReal(cargosParaEnviar)
 
-      // POST /lote/:id/procesar (mock — fire-and-forget)
-      await mockPostProcesar(response.loteId)
+      // POST /lote/:id/procesar (real — fire-and-forget, 202 Accepted)
+      await procesarLoteReal(response.loteId)
 
       // Actualizar estado local del lote
       setLoteEnCurso({
