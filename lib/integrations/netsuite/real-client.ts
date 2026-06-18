@@ -24,7 +24,7 @@ import type { NetsuitePayload, NetsuiteResponse } from "./types"
 import { NETSUITE_TIMEOUT_MS } from "./config"
 import { construirHeaderOAuthTba } from "./oauth-tba"
 
-interface RealClientConfig {
+export interface RealClientConfig {
   baseUrl: string
   accountId: string
   consumerKey: string
@@ -160,7 +160,7 @@ export class RealNetsuiteClient implements NetsuiteClient {
  * por debajo del rango seguro de enteros de JS (2^53). No usar Number() sobre
  * Decimals en ningún otro lado del módulo (R5).
  */
-function montoANumero(amount: string): number {
+export function montoANumero(amount: string): number {
   return Number(amount)
 }
 
@@ -173,7 +173,7 @@ function montoANumero(amount: string): number {
  *   - location    → internalId fijo de la cuenta (env).
  *   - item.items[]→ una línea con item (internalId), rate (monto) y quantity.
  */
-function construirCuerpoOrden(
+export function construirCuerpoOrden(
   payload: NetsuitePayload,
   cfg: RealClientConfig,
 ): Record<string, unknown> {
@@ -279,7 +279,7 @@ async function parsearRespuesta(
 }
 
 /** Extrae el primer `o:errorDetails[].detail` (o el `title`) del cuerpo de error. */
-function extraerDetalleNetsuite(detalle: unknown): string | null {
+export function extraerDetalleNetsuite(detalle: unknown): string | null {
   if (!detalle || typeof detalle !== "object") {
     return typeof detalle === "string" && detalle.trim() ? detalle.trim() : null
   }

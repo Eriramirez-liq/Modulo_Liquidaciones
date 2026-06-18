@@ -13,7 +13,9 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:status": "prisma migrate status",
     "db:seed": "node prisma/seed.js",
-    "db:setup": "npm run db:generate && npm run db:push && npm run db:seed"
+    "db:setup": "npm run db:generate && npm run db:push && npm run db:seed",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
@@ -49,6 +51,7 @@
     "prisma": "^6.19.3",
     "tailwindcss": "^4.2.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }
