@@ -40,6 +40,9 @@ interface RealClientConfig {
   itemId: string
   /** Cantidad de la línea; por defecto 1 (cargo a tanto alzado). */
   quantity: number
+  // department y categoría de proveedor BIA (custom body) — por id interno.
+  departmentId: string
+  categoriaProveedorId: string
 }
 
 function leerEnv(nombre: string): string {
@@ -80,6 +83,8 @@ export class RealNetsuiteClient implements NetsuiteClient {
       locationId: process.env.NETSUITE_LOCATION_ID ?? null,
       itemId: process.env.NETSUITE_ITEM_ID ?? "488",
       quantity: Number(process.env.NETSUITE_DEFAULT_QUANTITY ?? "1"),
+      departmentId: process.env.NETSUITE_DEPARTMENT_ID ?? "129",
+      categoriaProveedorId: process.env.NETSUITE_CATEGORIA_PROVEEDOR_ID ?? "27",
     }
   }
 
@@ -177,6 +182,8 @@ function construirCuerpoOrden(
     externalId: payload.externalId,
     entity: { id: payload.vendorId },
     subsidiary: { id: cfg.subsidiaryId },
+    department: { id: cfg.departmentId },
+    custbody_nso_categoria_proveedor_bia: { id: cfg.categoriaProveedorId },
     currency: { refName: payload.currency },
     memo: payload.memo,
     tranDate: payload.date,
