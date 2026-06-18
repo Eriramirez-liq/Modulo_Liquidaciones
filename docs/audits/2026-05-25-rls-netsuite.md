@@ -99,11 +99,39 @@ Cuando se aborde la deuda técnica completa de RLS:
 | Bug futuro que exponga anon-key (ej: agregar `@supabase/ssr` sin RLS) | Media si se incorpora `@supabase/ssr` antes de Fase 3 | Alto | Code review obligatorio + checklist en cualquier PR que toque variables de entorno `NEXT_PUBLIC_*` |
 | Inserción directa de envíos vía bypass de handler (ej: empleado interno con acceso a `DATABASE_URL`) | Baja | Medio (rompe idempotencia y auditoría) | Auditoría en `LogAuditoria` (BE-6) detecta inserciones sin acción `ENVIAR_LOTE_NETSUITE` |
 
+## Remediación Fase 3 — RLS implementado (2026-06-17)
+
+La deuda D7 se cierra con la migración **`20260617130000_netsuite_rls`**, que:
+
+- `ENABLE ROW LEVEL SECURITY` en `lotes_netsuite` y `envios_netsuite_cargo_str`.
+- `REVOKE ALL` de `anon` y `authenticated` (guardado con `IF EXISTS` por rol).
+- **No** usa `FORCE ROW LEVEL SECURITY`: Prisma se conecta con el rol owner
+  (`postgres`), que bypassa RLS, así que el backend sigue funcionando sin cambios.
+  Con RLS habilitado y sin policy permisiva, cualquier rol no-owner obtiene cero
+  filas → doble candado junto con el REVOKE.
+
+**SQL a aplicar por Erika en Supabase (idempotente):**
+```sql
+ALTER TABLE "lotes_netsuite" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "envios_netsuite_cargo_str" ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE "lotes_netsuite", "envios_netsuite_cargo_str" FROM anon, authenticated;
+```
+Verificación (privilegios anon/authenticated debe dar 0 filas; RLS debe ser true):
+```sql
+SELECT grantee, table_name, privilege_type FROM information_schema.role_table_grants
+WHERE table_name IN ('lotes_netsuite','envios_netsuite_cargo_str') AND grantee IN ('anon','authenticated');
+
+SELECT relname, relrowsecurity FROM pg_class
+WHERE relname IN ('lotes_netsuite','envios_netsuite_cargo_str');
+```
+
+**Pendiente (futuro, no bloqueante):** replicar RLS en `registros_str` y demás
+tablas del esquema (deuda #4 del plan backend) — fuera del alcance del módulo NetSuite.
+
 ## Próximos pasos
 
-- [ ] Erika ejecuta los Pasos 1-4 inmediatamente después de aplicar la migración a producción (`prisma migrate deploy`).
-- [ ] Erika anota en este documento los resultados del Paso 1 (output del SQL de verificación) bajo una sección "Resultado de verificación post-deploy" con fecha.
-- [ ] Crear ticket "Fase 3 — RLS para módulo NetSuite" en el backlog con referencia a este documento.
+- [ ] Erika aplica el SQL de `20260617130000_netsuite_rls` en Supabase y corre las verificaciones (0 filas + RLS=true).
+- [ ] Erika anota el resultado bajo esta sección con fecha.
 
 ## Referencias
 
