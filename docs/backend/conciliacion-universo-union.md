@@ -19,15 +19,31 @@ que las fronteras distintas de cualquiera de las fuentes.
 El cruce entre fuentes se hace por `codigo_frontera` **normalizado** (trim +
 upper). El conteo (`totalFronteras`) = tamaño del universo (unión).
 
+> **Importante (cruce por código, NO por operador):** el match contra
+> Facturación debe hacerse por `codigo_frontera` (clave única de la frontera)
+> contra TODA la facturación del período, **no** filtrando facturación por el
+> texto `operador_red = código del OR`. Ese texto puede no coincidir con el
+> código del OR y deja fronteras fuera (caso CENS: FRT26970/FRT71035 estaban en
+> Facturación con otra etiqueta de operador y salían como "no en Facturación").
+> El `operador_red`/`or_id` se usa solo para **delimitar el universo del OR**
+> (qué fronteras pertenecen al OR), no para el cruce de datos.
+
 ## Estado por conciliación
 
 ### SDL — `lib/engine/conciliacion-orchestrator.ts`
-Ya implementa la unión. Recorre las fronteras de Facturación (universo maestro)
-y luego agrega las **huérfanas**: fronteras presentes en SDL —y en XM cuando NO
-se filtra por OR— que no están en Facturación. Las huérfanas se persisten como
-`caso = INCOMPLETA` con motivo *"No existe en Facturación; falta XM/SDL"* y entran
-en `totalFronteras` y en el detalle de incompletas. Las huérfanas de SDL se
-atribuyen al `or_id` del registro SDL.
+Implementa la unión vía **huérfanas**: recorre las fronteras de Facturación
+(universo maestro) y agrega las de SDL —y XM cuando NO se filtra por OR— que no
+están en Facturación, persistidas como `caso = INCOMPLETA` con motivo *"No existe
+en Facturación; falta XM/SDL"*. Entran en `totalFronteras` y en el detalle de
+incompletas. Las huérfanas de SDL se atribuyen al `or_id` del registro SDL.
+
+> **Pendiente (mismo patrón que TC1):** al correr por OR, SDL filtra Facturación
+> por `operador_red = código` (líneas ~89/96). Por eso una frontera de SDL que
+> esté en Facturación bajo otra etiqueta de operador puede marcarse como huérfana
+> falsa. El refinamiento es cruzar contra TODA la facturación del período por
+> `codigo_frontera` (como ya se hizo en TC1), usando `or_id`/`operador_red` solo
+> para delimitar el universo del OR. A aplicar cuando se valide con datos (motor
+> financiero — requiere cuidado).
 
 ### TC1 — `lib/engine/conciliacion-tc1.ts`
 Universo = Facturación ∪ TC1 (por `codigo_frontera` normalizado). Para cada
