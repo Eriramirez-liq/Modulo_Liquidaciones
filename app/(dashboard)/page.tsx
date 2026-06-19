@@ -11,6 +11,22 @@ type DashData = {
   disputas: number; valorDisputas: number
   alertasManuales: number; incompletas: number; errores: number
   impactoEstimado: number
+  // Panel principal
+  cargoStrCop: number
+  cargoSdlCop: number; cargoSdlActivaCop: number; cargoSdlReactivaCop: number
+  compensacionesCop: number | null
+  congruenciaPct: number; congruentes: number; fronterasFacturadas: number
+}
+
+// El período guardado (PeriodoConciliacion.{anio,mes}) es el de CONSUMO.
+// En el dashboard se muestra como MES EN CURSO / facturación = consumo + 1.
+const MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+function mesEnCurso(anio: number, mes: number): { anio: number; mes: number } {
+  return mes === 12 ? { anio: anio + 1, mes: 1 } : { anio, mes: mes + 1 }
+}
+function labelMesEnCurso(p: Periodo): string {
+  const f = mesEnCurso(p.anio, p.mes)
+  return `${MESES[f.mes]} ${f.anio}`
 }
 
 export default function InicioPage() {
@@ -42,15 +58,7 @@ export default function InicioPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  const sel = periodos.find(p => p.id === periodoId)
-  const periodoLabel = sel
-    ? `${sel.anio}-${String(sel.mes).padStart(2, "0")} — ${sel.estado}`
-    : "—"
-
   const d = data
-  const pct = d && d.totalFronteras > 0
-    ? Math.round((d.sinDiferencia / d.totalFronteras) * 100)
-    : 0
 
   function cop(v: number) {
     return `$ ${v.toLocaleString("es-CO", { maximumFractionDigits: 0 })}`
@@ -69,7 +77,7 @@ export default function InicioPage() {
           </p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
-          <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>Período activo</span>
+          <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>Mes en curso (facturación)</span>
           <div style={{ display: "flex", gap: 8 }}>
             <select
               value={periodoId}
@@ -82,7 +90,7 @@ export default function InicioPage() {
               {periodos.length === 0 && <option value="">Sin períodos</option>}
               {periodos.map(p => (
                 <option key={p.id} value={p.id}>
-                  {p.anio}-{String(p.mes).padStart(2, "0")} — {p.estado}
+                  {labelMesEnCurso(p)} — {p.estado}
                 </option>
               ))}
             </select>
@@ -124,29 +132,23 @@ export default function InicioPage() {
 
       {tab === "principal" && (
         <>
-          {/* KPI row 1 — 7 cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12 }}>
-            <KPI label="TOTAL FRONTERAS" main={d?.totalFronteras ?? 0} sub={periodoLabel.split(" — ")[0] ?? ""} />
-            <KPI label="SIN DIFERENCIA (A1)" main={d?.sinDiferencia ?? 0} color="#07c5a8" sub={`${pct}%`} />
-            <KPI label="PROVISIONES" main={d?.provisiones ?? 0} color="#3b82f6"
-              sub={cop(d?.valorProvisiones ?? 0)}
-              href={periodoId ? `/gestiones?tab=provisiones&periodoId=${periodoId}` : undefined} />
-            <KPI label="PÉRDIDAS L1" main={d?.contingenciasAbiertas ?? 0} color="#f59e0b"
-              sub={cop(d?.valorContingencias ?? 0)}
+          {/* KPIs del mes en curso */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+            <KPI label="CARGO STR" main={cop(d?.cargoStrCop ?? 0)} color="#0369a1"
+              sub="Total a pagar del mes" />
+            <KPI label="CARGO SDL" main={cop(d?.cargoSdlCop ?? 0)} color="#1d4ed8"
+              sub="Preliquidación activa + reactiva" />
+            <KPI label="PÉRDIDAS" main={cop(d?.valorContingencias ?? 0)} color="#f59e0b"
+              sub={`${d?.contingenciasAbiertas ?? 0} contingencia(s)`}
               href={periodoId ? `/gestiones?tab=contingencias&periodoId=${periodoId}` : undefined} />
-            <KPI label="DISPUTAS L2" main={d?.disputas ?? 0} color="#3b82f6"
-              sub={cop(d?.valorDisputas ?? 0)}
-              href={periodoId ? `/gestiones?tab=disputas&periodoId=${periodoId}` : undefined} />
-            <KPI label="INCOMPLETAS / ERRORES"
-              main={`${d?.incompletas ?? 0} / ${d?.errores ?? 0}`} color="#ef4444"
-              href={periodoId ? `/gestiones?tab=incompletas&periodoId=${periodoId}` : undefined} />
-          </div>
-
-          {/* KPI row 2 — impacto */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
-            <KPI label="IMPACTO ESTIMADO (L1+L2)"
-              main={cop(d?.impactoEstimado ?? 0)} color="#7c3aed"
-              sub={`${(d?.totalFronteras ?? 0)} kWh`} />
+            <KPI label="PROVISIONES" main={cop(d?.valorProvisiones ?? 0)} color="#3b82f6"
+              sub={`${d?.provisiones ?? 0} provisión(es)`}
+              href={periodoId ? `/gestiones?tab=provisiones&periodoId=${periodoId}` : undefined} />
+            <KPI label="COMPENSACIONES EN EL MES"
+              main={d?.compensacionesCop != null ? cop(d.compensacionesCop) : "—"} color="#7c3aed"
+              sub="Lógica pendiente" />
+            <KPI label="CONGRUENCIA" main={`${d?.congruenciaPct ?? 0}%`} color="#15803d"
+              sub={`${d?.congruentes ?? 0}/${d?.fronterasFacturadas ?? 0} fronteras (NT + propiedad)`} />
           </div>
 
           {/* Charts */}
