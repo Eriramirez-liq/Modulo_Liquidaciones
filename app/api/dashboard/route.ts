@@ -39,6 +39,7 @@ export async function GET(request: NextRequest) {
     cargoSdlCop: 0, cargoSdlActivaCop: 0, cargoSdlReactivaCop: 0,
     compensacionesCop: null as number | null,
     congruenciaPct: 0, congruentes: 0, fronterasFacturadas: 0,
+    topFronteras: [] as Array<{ codigoFrontera: string; provisionCop: number; perdidaCop: number; totalCop: number }>,
   }
 
   if (!periodoId) return NextResponse.json(empty)
@@ -46,6 +47,7 @@ export async function GET(request: NextRequest) {
   const [
     resultados, provisiones, contingenciasAgg, disputas,
     strAgg, sdlAgg, facturacion, sdlClasif, tc1Clasif,
+    provPorFrontera, contPorFrontera,
   ] = await Promise.all([
     db.resultadoConciliacion.findMany({
       where: { periodo_id: periodoId },
@@ -84,6 +86,17 @@ export async function GET(request: NextRequest) {
     db.registroTC1.findMany({
       where: { periodo_id: periodoId },
       select: { codigo_frontera: true, nivel_tension: true, propiedad_activos: true },
+    }),
+    // Impacto por frontera — provisión y pérdida (contingencia)
+    db.provision.groupBy({
+      by: ["codigo_frontera"],
+      where: { periodo_id: periodoId },
+      _sum: { valor_provisionado_cop: true },
+    }),
+    db.contingencia.groupBy({
+      by: ["codigo_frontera"],
+      where: { periodo_id: periodoId },
+      _sum: { costo_estimado_cop: true },
     }),
   ])
 
@@ -142,6 +155,33 @@ export async function GET(request: NextRequest) {
     ? Math.round((congruentes / fronterasFacturadas) * 100)
     : 0
 
+  // ── Top 10 fronteras por impacto (provisión + pérdida) ───────────────────
+  const impactoPorFrontera = new Map<string, { provisionCop: number; perdidaCop: number }>()
+  for (const p of provPorFrontera) {
+    const k = p.codigo_frontera
+    if (!k) continue
+    const cur = impactoPorFrontera.get(k) ?? { provisionCop: 0, perdidaCop: 0 }
+    cur.provisionCop += Number(p._sum.valor_provisionado_cop ?? 0)
+    impactoPorFrontera.set(k, cur)
+  }
+  for (const c of contPorFrontera) {
+    const k = c.codigo_frontera
+    if (!k) continue
+    const cur = impactoPorFrontera.get(k) ?? { provisionCop: 0, perdidaCop: 0 }
+    cur.perdidaCop += Number(c._sum.costo_estimado_cop ?? 0)
+    impactoPorFrontera.set(k, cur)
+  }
+  const topFronteras = Array.from(impactoPorFrontera.entries())
+    .map(([codigoFrontera, v]) => ({
+      codigoFrontera,
+      provisionCop: v.provisionCop,
+      perdidaCop: v.perdidaCop,
+      totalCop: v.provisionCop + v.perdidaCop,
+    }))
+    .filter(f => f.totalCop > 0)
+    .sort((a, b) => b.totalCop - a.totalCop)
+    .slice(0, 10)
+
   return NextResponse.json({
     totalFronteras, sinDiferencia,
     provisiones, valorProvisiones,
@@ -155,5 +195,6 @@ export async function GET(request: NextRequest) {
     cargoSdlCop, cargoSdlActivaCop, cargoSdlReactivaCop,
     compensacionesCop: null, // placeholder — lógica pendiente
     congruenciaPct, congruentes, fronterasFacturadas,
+    topFronteras,
   })
 }

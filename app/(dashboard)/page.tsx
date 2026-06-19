@@ -16,6 +16,7 @@ type DashData = {
   cargoSdlCop: number; cargoSdlActivaCop: number; cargoSdlReactivaCop: number
   compensacionesCop: number | null
   congruenciaPct: number; congruentes: number; fronterasFacturadas: number
+  topFronteras: { codigoFrontera: string; provisionCop: number; perdidaCop: number; totalCop: number }[]
 }
 
 // El período guardado (PeriodoConciliacion.{anio,mes}) es el de CONSUMO.
@@ -161,10 +162,8 @@ export default function InicioPage() {
                 <div style={{ fontSize: "0.7rem", letterSpacing: "0.08em" }}>FRONTERAS</div>
               </div>
             </ChartCard>
-            <ChartCard title="TOP 10 FRONTERAS — IMPACTO FINANCIERO L1">
-              <p style={{ fontSize: "0.8rem", color: "#9ca3af", textAlign: "center" }}>
-                Sin datos de conciliación para este período.
-              </p>
+            <ChartCard title="TOP 10 FRONTERAS — IMPACTO (PÉRDIDA + PROVISIÓN)">
+              <TopFronteras items={d?.topFronteras ?? []} cop={cop} />
             </ChartCard>
           </div>
         </>
@@ -227,6 +226,51 @@ function KPI({ label, main, color, sub, href }: {
     )
   }
   return <div style={baseStyle}>{content}</div>
+}
+
+function TopFronteras({ items, cop }: {
+  items: { codigoFrontera: string; provisionCop: number; perdidaCop: number; totalCop: number }[]
+  cop: (v: number) => string
+}) {
+  if (items.length === 0) {
+    return (
+      <p style={{ fontSize: "0.8rem", color: "#9ca3af", textAlign: "center" }}>
+        Sin provisiones ni pérdidas para este período.
+      </p>
+    )
+  }
+  const max = Math.max(...items.map(i => i.totalCop), 1)
+  return (
+    <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10 }}>
+      {/* Leyenda */}
+      <div style={{ display: "flex", gap: 14, fontSize: "0.7rem", color: "#6b7280" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 2, background: "#f59e0b" }} /> Pérdida
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 2, background: "#3b82f6" }} /> Provisión
+        </span>
+      </div>
+      {items.map(i => (
+        <div key={i.codigoFrontera} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem" }}>
+            <span style={{ fontFamily: "monospace", color: "#374151", fontWeight: 600 }}>
+              {i.codigoFrontera}
+            </span>
+            <span style={{ color: "#111827", fontWeight: 600 }}>{cop(i.totalCop)}</span>
+          </div>
+          <div style={{ display: "flex", height: 10, borderRadius: 4, overflow: "hidden", background: "#f3f4f6", width: `${Math.max((i.totalCop / max) * 100, 2)}%`, minWidth: 24 }}>
+            {i.perdidaCop > 0 && (
+              <div style={{ background: "#f59e0b", width: `${(i.perdidaCop / i.totalCop) * 100}%` }} title={`Pérdida: ${cop(i.perdidaCop)}`} />
+            )}
+            {i.provisionCop > 0 && (
+              <div style={{ background: "#3b82f6", width: `${(i.provisionCop / i.totalCop) * 100}%` }} title={`Provisión: ${cop(i.provisionCop)}`} />
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
