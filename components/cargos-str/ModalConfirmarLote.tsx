@@ -6,6 +6,8 @@ import type { CargoSeleccionado } from "./types"
 interface ModalConfirmarLoteProps {
   abierto: boolean
   cargos: CargoSeleccionado[]
+  /** ORs entre los cargos seleccionados que no tienen netsuite_vendor_id configurado */
+  cargosSinVendor: { orCodigo: string; orNombre: string }[]
   enviando: boolean
   error: string | null
   onConfirmar: () => void
@@ -28,6 +30,7 @@ function mesLabel(periodoStr: string): string {
 export default function ModalConfirmarLote({
   abierto,
   cargos,
+  cargosSinVendor,
   enviando,
   error,
   onConfirmar,
@@ -75,6 +78,10 @@ export default function ModalConfirmarLote({
     // pero se pasa enriquecido desde page.tsx — verificar en tiempo de ejecución
     return (c as CargoSeleccionado & { tieneErrorPrevio?: boolean }).tieneErrorPrevio === true
   })
+
+  // Set de códigos de OR sin vendor id — para marcar filas de la tabla
+  const sinVendorSet = new Set(cargosSinVendor.map(v => v.orCodigo))
+  const nombresORsSinVendor = cargosSinVendor.map(v => v.orNombre || v.orCodigo).join(", ")
 
   const titleId = "modal-confirmar-lote-titulo"
 
@@ -168,6 +175,35 @@ export default function ModalConfirmarLote({
               gap: 12,
             }}
           >
+            {/* Advertencia OR sin Vendor de NetSuite — VENDOR_SIN_ID */}
+            {cargosSinVendor.length > 0 && (
+              <div
+                role="alert"
+                style={{
+                  background: "#fef3c7",
+                  border: "1px solid #fcd34d",
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  fontSize: "0.8rem",
+                  color: "#b45309",
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "flex-start",
+                }}
+              >
+                <span style={{ fontSize: "1rem", flexShrink: 0 }}>⚠</span>
+                <span>
+                  <strong>
+                    {cargosSinVendor.length} operador{cargosSinVendor.length !== 1 ? "es" : ""} sin
+                    Vendor de NetSuite configurado:
+                  </strong>{" "}
+                  {nombresORsSinVendor}.{" "}
+                  Esos envíos fallarán (VENDOR_SIN_ID). Cargá el id interno en{" "}
+                  <strong>Operadores → Vendor NetSuite</strong>.
+                </span>
+              </div>
+            )}
+
             {/* Warning cargos con error previo */}
             {cargosConErrorPrevio.length > 0 && (
               <div
@@ -238,11 +274,15 @@ export default function ModalConfirmarLote({
                   </tr>
                 </thead>
                 <tbody>
-                  {cargos.map((c, i) => (
+                  {cargos.map((c, i) => {
+                    const esSinVendor = sinVendorSet.has(c.orCodigo)
+                    return (
                     <tr
                       key={`${c.periodoId}|${c.orCodigo}`}
                       style={{
-                        background: i % 2 === 0 ? "#fff" : "#fafafa",
+                        background: esSinVendor
+                          ? "#fffbeb"
+                          : i % 2 === 0 ? "#fff" : "#fafafa",
                       }}
                     >
                       <td
@@ -252,17 +292,34 @@ export default function ModalConfirmarLote({
                           color: "#111827",
                         }}
                       >
-                        <span
-                          style={{
-                            fontWeight: 600,
-                            fontSize: "0.75rem",
-                            color: "#6b7280",
-                            marginRight: 6,
-                          }}
-                        >
-                          {c.orCodigo}
-                        </span>
-                        {c.orNombre}
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <span
+                            style={{
+                              fontWeight: 600,
+                              fontSize: "0.75rem",
+                              color: "#6b7280",
+                            }}
+                          >
+                            {c.orCodigo}
+                          </span>
+                          <span>{c.orNombre}</span>
+                          {esSinVendor && (
+                            <span
+                              style={{
+                                fontSize: "0.68rem",
+                                fontWeight: 600,
+                                color: "#b45309",
+                                background: "#fef3c7",
+                                border: "1px solid #fcd34d",
+                                borderRadius: 4,
+                                padding: "1px 5px",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              sin vendor
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td
                         style={{
@@ -299,7 +356,8 @@ export default function ModalConfirmarLote({
                         {cop(c.montoCop)}
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

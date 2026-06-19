@@ -28,7 +28,7 @@ const MES_NOMBRE = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
 
 type Periodo  = { id: string; anio: number; mes: number; estado: string }
-type Operador = { id: string; codigo: string; nombre: string }
+type Operador = { id: string; codigo: string; nombre: string; netsuite_vendor_id: string | null }
 
 type Resultado = {
   periodos:        { id: string; facturacion: string; consumo: string }[]
@@ -102,6 +102,15 @@ export default function CargosSTRPage() {
   // -- Variables derivadas --
   const modoSeleccion   = periodoSel.length === 1
   const periodoUnicoId  = modoSeleccion ? (periodoSel[0] ?? null) : null
+
+  // Lookup orCodigo → tieneVendorId para la pre-validación del modal
+  const vendorIdPorCodigo = useMemo<Record<string, boolean>>(() => {
+    const mapa: Record<string, boolean> = {}
+    for (const op of operadores) {
+      mapa[op.codigo] = op.netsuite_vendor_id !== null && op.netsuite_vendor_id !== ""
+    }
+    return mapa
+  }, [operadores])
 
   // -- Carga de filtros --
   useEffect(() => {
@@ -444,6 +453,8 @@ export default function CargosSTRPage() {
         mesConsumo: periodo?.consumo ?? "",
         mesFacturacion: periodo?.facturacion ?? "",
         montoCop,
+        // sinVendorId: true cuando el OR no tiene netsuite_vendor_id configurado
+        sinVendorId: vendorIdPorCodigo[orCodigo] === false,
         // Campo extra para el warning del modal (no está en el tipo base)
         tieneErrorPrevio: estadoEnvio?.estado === "ERROR",
       } as CargoSeleccionado & { tieneErrorPrevio: boolean }
@@ -768,17 +779,26 @@ export default function CargosSTRPage() {
       />
 
       {/* ModalConfirmarLote — FE-4 */}
-      <ModalConfirmarLote
-        abierto={modalConfirmarAbierto}
-        cargos={modalConfirmarAbierto ? getCargosSeleccionados() : []}
-        enviando={enviandoLote}
-        error={errorLote}
-        onConfirmar={handleConfirmarLote}
-        onCancelar={() => {
-          setModalConfirmarAbierto(false)
-          setErrorLote(null)
-        }}
-      />
+      {(() => {
+        const cargosModal = modalConfirmarAbierto ? getCargosSeleccionados() : []
+        const sinVendor   = cargosModal
+          .filter(c => c.sinVendorId)
+          .map(c => ({ orCodigo: c.orCodigo, orNombre: c.orNombre }))
+        return (
+          <ModalConfirmarLote
+            abierto={modalConfirmarAbierto}
+            cargos={cargosModal}
+            cargosSinVendor={sinVendor}
+            enviando={enviandoLote}
+            error={errorLote}
+            onConfirmar={handleConfirmarLote}
+            onCancelar={() => {
+              setModalConfirmarAbierto(false)
+              setErrorLote(null)
+            }}
+          />
+        )
+      })()}
 
       {/* Toast — FE-4 */}
       <Toast

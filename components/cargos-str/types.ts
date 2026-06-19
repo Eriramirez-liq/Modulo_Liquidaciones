@@ -45,6 +45,8 @@ export interface CargoSeleccionado {
   mesConsumo: string
   mesFacturacion: string
   montoCop: number
+  /** true cuando el OR no tiene netsuite_vendor_id configurado — se usa para la advertencia del modal */
+  sinVendorId?: boolean
 }
 
 // Payload mínimo que se manda al backend en POST /lote

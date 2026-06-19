@@ -42,3 +42,22 @@ export const NETSUITE_LOTE_LOCK_KEY = BigInt("8312907210000001")
  * con el siguiente envío inmediatamente (procesamiento estrictamente secuencial).
  */
 export const NETSUITE_TIMEOUT_MS = 30_000
+
+/**
+ * Umbral de antigüedad (en minutos) para considerar COLGADO un lote EN_PROGRESO.
+ *
+ * El procesamiento normal de un lote termina en <60s (límite `maxDuration` de
+ * Vercel Hobby; un lote completo de 25 envíos × ~2s ≈ 50s). Por lo tanto, un
+ * lote que sigue EN_PROGRESO pasados varios minutos quedó colgado: su
+ * `procesarLote` se cortó (deploy a mitad, crash, congelamiento de la función).
+ *
+ * Como solo puede haber UN lote EN_PROGRESO global (advisory lock + verificación
+ * en `crearLote`), un lote colgado bloquea permanentemente la creación de nuevos
+ * lotes. Este umbral define cuándo es seguro cancelarlo automáticamente:
+ *  - El cron de limpieza lo usa para barrer lotes viejos.
+ *  - `crearLote` lo usa para auto-recuperarse del lote en curso si está stale.
+ *
+ * 15 min da un margen amplio sobre los ~60s normales: nunca cancela un lote que
+ * realmente está procesando.
+ */
+export const STALE_LOTE_MINUTOS = 15

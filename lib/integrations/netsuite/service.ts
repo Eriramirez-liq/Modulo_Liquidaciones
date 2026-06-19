@@ -20,7 +20,11 @@
 import { createHash } from "node:crypto"
 import { Prisma } from "@prisma/client"
 import { db } from "@/lib/db"
-import { NETSUITE_LOTE_LOCK_KEY, NETSUITE_TIMEOUT_MS } from "./config"
+import {
+  NETSUITE_LOTE_LOCK_KEY,
+  NETSUITE_TIMEOUT_MS,
+  STALE_LOTE_MINUTOS,
+} from "./config"
 import { getNetsuiteClient } from "./client"
 import { auditNetsuite, logNetsuite } from "./audit"
 import { envioToDto, snapshotToPayload, type EnvioConOperador } from "./mapper"
@@ -107,6 +111,65 @@ function loteToDto(lote: LoteConRelaciones): LoteDto {
   }
 }
 
+/** Código que marca los envíos de un lote cancelado por inactividad (colgado). */
+const COD_LOTE_CANCELADO_INACTIVIDAD = "LOTE_CANCELADO_INACTIVIDAD"
+const MSG_LOTE_CANCELADO_INACTIVIDAD =
+  "Lote cancelado automáticamente por inactividad (colgado)."
+
+/** Umbral STALE como Date: lotes con `iniciado_at` anterior están colgados. */
+function umbralStale(ahora: Date): Date {
+  return new Date(ahora.getTime() - STALE_LOTE_MINUTOS * 60_000)
+}
+
+/** Edad de un lote en minutos (entero, hacia abajo) respecto de `ahora`. */
+function edadEnMinutos(iniciadoAt: Date, ahora: Date): number {
+  return Math.floor((ahora.getTime() - iniciadoAt.getTime()) / 60_000)
+}
+
+/**
+ * Cancela un lote colgado DENTRO de una transacción dada: marca el lote
+ * CANCELADO con `finalizado_at`, pasa sus envíos no-terminales
+ * ({PENDIENTE, PROCESANDO}) a ERROR con el código de inactividad y recalcula
+ * los totales OK/ERROR a partir del estado final.
+ *
+ * No hace logging ni auditoría (el caller decide eso tras el commit, para que
+ * sean best-effort y no contaminen la atomicidad de la tx).
+ */
+async function cancelarLoteColgadoEnTx(
+  tx: Prisma.TransactionClient,
+  loteId: string,
+  finalizadoAt: Date,
+): Promise<void> {
+  // Envíos no-terminales → ERROR con el código/mensaje de inactividad.
+  await tx.envioNetsuiteCargoSTR.updateMany({
+    where: { lote_id: loteId, estado: { in: ["PENDIENTE", "PROCESANDO"] } },
+    data: {
+      estado: "ERROR",
+      error_codigo: COD_LOTE_CANCELADO_INACTIVIDAD,
+      error_mensaje: MSG_LOTE_CANCELADO_INACTIVIDAD,
+      respondido_at: finalizadoAt,
+    },
+  })
+
+  // Recalcular totales sobre el estado final de los envíos.
+  const envios = await tx.envioNetsuiteCargoSTR.findMany({
+    where: { lote_id: loteId },
+    select: { estado: true },
+  })
+  const totalOk = envios.filter((e) => e.estado === "PROCESADO").length
+  const totalError = envios.filter((e) => e.estado === "ERROR").length
+
+  await tx.loteNetsuite.update({
+    where: { id: loteId },
+    data: {
+      estado: "CANCELADO",
+      finalizado_at: finalizadoAt,
+      total_ok: totalOk,
+      total_error: totalError,
+    },
+  })
+}
+
 // ─── crearLote ───────────────────────────────────────────────────────────────────
 
 /**
@@ -124,7 +187,18 @@ export async function crearLote(
   // Códigos únicos preservando primera aparición (para mensajes deterministas).
   const orCodigos = Array.from(new Set(cargos.map((c) => c.orCodigo)))
 
-  const loteId = await db.$transaction(async (tx) => {
+  // Si durante la tx se auto-recupera un lote colgado, se devuelve junto al
+  // loteId para logear/auditar DESPUÉS del commit (best-effort, fuera de la
+  // atomicidad). Se retorna desde la tx en vez de usar una variable mutable de
+  // closure para no toparse con el narrowing a `never` de TS.
+  interface AutoCancelado {
+    loteId: string
+    iniciadoPorId: string | null
+    edadMin: number
+  }
+
+  const { loteId, autoCancelado } = await db.$transaction(async (tx) => {
+    let autoCanceladoTx: AutoCancelado | null = null
     // 1. Advisory lock — PRIMERA sentencia. Serializa la creación de lotes.
     // Se usa $executeRawUnsafe con la clave interpolada: pasar un BigInt como
     // parámetro de $executeRaw dispara un bug de serialización de Prisma
@@ -135,20 +209,38 @@ export async function crearLote(
     )
 
     // 2. ¿Ya hay un lote EN_PROGRESO?
+    //    - Si es STALE (colgado): se cancela INLINE dentro de esta misma tx
+    //      (atómico bajo el advisory lock) y se continúa creando el lote nuevo.
+    //      Así un lote colgado no bloquea permanentemente la creación.
+    //    - Si es RECIENTE: se mantiene el contrato de error existente
+    //      (LoteEnCursoError → 409). El FE no cambia para este caso.
     const enCurso = await tx.loteNetsuite.findFirst({
       where: { estado: "EN_PROGRESO" },
       include: { iniciado_por: { select: { id: true, nombre: true } } },
     })
     if (enCurso) {
-      logNetsuite("lote.en_curso_conflicto", "warn", {
-        loteEnCursoId: enCurso.id,
-        intentadoPorId: userId,
-      })
-      throw new LoteEnCursoError(
-        enCurso.id,
-        enCurso.iniciado_at.toISOString(),
-        { nombre: enCurso.iniciado_por.nombre },
-      )
+      const ahora = new Date()
+      const esStale = enCurso.iniciado_at < umbralStale(ahora)
+
+      if (!esStale) {
+        logNetsuite("lote.en_curso_conflicto", "warn", {
+          loteEnCursoId: enCurso.id,
+          intentadoPorId: userId,
+        })
+        throw new LoteEnCursoError(
+          enCurso.id,
+          enCurso.iniciado_at.toISOString(),
+          { nombre: enCurso.iniciado_por.nombre },
+        )
+      }
+
+      // Lote colgado: cancelarlo inline y registrar para el log/audit post-commit.
+      await cancelarLoteColgadoEnTx(tx, enCurso.id, ahora)
+      autoCanceladoTx = {
+        loteId: enCurso.id,
+        iniciadoPorId: enCurso.iniciado_por_id,
+        edadMin: edadEnMinutos(enCurso.iniciado_at, ahora),
+      }
     }
 
     // 3. Resolver orCodigo → or_id. Si falta alguno → 404.
@@ -290,11 +382,28 @@ export async function crearLote(
       })
     }
 
-    return lote.id
+    return { loteId: lote.id, autoCancelado: autoCanceladoTx }
   })
 
   // Releer fuera de la tx para devolver el DTO completo (el lock ya se liberó).
   const dto = await obtenerLote(loteId)
+
+  // Si se auto-recuperó un lote colgado, dejar rastro DESPUÉS del commit
+  // (best-effort, fuera de la atomicidad de la tx).
+  if (autoCancelado) {
+    logNetsuite("lote.limpiado_colgado", "warn", {
+      loteId: autoCancelado.loteId,
+      edadMin: autoCancelado.edadMin,
+      origen: "crearLote",
+    })
+    await auditNetsuite({
+      usuarioId: autoCancelado.iniciadoPorId ?? "sistema",
+      accion: "CANCELAR_LOTE_NETSUITE",
+      entidad: "LoteNetsuite",
+      entidadId: autoCancelado.loteId,
+      detalle: { motivo: "inactividad", edadMin: autoCancelado.edadMin },
+    })
+  }
 
   // Observabilidad + auditoría — DESPUÉS del commit. Ambas best-effort: el audit
   // no relanza; el log es síncrono y nunca falla.
@@ -677,6 +786,78 @@ export async function cancelarLote(loteId: string): Promise<LoteDto> {
   })
 
   return obtenerLote(loteId)
+}
+
+// ─── limpiarLotesColgados ──────────────────────────────────────────────────────────
+
+/**
+ * Barre los lotes EN_PROGRESO colgados y los cancela.
+ *
+ * Un lote queda colgado si su `procesarLote` se cortó (deploy a mitad, crash,
+ * congelamiento de la función serverless). Como solo puede haber un lote
+ * EN_PROGRESO global, un colgado bloquea la creación de nuevos (LoteEnCursoError).
+ * El procesamiento normal dura <60s, así que cualquier lote EN_PROGRESO con más
+ * de `STALE_LOTE_MINUTOS` de antigüedad es seguro de cancelar.
+ *
+ * Para cada lote stale, en una transacción independiente:
+ *  - marca el lote CANCELADO con `finalizado_at`,
+ *  - pasa sus envíos {PENDIENTE, PROCESANDO} a ERROR con
+ *    `error_codigo = "LOTE_CANCELADO_INACTIVIDAD"`,
+ *  - recalcula `total_ok` / `total_error`.
+ *
+ * Log + auditoría por lote son best-effort (no rompen el barrido). Lo invoca el
+ * cron diario; la auto-recuperación de `crearLote` cubre el caso inmediato.
+ *
+ * @returns cantidad de lotes cancelados y sus ids.
+ */
+export async function limpiarLotesColgados(): Promise<{
+  cancelados: number
+  loteIds: string[]
+}> {
+  const ahora = new Date()
+  const limite = umbralStale(ahora)
+
+  const colgados = await db.loteNetsuite.findMany({
+    where: { estado: "EN_PROGRESO", iniciado_at: { lt: limite } },
+    select: { id: true, iniciado_at: true, iniciado_por_id: true },
+    orderBy: { iniciado_at: "asc" },
+  })
+
+  const loteIds: string[] = []
+
+  for (const lote of colgados) {
+    // Transacción por lote: si uno falla, los demás se siguen procesando.
+    try {
+      await db.$transaction(async (tx) => {
+        await cancelarLoteColgadoEnTx(tx, lote.id, ahora)
+      })
+    } catch (e) {
+      // Fallar ruidosamente este lote pero continuar con el resto.
+      logNetsuite("lote.limpiar_colgado_error", "error", {
+        loteId: lote.id,
+        error: e instanceof Error ? e.message : String(e),
+      })
+      continue
+    }
+
+    loteIds.push(lote.id)
+    const edadMin = edadEnMinutos(lote.iniciado_at, ahora)
+
+    logNetsuite("lote.limpiado_colgado", "warn", {
+      loteId: lote.id,
+      edadMin,
+      origen: "cron",
+    })
+    await auditNetsuite({
+      usuarioId: lote.iniciado_por_id ?? "sistema",
+      accion: "CANCELAR_LOTE_NETSUITE",
+      entidad: "LoteNetsuite",
+      entidadId: lote.id,
+      detalle: { motivo: "inactividad", edadMin },
+    })
+  }
+
+  return { cancelados: loteIds.length, loteIds }
 }
 
 // ─── obtenerEstadosPorCargo ────────────────────────────────────────────────────────
