@@ -60,20 +60,25 @@ export async function ejecutarConciliacionTC1(opts: OpcionesTC1): Promise<Resume
     throw new Error(`No existe el periodo ${periodoStr}. Cargá Facturación y TC1 primero.`)
   }
 
-  // Filtro opcional por OR (Facturacion usa texto operador_red = codigo del OR)
-  let facOrFilter: { operador_red?: string } = {}
+  // Codigo del OR (si se filtra). NOTA: el cruce con Facturación se hace por
+  // codigo_frontera (clave única de la frontera), NO por el texto operador_red
+  // de Facturación —que puede no coincidir con el código del OR y dejaba
+  // fronteras fuera (caso CENS: FRT26970/FRT71035 sí estaban en Facturación pero
+  // con otra etiqueta de operador, y salían como "no en Facturación").
+  let orCodigo: string | null = null
   if (orId) {
     const or = await db.configuracionOR.findUnique({
       where: { id: orId }, select: { codigo: true },
     })
     if (!or) throw new Error(`OR ${orId} no encontrado.`)
-    facOrFilter = { operador_red: or.codigo }
+    orCodigo = or.codigo
   }
 
-  // Facturacion (universo maestro) + TC1 del periodo.
+  // Facturación de TODO el período (para cruzar por codigo_frontera) + TC1 del
+  // período (filtrado por or_id, que sí es confiable).
   const [facturacion, tc1] = await Promise.all([
     db.registroFacturacion.findMany({
-      where: { periodo_id: periodoStr, ...facOrFilter },
+      where: { periodo_id: periodoStr },
       select: { codigo_frontera: true, nombre_usuario: true, operador_red: true,
                 nivel_tension: true, propiedad_activos: true },
     }),
@@ -89,32 +94,34 @@ export async function ejecutarConciliacionTC1(opts: OpcionesTC1): Promise<Resume
     const k = normKey(t.codigo_frontera)
     if (k && !tc1ByFrontera.has(k)) tc1ByFrontera.set(k, t)
   }
+  // Mapa de cruce con Facturación: TODAS las fronteras del período (por codigo).
   const facByFrontera = new Map<string, typeof facturacion[number]>()
   for (const f of facturacion) {
     const k = normKey(f.codigo_frontera)
     if (k && !facByFrontera.has(k)) facByFrontera.set(k, f)
   }
 
-  // Universo = UNIÓN de fronteras de Facturación y TC1. Una frontera que esté en
-  // una sola fuente se reporta como INCOMPLETA (para revisión), nunca se omite.
+  // Universo = UNIÓN de fronteras del OR. Una frontera que esté en una sola
+  // fuente se reporta como INCOMPLETA (para revisión), nunca se omite.
+  //   - TC1 del OR (por or_id).
+  //   - Facturación del OR: las que tienen operador_red = código del OR (solo
+  //     para sumar al universo las "en Facturación pero no en TC1"; el cruce de
+  //     datos igual se hace por codigo contra toda la Facturación).
   const universo: { key: string; codigo: string }[] = []
   const vistos = new Set<string>()
-  for (const f of facturacion) {
-    const k = normKey(f.codigo_frontera)
-    if (!k || vistos.has(k)) continue
-    vistos.add(k)
-    universo.push({ key: k, codigo: f.codigo_frontera })
-  }
   for (const t of tc1) {
     const k = normKey(t.codigo_frontera)
     if (!k || vistos.has(k)) continue
     vistos.add(k)
     universo.push({ key: k, codigo: t.codigo_frontera })
   }
-
-  // Código del OR (si se filtró) para atribuir las fronteras TC1-only o las de
-  // facturación sin or_id al operador correcto.
-  const orCodigo = facOrFilter.operador_red ?? null
+  for (const f of facturacion) {
+    if (orId && normKey(f.operador_red) !== normKey(orCodigo)) continue
+    const k = normKey(f.codigo_frontera)
+    if (!k || vistos.has(k)) continue
+    vistos.add(k)
+    universo.push({ key: k, codigo: f.codigo_frontera })
+  }
 
   type Row = Omit<Prisma.ResultadoConciliacionTC1CreateManyInput, "id">
   const resultados: Row[] = []
