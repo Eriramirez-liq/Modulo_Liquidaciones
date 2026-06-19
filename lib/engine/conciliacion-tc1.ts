@@ -83,26 +83,51 @@ export async function ejecutarConciliacionTC1(opts: OpcionesTC1): Promise<Resume
     }),
   ])
 
-  const tc1ByFrontera = new Map(tc1.map(t => [normKey(t.codigo_frontera), t]))
+  // Índices por frontera (normalizada), primera aparición por lado.
+  const tc1ByFrontera = new Map<string, typeof tc1[number]>()
+  for (const t of tc1) {
+    const k = normKey(t.codigo_frontera)
+    if (k && !tc1ByFrontera.has(k)) tc1ByFrontera.set(k, t)
+  }
+  const facByFrontera = new Map<string, typeof facturacion[number]>()
+  for (const f of facturacion) {
+    const k = normKey(f.codigo_frontera)
+    if (k && !facByFrontera.has(k)) facByFrontera.set(k, f)
+  }
+
+  // Universo = UNIÓN de fronteras de Facturación y TC1. Una frontera que esté en
+  // una sola fuente se reporta como INCOMPLETA (para revisión), nunca se omite.
+  const universo: { key: string; codigo: string }[] = []
+  const vistos = new Set<string>()
+  for (const f of facturacion) {
+    const k = normKey(f.codigo_frontera)
+    if (!k || vistos.has(k)) continue
+    vistos.add(k)
+    universo.push({ key: k, codigo: f.codigo_frontera })
+  }
+  for (const t of tc1) {
+    const k = normKey(t.codigo_frontera)
+    if (!k || vistos.has(k)) continue
+    vistos.add(k)
+    universo.push({ key: k, codigo: t.codigo_frontera })
+  }
+
+  // Código del OR (si se filtró) para atribuir las fronteras TC1-only o las de
+  // facturación sin or_id al operador correcto.
+  const orCodigo = facOrFilter.operador_red ?? null
 
   type Row = Omit<Prisma.ResultadoConciliacionTC1CreateManyInput, "id">
   const resultados: Row[] = []
   let sinDif = 0, diffNT = 0, diffProp = 0, incompletas = 0
 
-  // Deduplicar por codigo_frontera: Facturacion puede traer la misma frontera
-  // en varias filas; el resultado es uno por frontera (unique periodo+frontera).
-  const fronterasVistas = new Set<string>()
-
-  for (const f of facturacion) {
-    if (fronterasVistas.has(f.codigo_frontera)) continue
-    fronterasVistas.add(f.codigo_frontera)
-
-    const t = tc1ByFrontera.get(normKey(f.codigo_frontera))
+  for (const { key, codigo } of universo) {
+    const f = facByFrontera.get(key)
+    const t = tc1ByFrontera.get(key)
 
     // Nivel de tension TC1 puede venir "1","2",... ; propiedad "USUARIO"/"OR"/"COMPARTIDO".
-    const ntFac = f.nivel_tension ?? null
+    const ntFac = f?.nivel_tension ?? null
     const ntTc1 = t?.nivel_tension ?? null
-    const prFac = f.propiedad_activos ?? null
+    const prFac = f?.propiedad_activos ?? null
     const prTc1 = t?.propiedad_activos ?? null
 
     let caso: string
@@ -110,12 +135,16 @@ export async function ejecutarConciliacionTC1(opts: OpcionesTC1): Promise<Resume
     let diffPr = false
     const obs: string[] = []
 
-    if (!t) {
+    if (f && !t) {
       caso = "INCOMPLETA"
-      obs.push("Frontera no encontrada en TC1.")
+      obs.push("Frontera en Facturación pero no en TC1.")
+      incompletas++
+    } else if (!f && t) {
+      caso = "INCOMPLETA"
+      obs.push("Frontera en TC1 pero no en Facturación.")
       incompletas++
     } else {
-      // Solo evaluamos diff cuando ambos lados tienen dato.
+      // Ambos lados presentes. Solo evaluamos diff cuando hay dato en ambos.
       const ntComparable = ntFac != null && ntTc1 != null
       const prComparable = prFac != null && prTc1 != null
       if (ntComparable && !mismoNivel(ntFac, ntTc1)) diffNivel = true
@@ -140,9 +169,9 @@ export async function ejecutarConciliacionTC1(opts: OpcionesTC1): Promise<Resume
     resultados.push({
       periodo_id:         periodo.id,
       or_id:              t?.or_id ?? orId ?? null,
-      codigo_frontera:    f.codigo_frontera,
-      nombre_usuario:     f.nombre_usuario,
-      operador_red:       f.operador_red,
+      codigo_frontera:    codigo,
+      nombre_usuario:     f?.nombre_usuario ?? null,
+      operador_red:       f?.operador_red ?? orCodigo,
       nivel_tension_fac:  ntFac,
       nivel_tension_tc1:  ntTc1,
       diff_nivel_tension: diffNivel,
@@ -155,13 +184,14 @@ export async function ejecutarConciliacionTC1(opts: OpcionesTC1): Promise<Resume
     })
   }
 
-  // Persistir (idempotente): borrar resultados del periodo (y OR si filtra) y recrear.
-  const fronteras = facturacion.map(f => f.codigo_frontera)
+  // Persistir (idempotente): borrar resultados de las fronteras del universo
+  // (facturación ∪ TC1) y recrear. Se borra por frontera (sin filtrar or_id)
+  // porque una frontera pudo cambiar de or_id null→OR entre corridas.
+  const fronteras = universo.map(u => u.codigo)
   await db.$transaction(async (tx) => {
     await tx.resultadoConciliacionTC1.deleteMany({
       where: {
         periodo_id: periodo.id,
-        ...(orId ? { or_id: orId } : {}),
         codigo_frontera: { in: fronteras },
       },
     })
@@ -176,7 +206,7 @@ export async function ejecutarConciliacionTC1(opts: OpcionesTC1): Promise<Resume
         entidad_id: periodo.id,
         detalle: {
           tipo: "TC1", periodo: periodoStr, or_id: orId,
-          totalFronteras: facturacion.length,
+          totalFronteras: resultados.length,
           diffNivelTension: diffNT, diffPropiedad: diffProp, incompletas,
         } as Prisma.InputJsonValue,
       },
