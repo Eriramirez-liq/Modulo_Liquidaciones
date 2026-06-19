@@ -149,9 +149,21 @@ export async function parsearTC1(
   if (idxCodigo < 0) idxCodigo = buscar(headersNorm, [["FRONT"], ["FROTERA"]], ["AUTO", "GENERA", "EXPORT", "PRIMARI"])
   if (idxCodigo < 0) idxCodigo = buscarExacto(headersNorm, ["SIC"]) // EMCALI
 
-  // Nivel de tension (la del usuario, NO la primaria).
-  let idxNivel = buscarExacto(headersNorm, ["NIVELTENSION", "NIVELDETENSION", "NIVELDET"])
-  if (idxNivel < 0) idxNivel = buscar(headersNorm, [["NIVEL", "TENSION"]], ["PRIMARI", "PRIM", "USUARIO", "EXPORT", "CTO"])
+  // Nivel de tension a conciliar = SIEMPRE la PRIMERA columna de "nivel de
+  // tension" por POSICION (la que va después de TIPO_DE_CONEXION), independiente
+  // del nombre. Algunos OR (ej. CENS) traen DOS: la primera es la del usuario
+  // (correcta) y la segunda —aunque se llame "Nivel de tensión"— es la primaria.
+  // Tomar por nombre fallaba en CENS (matcheaba la 2da); por eso se toma por
+  // posición. Se excluyen niveles de exportación/circuito (EXPORT/CTO).
+  const idxNivelesTension: number[] = []
+  headersNorm.forEach((h, i) => {
+    if (h.includes("NIVEL") && h.includes("TENSION") && !h.includes("EXPORT") && !h.includes("CTO")) {
+      idxNivelesTension.push(i)
+    }
+  })
+  let idxNivel = idxNivelesTension[0] ?? -1
+  // Fallback por si el header no contiene "nivel/tension" literal.
+  if (idxNivel < 0) idxNivel = buscarExacto(headersNorm, ["NIVELTENSION", "NIVELDETENSION", "NIVELDET"])
 
   // Propiedad del activo (porcentaje). Todas las variantes contienen "PROP".
   const idxPorc = buscar(headersNorm, [["PROP"]])
@@ -161,7 +173,10 @@ export async function parsearTC1(
 
   // Otras columnas que persistimos en campos dedicados.
   const idxNiu    = buscarExacto(headersNorm, ["NIU"])
-  const idxNTP    = buscar(headersNorm, [["NIVEL", "TENSION", "PRIM"]], ["EXPORT"])
+  // Primaria: columna explícita con PRIM; si no la hay (caso CENS), la SEGUNDA
+  // columna de nivel de tensión.
+  let idxNTP      = buscar(headersNorm, [["NIVEL", "TENSION", "PRIM"]], ["EXPORT"])
+  if (idxNTP < 0) idxNTP = idxNivelesTension.find(i => i !== idxNivel) ?? -1
   const idxTipoCx = buscar(headersNorm, [["TIPO", "CONEXION"]])
   const idxConRed = buscar(headersNorm, [["CONEXION", "RED"]])
 
