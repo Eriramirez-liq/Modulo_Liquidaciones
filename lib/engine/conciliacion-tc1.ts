@@ -1,5 +1,6 @@
 import { db } from "@/lib/db"
 import { Prisma } from "@prisma/client"
+import { claveBase, construirBaseClasif } from "./congruencia"
 
 /**
  * Conciliacion TC1 vs Facturacion.
@@ -101,6 +102,23 @@ export async function ejecutarConciliacionTC1(opts: OpcionesTC1): Promise<Resume
     if (k && !facByFrontera.has(k)) facByFrontera.set(k, f)
   }
 
+  // Herencia de base: las fronteras "_N" (FRT03464_1, _2) toman NT/propiedad de
+  // su base (FRT03464). Mapa base con prioridad Facturación → TC1.
+  const baseClasif = construirBaseClasif([
+    facturacion.map(f => ({ clave: normKey(f.codigo_frontera), nt: normKey(f.nivel_tension), prop: normKey(f.propiedad_activos) })),
+    tc1.map(t => ({ clave: normKey(t.codigo_frontera), nt: normKey(t.nivel_tension), prop: normKey(t.propiedad_activos) })),
+  ])
+  // Valor efectivo de un campo: si la frontera tiene "_" y existe su base, hereda;
+  // si no, conserva el valor propio (preservando null para la lógica de "comparable").
+  const efectivo = (
+    key: string,
+    raw: { nt: string | null; prop: string | null },
+  ): { nt: string | null; prop: string | null } => {
+    if (!key.includes("_")) return raw
+    const b = baseClasif.get(claveBase(key))
+    return b ? { nt: b.nt, prop: b.prop } : raw
+  }
+
   // Universo = UNIÓN de fronteras del OR. Una frontera que esté en una sola
   // fuente se reporta como INCOMPLETA (para revisión), nunca se omite.
   //   - TC1 del OR (por or_id).
@@ -132,10 +150,13 @@ export async function ejecutarConciliacionTC1(opts: OpcionesTC1): Promise<Resume
     const t = tc1ByFrontera.get(key)
 
     // Nivel de tension TC1 puede venir "1","2",... ; propiedad "USUARIO"/"OR"/"COMPARTIDO".
-    const ntFac = f?.nivel_tension ?? null
-    const ntTc1 = t?.nivel_tension ?? null
-    const prFac = f?.propiedad_activos ?? null
-    const prTc1 = t?.propiedad_activos ?? null
+    // Las fronteras "_N" heredan NT/propiedad de su base (en ambos lados).
+    const facEf = f ? efectivo(key, { nt: f.nivel_tension, prop: f.propiedad_activos }) : null
+    const tc1Ef = t ? efectivo(key, { nt: t.nivel_tension, prop: t.propiedad_activos }) : null
+    const ntFac = facEf?.nt ?? null
+    const ntTc1 = tc1Ef?.nt ?? null
+    const prFac = facEf?.prop ?? null
+    const prTc1 = tc1Ef?.prop ?? null
 
     let caso: string
     let diffNivel = false
