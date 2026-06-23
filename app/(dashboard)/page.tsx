@@ -150,6 +150,8 @@ export default function InicioPage() {
               sub="Lógica pendiente" />
             <KPI label="CONGRUENCIA" main={`${d?.congruenciaPct ?? 0}%`} color="#15803d"
               sub={`${d?.congruentes ?? 0}/${d?.fronterasFacturadas ?? 0} fronteras (NT + propiedad)`} />
+            <KPI label="FRONTERAS FACTURADAS" main={d?.fronterasFacturadas ?? 0} color="#0369a1"
+              sub="Fronteras únicas en facturación" />
           </div>
 
           {/* Charts */}

@@ -44,6 +44,17 @@ export async function GET(request: NextRequest) {
 
   if (!periodoId) return NextResponse.json(empty)
 
+  // OJO con la clave de período: registros_str / provisiones / contingencias /
+  // resultados usan el CUID (periodo.id), pero registros_facturacion / sdl / tc1
+  // se guardan con el string "AAAA-MM". Hay que consultar cada fuente con su
+  // clave correcta o la congruencia y el Cargo SDL salen en 0.
+  const periodo = await db.periodoConciliacion.findUnique({
+    where: { id: periodoId },
+    select: { anio: true, mes: true },
+  })
+  if (!periodo) return NextResponse.json(empty)
+  const periodoStr = `${periodo.anio}-${String(periodo.mes).padStart(2, "0")}`
+
   const [
     resultados, provisiones, contingenciasAgg, disputas,
     strAgg, sdlAgg, facturacion, sdlClasif, tc1Clasif,
@@ -69,22 +80,22 @@ export async function GET(request: NextRequest) {
       where: { periodo_id: periodoId },
       _sum: { valor_cop: true },
     }),
-    // Cargo SDL (activa + reactiva), excluyendo duplicados
+    // Cargo SDL (activa + reactiva), excluyendo duplicados — clave string
     db.registroSDL.aggregate({
-      where: { periodo_id: periodoId, es_duplicado: false },
+      where: { periodo_id: periodoStr, es_duplicado: false },
       _sum: { valor_sdl_cop: true, valor_reactiva_cop: true },
     }),
-    // Congruencia — clasificación por frontera en las 3 fuentes
+    // Congruencia — clasificación por frontera en las 3 fuentes (clave string)
     db.registroFacturacion.findMany({
-      where: { periodo_id: periodoId },
+      where: { periodo_id: periodoStr },
       select: { codigo_frontera: true, nivel_tension: true, propiedad_activos: true },
     }),
     db.registroSDL.findMany({
-      where: { periodo_id: periodoId, es_duplicado: false },
+      where: { periodo_id: periodoStr, es_duplicado: false },
       select: { codigo_frontera: true, nivel_tension: true, propiedad_activos: true },
     }),
     db.registroTC1.findMany({
-      where: { periodo_id: periodoId },
+      where: { periodo_id: periodoStr },
       select: { codigo_frontera: true, nivel_tension: true, propiedad_activos: true },
     }),
     // Impacto por frontera — provisión y pérdida (contingencia)
