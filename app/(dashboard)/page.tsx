@@ -136,7 +136,8 @@ export default function InicioPage() {
           {/* KPIs del mes en curso */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
             <KPI label="CARGO STR" main={cop(d?.cargoStrCop ?? 0)} color="#0369a1"
-              sub="Total a pagar del mes" href="/cargos-str" />
+              sub="Total a pagar del mes"
+              href={periodoId ? `/cargos-str-por-or?periodoId=${periodoId}` : undefined} />
             <KPI label="CARGO SDL" main={cop(d?.cargoSdlCop ?? 0)} color="#1d4ed8"
               sub="Preliquidación activa + reactiva"
               href={periodoId ? `/preliquidaciones-sdl?periodoId=${periodoId}` : undefined} />

@@ -121,9 +121,12 @@ export function clasificarCongruencia(
   // Una fuente "correcta" (cualquiera de las que coinciden, distinta del culpable).
   const correcta: "FAC" | "SDL" | "TC1" = culpable === "FAC" ? "SDL" : "FAC"
   const val = { FAC: fac, SDL: sdl, TC1: tc1 }
+  // Si el valor de la fuente culpable está vacío (sin dato), mostrarlo explícito
+  // para que "dato errado" quede tan detallado como "dato correcto".
+  const fmt = (v: string) => (v && v.trim() ? v : "(sin dato)")
   const partes: { errado: string; correcto: string }[] = []
-  if (difNT) partes.push({ errado: `NT: ${val[culpable].nt}`, correcto: `NT: ${val[correcta].nt}` })
-  if (difPR) partes.push({ errado: `Prop: ${val[culpable].prop}`, correcto: `Prop: ${val[correcta].prop}` })
+  if (difNT) partes.push({ errado: `NT: ${fmt(val[culpable].nt)}`, correcto: `NT: ${fmt(val[correcta].nt)}` })
+  if (difPR) partes.push({ errado: `Prop: ${fmt(val[culpable].prop)}`, correcto: `Prop: ${fmt(val[correcta].prop)}` })
 
   return {
     estado,
