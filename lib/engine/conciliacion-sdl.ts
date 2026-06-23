@@ -260,6 +260,25 @@ export function clasificarFrontera(input: InputClasificacion): ResultadoClasific
       observaciones,
     }
   }
+  // Si hay PROVISIÓN por menor reporte a XM (fac > xm), genera Provisión L1 por
+  // la diferencia fac vs xm — debe sumar en el KPI de provisiones, manteniéndose
+  // como alerta manual / revisar (los 3 valores difieren).
+  if (delta_l1 > umbral) {
+    observaciones.push(
+      "D4 con provisión por menor reporte a XM (fac > xm): genera provisión y requiere revisión (los 3 valores difieren).",
+    )
+    const valor = calcularProvisionL1({ e_fac, e_xm, tarifa, observaciones })
+    return {
+      caso: "D4",
+      resultado_l1: "PROVISION_L1",
+      resultado_l2: "ALERTA_MANUAL",
+      delta_l1, delta_l2,
+      impacto_financiero_l1: valor,
+      impacto_financiero_l2: null,
+      requiere_alerta_manual: true,
+      observaciones,
+    }
+  }
   observaciones.push(
     "Combinacion de valores no encaja en patrones A1-D3. Requiere revision manual.",
   )

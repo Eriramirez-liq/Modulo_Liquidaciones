@@ -164,13 +164,14 @@ export const CASOS_PRUEBA: CasoEsperado[] = [
     requiere_alerta_manual: true,
   },
   {
-    nombre: "D4 sin pérdida: fac=12000 > xm=10000, sdl=15000 (los 3 difieren, fac>xm)",
+    nombre: "D4 con provisión: fac=12000 > xm=10000, sdl=15000 (los 3 difieren, fac>xm)",
     input: { e_fac: 12000, e_xm: 10000, e_sdl: 15000, tarifa: TARIFA_REF },
-    // fac >= xm ⇒ no hay pérdida por mayor reporte a XM: solo alerta manual.
+    // fac > xm ⇒ provisión por menor reporte a XM: genera Provisión L1 además de
+    // la alerta manual. (fac-xm)×(g+t+d+pr+r)=2000×400=800000.
     caso: "D4",
-    resultado_l1: "ALERTA_MANUAL",
+    resultado_l1: "PROVISION_L1",
     resultado_l2: "ALERTA_MANUAL",
-    impacto_financiero_l1: null,
+    impacto_financiero_l1: 800_000,
     impacto_financiero_l2: null,
     requiere_alerta_manual: true,
   },
