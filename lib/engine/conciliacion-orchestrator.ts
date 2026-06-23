@@ -129,14 +129,19 @@ export async function ejecutarConciliacion(
     }
     return acc
   }
-  const gruposFac = new Map<string, FilaFac[]>()
+  // Agrupar por base, deduplicando por CÓDIGO COMPLETO (Facturación puede traer
+  // la misma frontera repetida en varias filas; esas NO se suman, se toma una).
+  // Solo se suman la base + sus variantes "_N" DISTINTAS.
+  const gruposFac = new Map<string, Map<string, FilaFac>>()
   for (const f of facturacion) {
     const base = claveBase(normKey(f.codigo_frontera))
-    const arr = gruposFac.get(base)
-    if (arr) arr.push(f)
-    else gruposFac.set(base, [f])
+    const full = normKey(f.codigo_frontera)
+    let g = gruposFac.get(base)
+    if (!g) { g = new Map<string, FilaFac>(); gruposFac.set(base, g) }
+    if (!g.has(full)) g.set(full, f) // primera aparición de cada código
   }
-  const facturacionColapsada: FilaFac[] = Array.from(gruposFac.values()).map((grupo) => {
+  const facturacionColapsada: FilaFac[] = Array.from(gruposFac.values()).map((gMap) => {
+    const grupo = Array.from(gMap.values())
     // Representante para metadata: la fila base (sin "_"); si no hay, la primera.
     const rep = grupo.find(r => !normKey(r.codigo_frontera).includes("_")) ?? grupo[0]!
     // Código de la frontera = SIEMPRE la base (sin "_"), aunque facturación solo
