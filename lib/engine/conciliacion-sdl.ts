@@ -241,6 +241,25 @@ export function clasificarFrontera(input: InputClasificacion): ResultadoClasific
   }
 
   // ── D4: tres valores distintos sin patron — alerta manual ────────────────
+  // Si además hay PÉRDIDA por mayor reporte a XM (fac < xm), genera Contingencia
+  // (pérdida) por la diferencia fac vs xm — debe sumar en el KPI de pérdidas
+  // aunque los 3 valores difieran (se mantiene como alerta manual / revisar).
+  if (delta_l1 < -umbral) {
+    observaciones.push(
+      "D4 con pérdida por mayor reporte a XM (fac < xm): genera pérdida y requiere revisión (los 3 valores difieren).",
+    )
+    const valor = calcularPerdidaNormal({ e_fac, e_xm, tarifa, observaciones })
+    return {
+      caso: "D4",
+      resultado_l1: "CONTINGENCIA_L1",
+      resultado_l2: "ALERTA_MANUAL",
+      delta_l1, delta_l2,
+      impacto_financiero_l1: valor,
+      impacto_financiero_l2: null,
+      requiere_alerta_manual: true,
+      observaciones,
+    }
+  }
   observaciones.push(
     "Combinacion de valores no encaja en patrones A1-D3. Requiere revision manual.",
   )

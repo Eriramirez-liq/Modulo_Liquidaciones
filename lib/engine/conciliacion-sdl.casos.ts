@@ -152,10 +152,21 @@ export const CASOS_PRUEBA: CasoEsperado[] = [
 
   // ─────────────────────────── D4: tres distintos sin patron ───────────────────────
   {
-    nombre: "D4: fac=10000, xm=12000, sdl=8000 (fac entre sdl y xm, sin igualdad ni B/C/D1)",
+    nombre: "D4 con pérdida: fac=10000 < xm=12000, sdl=8000 (los 3 difieren, fac<xm → pérdida)",
     input: { e_fac: 10000, e_xm: 12000, e_sdl: 8000, tarifa: TARIFA_REF },
-    // sdl=8000 < xm=12000 (sdl_lt_xm), fac=10000 < xm=12000 (fac_lt_xm),
-    // fac=10000 > sdl=8000 (fac_gt_sdl), no encaja en D1 (fac>sdl) ni D2 (fac<xm)
+    // fac < xm ⇒ pérdida por mayor reporte a XM: genera Contingencia L1 además
+    // de la alerta manual (revisar). (xm-fac)×(g_bolsa+t+d+pr+r)=2000×410=820000.
+    caso: "D4",
+    resultado_l1: "CONTINGENCIA_L1",
+    resultado_l2: "ALERTA_MANUAL",
+    impacto_financiero_l1: 820_000,
+    impacto_financiero_l2: null,
+    requiere_alerta_manual: true,
+  },
+  {
+    nombre: "D4 sin pérdida: fac=12000 > xm=10000, sdl=15000 (los 3 difieren, fac>xm)",
+    input: { e_fac: 12000, e_xm: 10000, e_sdl: 15000, tarifa: TARIFA_REF },
+    // fac >= xm ⇒ no hay pérdida por mayor reporte a XM: solo alerta manual.
     caso: "D4",
     resultado_l1: "ALERTA_MANUAL",
     resultado_l2: "ALERTA_MANUAL",
