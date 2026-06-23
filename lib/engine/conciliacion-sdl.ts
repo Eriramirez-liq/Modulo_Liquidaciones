@@ -468,16 +468,19 @@ export interface ResultadoIndicadores {
 export function clasificarIndicadores(input: InputIndicadores): ResultadoIndicadores {
   const umbral = input.umbral_kwh ?? 100
 
-  // Inductiva penalizada: |fac - sdl| > umbral
-  const indDelta = (input.ind_pen_fac != null && input.ind_pen_sdl != null)
-    ? input.ind_pen_fac - input.ind_pen_sdl
-    : null
+  // Inductiva penalizada: |fac - sdl| > umbral.
+  // Si AMBOS son null → no hay penalización en ninguna fuente → no hay diff.
+  // Si uno tiene valor y el otro null → el null cuenta como 0 (una fuente penaliza
+  // y la otra no: ES una diferencia, ej. BIA penaliza y el OR reporta 0/null).
+  const indDelta = (input.ind_pen_fac == null && input.ind_pen_sdl == null)
+    ? null
+    : (input.ind_pen_fac ?? 0) - (input.ind_pen_sdl ?? 0)
   const diffInd = indDelta != null && Math.abs(indDelta) > umbral
 
-  // Capacitiva penalizada: |fac - sdl| > umbral
-  const capDelta = (input.cap_pen_fac != null && input.cap_pen_sdl != null)
-    ? input.cap_pen_fac - input.cap_pen_sdl
-    : null
+  // Capacitiva penalizada: misma regla (null como 0 si la otra fuente tiene valor).
+  const capDelta = (input.cap_pen_fac == null && input.cap_pen_sdl == null)
+    ? null
+    : (input.cap_pen_fac ?? 0) - (input.cap_pen_sdl ?? 0)
   const diffCap = capDelta != null && Math.abs(capDelta) > umbral
 
   // Factor M: comparacion exacta de enteros (redondear porque puede venir
