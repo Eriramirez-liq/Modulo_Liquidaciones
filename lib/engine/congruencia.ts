@@ -44,6 +44,54 @@ export function normalizar(v: string | null | undefined): string {
   return (v ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toUpperCase()
 }
 
+// ─── Herencia de base para fronteras con sufijo "_N" ──────────────────────────
+// Las fronteras "hijas" (ej. FRT03464_1, FRT03464_2) deben tomar el nivel de
+// tensión y la propiedad de activos de la frontera BASE (FRT03464, sin sufijo).
+
+/** Clave base de una frontera normalizada: lo que va antes del primer "_". */
+export function claveBase(clave: string): string {
+  const i = clave.indexOf("_")
+  return i >= 0 ? clave.slice(0, i) : clave
+}
+
+export interface FuenteFila { clave: string; nt: string; prop: string }
+
+/**
+ * Construye el mapa baseKey → {nt, prop} a partir de las fronteras BASE (sin
+ * "_") de las fuentes, en orden de prioridad (la primera gana; las siguientes
+ * solo rellenan campos vacíos).
+ */
+export function construirBaseClasif(
+  fuentesPriorizadas: FuenteFila[][],
+): Map<string, { nt: string; prop: string }> {
+  const base = new Map<string, { nt: string; prop: string }>()
+  for (const fuente of fuentesPriorizadas) {
+    for (const f of fuente) {
+      if (!f.clave || f.clave.includes("_")) continue // solo fronteras base
+      const cur = base.get(f.clave)
+      if (!cur) base.set(f.clave, { nt: f.nt, prop: f.prop })
+      else {
+        if (!cur.nt && f.nt) cur.nt = f.nt
+        if (!cur.prop && f.prop) cur.prop = f.prop
+      }
+    }
+  }
+  return base
+}
+
+/**
+ * Clasificación efectiva de una frontera: si tiene sufijo "_N" y existe su base,
+ * hereda {nt, prop} de la base; si no, usa la propia.
+ */
+export function clasifConHerencia(
+  clave: string,
+  propia: { nt: string; prop: string },
+  base: Map<string, { nt: string; prop: string }>,
+): { nt: string; prop: string } {
+  if (!clave.includes("_")) return propia
+  return base.get(claveBase(clave)) ?? propia
+}
+
 type Outlier = "IGUAL" | "FAC" | "SDL" | "TC1" | "TODAS"
 
 /** Determina cuál de las 3 fuentes difiere para un campo ya normalizado. */

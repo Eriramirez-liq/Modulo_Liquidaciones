@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { normalizar, construirBaseClasif, clasifConHerencia } from "@/lib/engine/congruencia"
 
 /**
  * GET /api/dashboard?periodoId=...
@@ -127,17 +128,22 @@ export async function GET(request: NextRequest) {
   const cargoSdlCop        = cargoSdlActivaCop + cargoSdlReactivaCop
 
   // ── Congruencia (NT + propiedad entre facturación, SDL y TC1) ────────────
-  const norm = (v: string | null | undefined) =>
-    (v ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toUpperCase()
+  // Las fronteras con sufijo "_N" (FRT_1, FRT_2) heredan NT/propiedad de su base.
+  const norm = (v: string | null | undefined) => normalizar(v)
   const keyFrontera = (c: string | null | undefined) => norm(c)
 
   type Clasif = { nt: string; prop: string }
+  const baseClasif = construirBaseClasif([
+    facturacion.map(f => ({ clave: norm(f.codigo_frontera), nt: norm(f.nivel_tension), prop: norm(f.propiedad_activos) })),
+    sdlClasif.map(s => ({ clave: norm(s.codigo_frontera), nt: norm(s.nivel_tension), prop: norm(s.propiedad_activos) })),
+    tc1Clasif.map(t => ({ clave: norm(t.codigo_frontera), nt: norm(t.nivel_tension), prop: norm(t.propiedad_activos) })),
+  ])
   const indexar = (rows: { codigo_frontera: string; nivel_tension: string | null; propiedad_activos: string | null }[]) => {
     const m = new Map<string, Clasif>()
     for (const r of rows) {
       const k = keyFrontera(r.codigo_frontera)
       if (!k || m.has(k)) continue // primera aparición por frontera
-      m.set(k, { nt: norm(r.nivel_tension), prop: norm(r.propiedad_activos) })
+      m.set(k, clasifConHerencia(k, { nt: norm(r.nivel_tension), prop: norm(r.propiedad_activos) }, baseClasif))
     }
     return m
   }
@@ -155,10 +161,9 @@ export async function GET(request: NextRequest) {
     const sdlc = sdlMap.get(k)
     const tc1c = tc1Map.get(k)
     if (!sdlc || !tc1c) continue
-    const ntFac = norm(f.nivel_tension)
-    const propFac = norm(f.propiedad_activos)
-    const ntOk   = ntFac !== "" && ntFac === sdlc.nt && ntFac === tc1c.nt
-    const propOk = propFac !== "" && propFac === sdlc.prop && propFac === tc1c.prop
+    const facc = clasifConHerencia(k, { nt: norm(f.nivel_tension), prop: norm(f.propiedad_activos) }, baseClasif)
+    const ntOk   = facc.nt !== "" && facc.nt === sdlc.nt && facc.nt === tc1c.nt
+    const propOk = facc.prop !== "" && facc.prop === sdlc.prop && facc.prop === tc1c.prop
     if (ntOk && propOk) congruentes++
   }
   const fronterasFacturadas = facVistas.size

@@ -1,6 +1,8 @@
 import { db } from "@/lib/db"
 import {
   clasificarCongruencia,
+  clasifConHerencia,
+  construirBaseClasif,
   normalizar,
   type ClasifFuente,
 } from "@/lib/engine/congruencia"
@@ -76,6 +78,14 @@ export async function obtenerReporteCongruencia(
   const orPorId = new Map<string, string>()
   for (const o of operadores) orPorId.set(o.id, o.codigo)
 
+  // Mapa de clasificación de las fronteras BASE (sin "_"), prioridad Fac→SDL→TC1.
+  // Las fronteras "hijas" (FRT_1, FRT_2) heredan NT/propiedad de su base.
+  const baseClasif = construirBaseClasif([
+    facturacion.map(f => ({ clave: normalizar(f.codigo_frontera), nt: normalizar(f.nivel_tension), prop: normalizar(f.propiedad_activos) })),
+    sdl.map(s => ({ clave: normalizar(s.codigo_frontera), nt: normalizar(s.nivel_tension), prop: normalizar(s.propiedad_activos) })),
+    tc1.map(t => ({ clave: normalizar(t.codigo_frontera), nt: normalizar(t.nivel_tension), prop: normalizar(t.propiedad_activos) })),
+  ])
+
   // ── Indexación por clave normalizada (primera aparición por fuente) ────────
   const idxFac = new Map<string, DatosFuente>()
   const idxSdl = new Map<string, DatosFuente>()
@@ -86,7 +96,7 @@ export async function obtenerReporteCongruencia(
     if (idxFac.has(clave)) continue
     idxFac.set(clave, {
       codigoCrudo: f.codigo_frontera,
-      clasif: { nt: normalizar(f.nivel_tension), prop: normalizar(f.propiedad_activos) },
+      clasif: clasifConHerencia(clave, { nt: normalizar(f.nivel_tension), prop: normalizar(f.propiedad_activos) }, baseClasif),
       or: f.operador_red ?? null,
     })
   }
@@ -96,7 +106,7 @@ export async function obtenerReporteCongruencia(
     if (idxSdl.has(clave)) continue
     idxSdl.set(clave, {
       codigoCrudo: s.codigo_frontera,
-      clasif: { nt: normalizar(s.nivel_tension), prop: normalizar(s.propiedad_activos) },
+      clasif: clasifConHerencia(clave, { nt: normalizar(s.nivel_tension), prop: normalizar(s.propiedad_activos) }, baseClasif),
       or: s.or_id ? orPorId.get(s.or_id) ?? null : null,
     })
   }
@@ -106,7 +116,7 @@ export async function obtenerReporteCongruencia(
     if (idxTc1.has(clave)) continue
     idxTc1.set(clave, {
       codigoCrudo: t.codigo_frontera,
-      clasif: { nt: normalizar(t.nivel_tension), prop: normalizar(t.propiedad_activos) },
+      clasif: clasifConHerencia(clave, { nt: normalizar(t.nivel_tension), prop: normalizar(t.propiedad_activos) }, baseClasif),
       or: t.or_id ? orPorId.get(t.or_id) ?? null : null,
     })
   }
