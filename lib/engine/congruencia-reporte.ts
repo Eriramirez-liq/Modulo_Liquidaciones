@@ -2,10 +2,16 @@ import { db } from "@/lib/db"
 import {
   clasificarCongruencia,
   clasifConHerencia,
+  claveBase,
   construirBaseClasif,
   normalizar,
   type ClasifFuente,
 } from "@/lib/engine/congruencia"
+
+/** Código base (sin sufijo "_N") preservando la capitalización original. */
+function codigoBase(codigo: string): string {
+  return codigo.split("_")[0] ?? codigo
+}
 
 /**
  * Helper de servidor que construye el reporte de diferencias de congruencia
@@ -86,37 +92,41 @@ export async function obtenerReporteCongruencia(
     tc1.map(t => ({ clave: normalizar(t.codigo_frontera), nt: normalizar(t.nivel_tension), prop: normalizar(t.propiedad_activos) })),
   ])
 
-  // ── Indexación por clave normalizada (primera aparición por fuente) ────────
+  // ── Indexación por clave BASE (las fronteras "_N" se colapsan en su base, que
+  //    es la frontera principal a conciliar). Primera aparición por fuente. ────
   const idxFac = new Map<string, DatosFuente>()
   const idxSdl = new Map<string, DatosFuente>()
   const idxTc1 = new Map<string, DatosFuente>()
 
   for (const f of facturacion) {
-    const clave = normalizar(f.codigo_frontera)
+    const claveFull = normalizar(f.codigo_frontera)
+    const clave = claveBase(claveFull)
     if (idxFac.has(clave)) continue
     idxFac.set(clave, {
-      codigoCrudo: f.codigo_frontera,
-      clasif: clasifConHerencia(clave, { nt: normalizar(f.nivel_tension), prop: normalizar(f.propiedad_activos) }, baseClasif),
+      codigoCrudo: codigoBase(f.codigo_frontera),
+      clasif: clasifConHerencia(claveFull, { nt: normalizar(f.nivel_tension), prop: normalizar(f.propiedad_activos) }, baseClasif),
       or: f.operador_red ?? null,
     })
   }
 
   for (const s of sdl) {
-    const clave = normalizar(s.codigo_frontera)
+    const claveFull = normalizar(s.codigo_frontera)
+    const clave = claveBase(claveFull)
     if (idxSdl.has(clave)) continue
     idxSdl.set(clave, {
-      codigoCrudo: s.codigo_frontera,
-      clasif: clasifConHerencia(clave, { nt: normalizar(s.nivel_tension), prop: normalizar(s.propiedad_activos) }, baseClasif),
+      codigoCrudo: codigoBase(s.codigo_frontera),
+      clasif: clasifConHerencia(claveFull, { nt: normalizar(s.nivel_tension), prop: normalizar(s.propiedad_activos) }, baseClasif),
       or: s.or_id ? orPorId.get(s.or_id) ?? null : null,
     })
   }
 
   for (const t of tc1) {
-    const clave = normalizar(t.codigo_frontera)
+    const claveFull = normalizar(t.codigo_frontera)
+    const clave = claveBase(claveFull)
     if (idxTc1.has(clave)) continue
     idxTc1.set(clave, {
-      codigoCrudo: t.codigo_frontera,
-      clasif: clasifConHerencia(clave, { nt: normalizar(t.nivel_tension), prop: normalizar(t.propiedad_activos) }, baseClasif),
+      codigoCrudo: codigoBase(t.codigo_frontera),
+      clasif: clasifConHerencia(claveFull, { nt: normalizar(t.nivel_tension), prop: normalizar(t.propiedad_activos) }, baseClasif),
       or: t.or_id ? orPorId.get(t.or_id) ?? null : null,
     })
   }

@@ -94,13 +94,34 @@ export function clasifConHerencia(
 
 type Outlier = "IGUAL" | "FAC" | "SDL" | "TC1" | "TODAS"
 
-/** Determina cuál de las 3 fuentes difiere para un campo ya normalizado. */
+/**
+ * Determina cuál de las 3 fuentes difiere para un campo ya normalizado.
+ *
+ * IMPORTANTE: un valor VACÍO ("") = SIN DATO en esa fuente; se IGNORA en la
+ * comparación (no es una diferencia). Solo se evalúa entre las fuentes que SÍ
+ * tienen dato. Si menos de 2 fuentes tienen dato, o las que tienen dato
+ * coinciden → "IGUAL" (no hay diferencia). Esto evita marcar falsamente
+ * "Cambio X" cuando una fuente (ej. SDL) simplemente no reporta NT/propiedad.
+ */
 function outlier(fac: string, sdl: string, tc1: string): Outlier {
-  if (fac === sdl && sdl === tc1) return "IGUAL"
-  if (fac === sdl) return "TC1" // TC1 difiere
-  if (fac === tc1) return "SDL" // SDL difiere
-  if (sdl === tc1) return "FAC" // Facturación difiere
-  return "TODAS" // las 3 distintas
+  const conDato: { src: "FAC" | "SDL" | "TC1"; v: string }[] = []
+  if (fac !== "") conDato.push({ src: "FAC", v: fac })
+  if (sdl !== "") conDato.push({ src: "SDL", v: sdl })
+  if (tc1 !== "") conDato.push({ src: "TC1", v: tc1 })
+
+  if (conDato.length < 2) return "IGUAL" // sin datos suficientes para comparar
+  if (new Set(conDato.map(d => d.v)).size === 1) return "IGUAL" // los que tienen dato coinciden
+
+  // Hay diferencia. Con las 3 con dato, el outlier es la que difiere de las otras
+  // dos que coinciden; si las 3 difieren → TODAS. Con solo 2 con dato que
+  // difieren → no hay mayoría → TODAS (sin culpable claro).
+  if (conDato.length === 3) {
+    if (fac === sdl) return "TC1"
+    if (fac === tc1) return "SDL"
+    if (sdl === tc1) return "FAC"
+    return "TODAS"
+  }
+  return "TODAS"
 }
 
 const LABEL_FUENTE: Record<"FAC" | "SDL" | "TC1", string> = {

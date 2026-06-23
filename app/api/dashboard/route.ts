@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { normalizar, construirBaseClasif, clasifConHerencia } from "@/lib/engine/congruencia"
+import { normalizar, construirBaseClasif, clasifConHerencia, claveBase, clasificarCongruencia } from "@/lib/engine/congruencia"
 
 /**
  * GET /api/dashboard?periodoId=...
@@ -128,43 +128,42 @@ export async function GET(request: NextRequest) {
   const cargoSdlCop        = cargoSdlActivaCop + cargoSdlReactivaCop
 
   // ── Congruencia (NT + propiedad entre facturación, SDL y TC1) ────────────
-  // Las fronteras con sufijo "_N" (FRT_1, FRT_2) heredan NT/propiedad de su base.
+  // Usa la MISMA lógica que el reporte de diferencias (clasificarCongruencia):
+  // las "_N" se colapsan en su base, y un valor vacío = sin dato (no diferencia).
   const norm = (v: string | null | undefined) => normalizar(v)
-  const keyFrontera = (c: string | null | undefined) => norm(c)
-
   type Clasif = { nt: string; prop: string }
   const baseClasif = construirBaseClasif([
     facturacion.map(f => ({ clave: norm(f.codigo_frontera), nt: norm(f.nivel_tension), prop: norm(f.propiedad_activos) })),
     sdlClasif.map(s => ({ clave: norm(s.codigo_frontera), nt: norm(s.nivel_tension), prop: norm(s.propiedad_activos) })),
     tc1Clasif.map(t => ({ clave: norm(t.codigo_frontera), nt: norm(t.nivel_tension), prop: norm(t.propiedad_activos) })),
   ])
+  // Indexa por clave BASE (colapsa "_N"); el clasif hereda de la base.
   const indexar = (rows: { codigo_frontera: string; nivel_tension: string | null; propiedad_activos: string | null }[]) => {
     const m = new Map<string, Clasif>()
     for (const r of rows) {
-      const k = keyFrontera(r.codigo_frontera)
-      if (!k || m.has(k)) continue // primera aparición por frontera
-      m.set(k, clasifConHerencia(k, { nt: norm(r.nivel_tension), prop: norm(r.propiedad_activos) }, baseClasif))
+      const full = norm(r.codigo_frontera)
+      const k = claveBase(full)
+      if (!k || m.has(k)) continue
+      m.set(k, clasifConHerencia(full, { nt: norm(r.nivel_tension), prop: norm(r.propiedad_activos) }, baseClasif))
     }
     return m
   }
   const sdlMap = indexar(sdlClasif)
   const tc1Map = indexar(tc1Clasif)
 
-  // Denominador = fronteras facturadas (distintas). Congruente si NT y propiedad
-  // coinciden en facturación, SDL y TC1 (las ausentes en SDL/TC1 → no congruentes).
+  // Denominador = fronteras facturadas (base, distintas). Congruente si
+  // clasificarCongruencia devuelve null (sin diferencia, ignorando vacíos).
   const facVistas = new Set<string>()
   let congruentes = 0
   for (const f of facturacion) {
-    const k = keyFrontera(f.codigo_frontera)
+    const full = norm(f.codigo_frontera)
+    const k = claveBase(full)
     if (!k || facVistas.has(k)) continue
     facVistas.add(k)
-    const sdlc = sdlMap.get(k)
-    const tc1c = tc1Map.get(k)
-    if (!sdlc || !tc1c) continue
-    const facc = clasifConHerencia(k, { nt: norm(f.nivel_tension), prop: norm(f.propiedad_activos) }, baseClasif)
-    const ntOk   = facc.nt !== "" && facc.nt === sdlc.nt && facc.nt === tc1c.nt
-    const propOk = facc.prop !== "" && facc.prop === sdlc.prop && facc.prop === tc1c.prop
-    if (ntOk && propOk) congruentes++
+    const facc = clasifConHerencia(full, { nt: norm(f.nivel_tension), prop: norm(f.propiedad_activos) }, baseClasif)
+    const sdlc = sdlMap.get(k) ?? null
+    const tc1c = tc1Map.get(k) ?? null
+    if (clasificarCongruencia(facc, sdlc, tc1c) === null) congruentes++
   }
   const fronterasFacturadas = facVistas.size
   const congruenciaPct = fronterasFacturadas > 0
