@@ -129,6 +129,15 @@ export async function ejecutarConciliacion(
     }
     return acc
   }
+  // Metadata heredada: primer valor NO nulo de la familia, priorizando la fila
+  // base (sin "_"). Sirve para que la frontera principal tome NT/propiedad/
+  // tarifa/factor_m aunque la fila base venga sin ese dato y una "_N" sí lo traiga.
+  const heredar = <T>(sel: (r: FilaFac) => T | null, grupo: FilaFac[]): T | null => {
+    const base = grupo.find(r => !normKey(r.codigo_frontera).includes("_") && sel(r) != null)
+    if (base) return sel(base)
+    const otra = grupo.find(r => sel(r) != null)
+    return otra ? sel(otra) : null
+  }
   // Agrupar por base, deduplicando por CÓDIGO COMPLETO (Facturación puede traer
   // la misma frontera repetida en varias filas; esas NO se suman, se toma una).
   // Solo se suman la base + sus variantes "_N" DISTINTAS.
@@ -157,6 +166,18 @@ export async function ejecutarConciliacion(
       energia_reactiva_cap_pen: sumarDec(r => r.energia_reactiva_cap_pen, grupo),
       energia_reactiva_ind_tot: sumarDec(r => r.energia_reactiva_ind_tot, grupo),
       energia_reactiva_cap_tot: sumarDec(r => r.energia_reactiva_cap_tot, grupo),
+      // Metadata heredada de la base (NT, propiedad, factor M y tarifa) — no solo energía.
+      nivel_tension:            heredar(r => r.nivel_tension, grupo),
+      propiedad_activos:        heredar(r => r.propiedad_activos, grupo),
+      nt_raw:                   heredar(r => r.nt_raw, grupo),
+      factor_m:                 heredar(r => r.factor_m, grupo),
+      g_bia:                    heredar(r => r.g_bia, grupo),
+      g_bolsa_bia:              heredar(r => r.g_bolsa_bia, grupo),
+      t_bia:                    heredar(r => r.t_bia, grupo),
+      d_bia:                    heredar(r => r.d_bia, grupo),
+      pr_bia:                   heredar(r => r.pr_bia, grupo),
+      r_bia:                    heredar(r => r.r_bia, grupo),
+      c_bia:                    heredar(r => r.c_bia, grupo),
     }
   })
 
