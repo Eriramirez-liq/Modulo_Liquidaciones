@@ -6,6 +6,7 @@ import {
   type CasoConciliacion,
   type TarifaBIA,
 } from "./conciliacion-sdl"
+import { claveBase } from "./congruencia"
 
 /**
  * Orquesta la ejecución de la conciliación SDL para un período.
@@ -114,8 +115,43 @@ export async function ejecutarConciliacion(
   const xmByFrontera  = new Map(xm.map(r  => [normKey(r.codigo_frontera), r]))
   const sdlByFrontera = new Map(sdl.map(r => [normKey(r.codigo_frontera), r]))
 
+  // ── Colapsar fronteras "_N" de Facturación en su base ──────────────────────
+  // El OR (SDL) y XM solo manejan la frontera base; las "_N" (FRT11550_8, _2…)
+  // solo existen en la facturación de BIA. Se SUMAN sus energías (activa +
+  // reactiva) a la frontera base y se conservan NT/propiedad/tarifa/factor_m de
+  // la base. Así la comparación contra SDL/XM se hace sobre la base.
+  type FilaFac = (typeof facturacion)[number]
+  const sumarDec = (sel: (r: FilaFac) => Prisma.Decimal | null, grupo: FilaFac[]): Prisma.Decimal | null => {
+    let acc: Prisma.Decimal | null = null
+    for (const r of grupo) {
+      const v = sel(r)
+      if (v != null) acc = (acc ?? new Prisma.Decimal(0)).plus(v)
+    }
+    return acc
+  }
+  const gruposFac = new Map<string, FilaFac[]>()
+  for (const f of facturacion) {
+    const base = claveBase(normKey(f.codigo_frontera))
+    const arr = gruposFac.get(base)
+    if (arr) arr.push(f)
+    else gruposFac.set(base, [f])
+  }
+  const facturacionColapsada: FilaFac[] = Array.from(gruposFac.values()).map((grupo) => {
+    // Representante para metadata: la fila base (sin "_"); si no hay, la primera.
+    const rep = grupo.find(r => !normKey(r.codigo_frontera).includes("_")) ?? grupo[0]!
+    return {
+      ...rep,
+      // Energías = suma de la base + todas sus "_N".
+      energia_kwh:              sumarDec(r => r.energia_kwh, grupo) ?? new Prisma.Decimal(0),
+      energia_reactiva_ind_pen: sumarDec(r => r.energia_reactiva_ind_pen, grupo),
+      energia_reactiva_cap_pen: sumarDec(r => r.energia_reactiva_cap_pen, grupo),
+      energia_reactiva_ind_tot: sumarDec(r => r.energia_reactiva_ind_tot, grupo),
+      energia_reactiva_cap_tot: sumarDec(r => r.energia_reactiva_cap_tot, grupo),
+    }
+  })
+
   // Detectar fronteras "huérfanas" (en XM/SDL pero no en Facturacion)
-  const facFronteras = new Set(facturacion.map(f => normKey(f.codigo_frontera)))
+  const facFronteras = new Set(facturacionColapsada.map(f => normKey(f.codigo_frontera)))
   const xmHuerfanas  = xm.filter(r  => !facFronteras.has(normKey(r.codigo_frontera))).length
   const sdlHuerfanas = sdl.filter(r => !facFronteras.has(normKey(r.codigo_frontera))).length
 
@@ -152,7 +188,7 @@ export async function ejecutarConciliacion(
   // el resultado es uno por frontera (unique periodo_id+codigo_frontera).
   const fronterasVistas = new Set<string>()
 
-  for (const f of facturacion) {
+  for (const f of facturacionColapsada) {
     const fKey   = normKey(f.codigo_frontera)
     if (fronterasVistas.has(fKey)) continue
     fronterasVistas.add(fKey)
@@ -505,7 +541,7 @@ export async function ejecutarConciliacion(
         detalle: {
           periodo:        periodoStr,
           or_id:          orId,
-          totalFronteras: facturacion.length,
+          totalFronteras: facturacionColapsada.length,
           porCaso,
           provisiones:    provisionesData.length,
           contingencias:  contingenciasData.length,
