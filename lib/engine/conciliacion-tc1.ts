@@ -1,6 +1,6 @@
 import { db } from "@/lib/db"
 import { Prisma } from "@prisma/client"
-import { claveBase, construirBaseClasif } from "./congruencia"
+import { claveBase, codigoBase, construirBaseClasif } from "./congruencia"
 
 /**
  * Conciliacion TC1 vs Facturacion.
@@ -89,16 +89,17 @@ export async function ejecutarConciliacionTC1(opts: OpcionesTC1): Promise<Resume
     }),
   ])
 
-  // Índices por frontera (normalizada), primera aparición por lado.
+  // Índices por clave BASE (las fronteras "_N" se colapsan en su base; solo el
+  // SIC sin guion es válido para conciliar). Primera aparición por lado.
   const tc1ByFrontera = new Map<string, typeof tc1[number]>()
   for (const t of tc1) {
-    const k = normKey(t.codigo_frontera)
+    const k = claveBase(normKey(t.codigo_frontera))
     if (k && !tc1ByFrontera.has(k)) tc1ByFrontera.set(k, t)
   }
-  // Mapa de cruce con Facturación: TODAS las fronteras del período (por codigo).
+  // Mapa de cruce con Facturación: TODAS las fronteras del período (por base).
   const facByFrontera = new Map<string, typeof facturacion[number]>()
   for (const f of facturacion) {
-    const k = normKey(f.codigo_frontera)
+    const k = claveBase(normKey(f.codigo_frontera))
     if (k && !facByFrontera.has(k)) facByFrontera.set(k, f)
   }
 
@@ -128,17 +129,17 @@ export async function ejecutarConciliacionTC1(opts: OpcionesTC1): Promise<Resume
   const universo: { key: string; codigo: string }[] = []
   const vistos = new Set<string>()
   for (const t of tc1) {
-    const k = normKey(t.codigo_frontera)
+    const k = claveBase(normKey(t.codigo_frontera))
     if (!k || vistos.has(k)) continue
     vistos.add(k)
-    universo.push({ key: k, codigo: t.codigo_frontera })
+    universo.push({ key: k, codigo: codigoBase(t.codigo_frontera) })
   }
   for (const f of facturacion) {
     if (orId && normKey(f.operador_red) !== normKey(orCodigo)) continue
-    const k = normKey(f.codigo_frontera)
+    const k = claveBase(normKey(f.codigo_frontera))
     if (!k || vistos.has(k)) continue
     vistos.add(k)
-    universo.push({ key: k, codigo: f.codigo_frontera })
+    universo.push({ key: k, codigo: codigoBase(f.codigo_frontera) })
   }
 
   type Row = Omit<Prisma.ResultadoConciliacionTC1CreateManyInput, "id">
@@ -150,9 +151,10 @@ export async function ejecutarConciliacionTC1(opts: OpcionesTC1): Promise<Resume
     const t = tc1ByFrontera.get(key)
 
     // Nivel de tension TC1 puede venir "1","2",... ; propiedad "USUARIO"/"OR"/"COMPARTIDO".
-    // Las fronteras "_N" heredan NT/propiedad de su base (en ambos lados).
-    const facEf = f ? efectivo(key, { nt: f.nivel_tension, prop: f.propiedad_activos }) : null
-    const tc1Ef = t ? efectivo(key, { nt: t.nivel_tension, prop: t.propiedad_activos }) : null
+    // Las fronteras "_N" heredan NT/propiedad de su base. Se usa el código COMPLETO
+    // de la fila (no la clave base) para que la herencia se aplique al colapsar.
+    const facEf = f ? efectivo(normKey(f.codigo_frontera), { nt: f.nivel_tension, prop: f.propiedad_activos }) : null
+    const tc1Ef = t ? efectivo(normKey(t.codigo_frontera), { nt: t.nivel_tension, prop: t.propiedad_activos }) : null
     const ntFac = facEf?.nt ?? null
     const ntTc1 = tc1Ef?.nt ?? null
     const prFac = facEf?.prop ?? null
@@ -214,8 +216,13 @@ export async function ejecutarConciliacionTC1(opts: OpcionesTC1): Promise<Resume
 
   // Persistir (idempotente): borrar resultados de las fronteras del universo
   // (facturación ∪ TC1) y recrear. Se borra por frontera (sin filtrar or_id)
-  // porque una frontera pudo cambiar de or_id null→OR entre corridas.
-  const fronteras = universo.map(u => u.codigo)
+  // porque una frontera pudo cambiar de or_id null→OR entre corridas. Incluye
+  // los códigos crudos ("_N") para limpiar resultados de corridas previas.
+  const fronteras = Array.from(new Set([
+    ...universo.map(u => u.codigo),
+    ...facturacion.map(f => f.codigo_frontera),
+    ...tc1.map(t => t.codigo_frontera),
+  ]))
   await db.$transaction(async (tx) => {
     await tx.resultadoConciliacionTC1.deleteMany({
       where: {

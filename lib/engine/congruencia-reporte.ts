@@ -3,15 +3,11 @@ import {
   clasificarCongruencia,
   clasifConHerencia,
   claveBase,
+  codigoBase,
   construirBaseClasif,
   normalizar,
   type ClasifFuente,
 } from "@/lib/engine/congruencia"
-
-/** Código base (sin sufijo "_N") preservando la capitalización original. */
-function codigoBase(codigo: string): string {
-  return codigo.split("_")[0] ?? codigo
-}
 
 /**
  * Helper de servidor que construye el reporte de diferencias de congruencia

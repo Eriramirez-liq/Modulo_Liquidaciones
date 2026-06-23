@@ -54,6 +54,11 @@ export function claveBase(clave: string): string {
   return i >= 0 ? clave.slice(0, i) : clave
 }
 
+/** Código base (sin sufijo "_N") preservando la capitalización original. */
+export function codigoBase(codigo: string): string {
+  return codigo.split("_")[0] ?? codigo
+}
+
 export interface FuenteFila { clave: string; nt: string; prop: string }
 
 /**
