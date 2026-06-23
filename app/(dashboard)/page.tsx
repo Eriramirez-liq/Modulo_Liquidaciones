@@ -136,9 +136,10 @@ export default function InicioPage() {
           {/* KPIs del mes en curso */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
             <KPI label="CARGO STR" main={cop(d?.cargoStrCop ?? 0)} color="#0369a1"
-              sub="Total a pagar del mes" />
+              sub="Total a pagar del mes" href="/cargos-str" />
             <KPI label="CARGO SDL" main={cop(d?.cargoSdlCop ?? 0)} color="#1d4ed8"
-              sub="Preliquidación activa + reactiva" />
+              sub="Preliquidación activa + reactiva"
+              href={periodoId ? `/preliquidaciones-sdl?periodoId=${periodoId}` : undefined} />
             <KPI label="PÉRDIDAS" main={cop(d?.valorContingencias ?? 0)} color="#f59e0b"
               sub={`${d?.contingenciasAbiertas ?? 0} contingencia(s)`}
               href={periodoId ? `/gestiones?tab=contingencias&periodoId=${periodoId}` : undefined} />
@@ -149,7 +150,8 @@ export default function InicioPage() {
               main={d?.compensacionesCop != null ? cop(d.compensacionesCop) : "—"} color="#7c3aed"
               sub="Lógica pendiente" />
             <KPI label="CONGRUENCIA" main={`${d?.congruenciaPct ?? 0}%`} color="#15803d"
-              sub={`${d?.congruentes ?? 0}/${d?.fronterasFacturadas ?? 0} fronteras (NT + propiedad)`} />
+              sub={`${d?.congruentes ?? 0}/${d?.fronterasFacturadas ?? 0} fronteras (NT + propiedad)`}
+              href={periodoId ? `/congruencia?periodoId=${periodoId}` : undefined} />
             <KPI label="FRONTERAS FACTURADAS" main={d?.fronterasFacturadas ?? 0} color="#0369a1"
               sub="Fronteras únicas en facturación" />
           </div>
