@@ -139,8 +139,13 @@ export async function ejecutarConciliacion(
   const facturacionColapsada: FilaFac[] = Array.from(gruposFac.values()).map((grupo) => {
     // Representante para metadata: la fila base (sin "_"); si no hay, la primera.
     const rep = grupo.find(r => !normKey(r.codigo_frontera).includes("_")) ?? grupo[0]!
+    // Código de la frontera = SIEMPRE la base (sin "_"), aunque facturación solo
+    // tenga las "_N" (el OR solo maneja la base, así que hay que cruzar contra
+    // ella). Se toma el prefijo antes del primer "_".
+    const codigoBase = rep.codigo_frontera.split("_")[0] ?? rep.codigo_frontera
     return {
       ...rep,
+      codigo_frontera:          codigoBase,
       // Energías = suma de la base + todas sus "_N".
       energia_kwh:              sumarDec(r => r.energia_kwh, grupo) ?? new Prisma.Decimal(0),
       energia_reactiva_ind_pen: sumarDec(r => r.energia_reactiva_ind_pen, grupo),
@@ -458,7 +463,8 @@ export async function ejecutarConciliacion(
   // la frontera no tuvo match en SDL — si filtraramos por or_id, esas filas
   // sobrevivirian al DELETE y luego romperian el @@unique al re-insertar.
   const fronterasACincoliar = [
-    ...facturacion.map(f => f.codigo_frontera),
+    ...facturacion.map(f => f.codigo_frontera),          // crudos (limpia _N de corridas previas)
+    ...facturacionColapsada.map(f => f.codigo_frontera), // bases colapsadas (lo que se re-inserta)
     ...Array.from(huerfanasByKey.values()).map(h => h.codigo),
   ]
   const whereDerivados = {
