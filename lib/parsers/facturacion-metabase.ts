@@ -153,6 +153,8 @@ export function mapearFilasMetabase(
   const colR        = findCol("Tarifa R", "tarifa_r", "r_bia", "r")
   const colC        = findCol("Tarifa C", "tarifa_c", "c_bia")
   const colTarTotal = findCol("Tarifa Total", "tarifa_total_bia", "tarifa_total")
+  // Valor total facturado — columna "Total" (match exacto, NO confunde con "Tarifa Total").
+  const colTotal    = findCol("Total", "total", "valor_total", "valor_facturado", "total_facturado")
 
   // Validar columnas requeridas
   const faltantes: string[] = []
@@ -207,6 +209,7 @@ export function mapearFilasMetabase(
       r_bia:            colR        ? toNum(r[colR])        : null,
       c_bia:            colC        ? toNum(r[colC])        : null,
       tarifa_total_bia: colTarTotal ? toNum(r[colTarTotal]) : null,
+      valor_total_cop:  colTotal    ? toNum(r[colTotal])    : null,
     })
   }
 

@@ -28,6 +28,8 @@ export type FilaFacturacion = {
   r_bia:                    number | null
   c_bia:                    number | null
   tarifa_total_bia:         number | null
+  // Valor total facturado (columna "Total" de la query de facturación).
+  valor_total_cop:          number | null
 }
 
 // Etiquetas en formato amigable porque las claves se usan directamente como

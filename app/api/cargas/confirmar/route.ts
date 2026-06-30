@@ -203,6 +203,7 @@ export async function POST(request: NextRequest) {
               r_bia:                    f.r_bia,
               c_bia:                    f.c_bia,
               tarifa_total_bia:         f.tarifa_total_bia,
+              valor_total_cop:          f.valor_total_cop,
             })),
           })
           break

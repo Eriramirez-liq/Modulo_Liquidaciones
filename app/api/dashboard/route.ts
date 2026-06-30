@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
     // Congruencia — clasificación por frontera en las 3 fuentes (clave string)
     db.registroFacturacion.findMany({
       where: { periodo_id: periodoStr },
-      select: { codigo_frontera: true, nivel_tension: true, propiedad_activos: true, energia_kwh: true, tarifa_total_bia: true },
+      select: { codigo_frontera: true, nivel_tension: true, propiedad_activos: true, energia_kwh: true, tarifa_total_bia: true, valor_total_cop: true },
     }),
     db.registroSDL.findMany({
       where: { periodo_id: periodoStr, es_duplicado: false },
@@ -191,7 +191,11 @@ export async function GET(request: NextRequest) {
     fullVistas.add(full)
     const kwh = Number(f.energia_kwh ?? 0)
     fronterasFacturadasKwh += kwh
-    facturacionTotalCop += kwh * Number(f.tarifa_total_bia ?? 0)
+    // Valor total facturado = columna "Total" de facturación. Fallback a
+    // energía × tarifa total mientras no se haya recargado facturación.
+    facturacionTotalCop += f.valor_total_cop != null
+      ? Number(f.valor_total_cop)
+      : kwh * Number(f.tarifa_total_bia ?? 0)
   }
 
   // ── Top 10 fronteras por impacto (provisión + pérdida) ───────────────────
