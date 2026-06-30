@@ -12,6 +12,7 @@ datasource db {
 enum Rol {
   ANALISTA
   ADMINISTRADOR
+  CONSULTA
 }
 
 enum TipoFuente {
