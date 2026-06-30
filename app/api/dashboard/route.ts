@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
     cargoSdlCop: 0, cargoSdlActivaCop: 0, cargoSdlReactivaCop: 0,
     compensacionesCop: null as number | null,
     congruenciaPct: 0, congruentes: 0, fronterasFacturadas: 0, fronterasFacturadasKwh: 0,
+    facturacionTotalCop: 0, provisionesKwh: 0, perdidasKwh: 0,
     topFronteras: [] as Array<{ codigoFrontera: string; provisionCop: number; perdidaCop: number; totalCop: number }>,
   }
 
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
   const periodoStr = `${periodo.anio}-${String(periodo.mes).padStart(2, "0")}`
 
   const [
-    resultados, provisiones, contingenciasAgg, disputas,
+    resultados, provisionesAgg, contingenciasAgg, disputas,
     strAgg, sdlAgg, facturacion, sdlClasif, tc1Clasif,
     provPorFrontera, contPorFrontera,
   ] = await Promise.all([
@@ -69,11 +70,15 @@ export async function GET(request: NextRequest) {
         requiere_alerta_manual: true,
       },
     }),
-    db.provision.count({ where: { periodo_id: periodoId } }),
+    db.provision.aggregate({
+      where: { periodo_id: periodoId },
+      _count: { _all: true },
+      _sum:   { energia_kwh: true },
+    }),
     db.contingencia.aggregate({
       where: { periodo_id: periodoId, estado: "PENDIENTE" },
       _count: { _all: true },
-      _sum:   { costo_estimado_cop: true },
+      _sum:   { costo_estimado_cop: true, energia_kwh: true },
     }),
     db.disputa.count({ where: { periodo_id: periodoId } }),
     // Cargo STR
@@ -89,7 +94,7 @@ export async function GET(request: NextRequest) {
     // Congruencia — clasificación por frontera en las 3 fuentes (clave string)
     db.registroFacturacion.findMany({
       where: { periodo_id: periodoStr },
-      select: { codigo_frontera: true, nivel_tension: true, propiedad_activos: true, energia_kwh: true },
+      select: { codigo_frontera: true, nivel_tension: true, propiedad_activos: true, energia_kwh: true, tarifa_total_bia: true },
     }),
     db.registroSDL.findMany({
       where: { periodo_id: periodoStr, es_duplicado: false },
@@ -120,6 +125,10 @@ export async function GET(request: NextRequest) {
   const valorProvisiones = resultados.reduce((s, r) => s + Number(r.impacto_financiero_l1 ?? 0), 0)
   const valorDisputas    = resultados.reduce((s, r) => s + Number(r.impacto_financiero_l2 ?? 0), 0)
   const valorContingencias = Number(contingenciasAgg._sum.costo_estimado_cop ?? 0)
+  // kWh de diferencia (energía) de provisiones y pérdidas (contingencias).
+  const provisiones        = provisionesAgg._count._all
+  const provisionesKwh     = Number(provisionesAgg._sum.energia_kwh ?? 0)
+  const perdidasKwh        = Number(contingenciasAgg._sum.energia_kwh ?? 0)
 
   // ── Cargo STR / SDL ──────────────────────────────────────────────────────
   const cargoStrCop        = Number(strAgg._sum.valor_cop ?? 0)
@@ -170,15 +179,19 @@ export async function GET(request: NextRequest) {
     ? Math.round((congruentes / fronterasFacturadas) * 100)
     : 0
 
-  // kWh activa facturada del período (dedupe por código completo para no doblar
-  // filas repetidas; las "_N" sí suman porque son códigos distintos).
+  // kWh activa facturada y VALOR total facturado (energía × tarifa total) del
+  // período. Dedupe por código completo para no doblar filas repetidas; las "_N"
+  // sí suman porque son códigos distintos.
   const fullVistas = new Set<string>()
   let fronterasFacturadasKwh = 0
+  let facturacionTotalCop = 0
   for (const f of facturacion) {
     const full = norm(f.codigo_frontera)
     if (!full || fullVistas.has(full)) continue
     fullVistas.add(full)
-    fronterasFacturadasKwh += Number(f.energia_kwh ?? 0)
+    const kwh = Number(f.energia_kwh ?? 0)
+    fronterasFacturadasKwh += kwh
+    facturacionTotalCop += kwh * Number(f.tarifa_total_bia ?? 0)
   }
 
   // ── Top 10 fronteras por impacto (provisión + pérdida) ───────────────────
@@ -221,6 +234,7 @@ export async function GET(request: NextRequest) {
     cargoSdlCop, cargoSdlActivaCop, cargoSdlReactivaCop,
     compensacionesCop: null, // placeholder — lógica pendiente
     congruenciaPct, congruentes, fronterasFacturadas, fronterasFacturadasKwh,
+    facturacionTotalCop, provisionesKwh, perdidasKwh,
     topFronteras,
   })
 }

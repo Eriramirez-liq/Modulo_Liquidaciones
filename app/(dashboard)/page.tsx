@@ -16,6 +16,7 @@ type DashData = {
   cargoSdlCop: number; cargoSdlActivaCop: number; cargoSdlReactivaCop: number
   compensacionesCop: number | null
   congruenciaPct: number; congruentes: number; fronterasFacturadas: number; fronterasFacturadasKwh: number
+  facturacionTotalCop: number; provisionesKwh: number; perdidasKwh: number
   topFronteras: { codigoFrontera: string; provisionCop: number; perdidaCop: number; totalCop: number }[]
 }
 
@@ -63,6 +64,9 @@ export default function InicioPage() {
 
   function cop(v: number) {
     return `$ ${v.toLocaleString("es-CO", { maximumFractionDigits: 0 })}`
+  }
+  function kwh(v: number) {
+    return `${v.toLocaleString("es-CO", { maximumFractionDigits: 0 })} kWh`
   }
 
   return (
@@ -142,10 +146,10 @@ export default function InicioPage() {
               sub="Preliquidación activa + reactiva"
               href={periodoId ? `/preliquidaciones-sdl?periodoId=${periodoId}` : undefined} />
             <KPI label="PÉRDIDAS" main={cop(d?.valorContingencias ?? 0)} color="#f59e0b"
-              sub={`${d?.contingenciasAbiertas ?? 0} contingencia(s)`}
+              sub={`${kwh(d?.perdidasKwh ?? 0)} · ${d?.contingenciasAbiertas ?? 0} frontera(s)`}
               href={periodoId ? `/gestiones?tab=contingencias&periodoId=${periodoId}` : undefined} />
             <KPI label="PROVISIONES" main={cop(d?.valorProvisiones ?? 0)} color="#3b82f6"
-              sub={`${d?.provisiones ?? 0} provisión(es)`}
+              sub={`${kwh(d?.provisionesKwh ?? 0)} · ${d?.provisiones ?? 0} frontera(s)`}
               href={periodoId ? `/gestiones?tab=provisiones&periodoId=${periodoId}` : undefined} />
             <KPI label="COMPENSACIONES EN EL MES"
               main={d?.compensacionesCop != null ? cop(d.compensacionesCop) : "—"} color="#7c3aed"
@@ -153,8 +157,8 @@ export default function InicioPage() {
             <KPI label="CONGRUENCIA" main={`${d?.congruenciaPct ?? 0}%`} color="#15803d"
               sub={`${d?.congruentes ?? 0}/${d?.fronterasFacturadas ?? 0} fronteras (NT + propiedad)`}
               href={periodoId ? `/congruencia?periodoId=${periodoId}` : undefined} />
-            <KPI label="FRONTERAS FACTURADAS" main={d?.fronterasFacturadas ?? 0} color="#0369a1"
-              sub={`${(d?.fronterasFacturadasKwh ?? 0).toLocaleString("es-CO", { maximumFractionDigits: 0 })} kWh`} />
+            <KPI label="FACTURACIÓN" main={cop(d?.facturacionTotalCop ?? 0)} color="#0369a1"
+              sub={`${kwh(d?.fronterasFacturadasKwh ?? 0)} · ${d?.fronterasFacturadas ?? 0} fronteras`} />
           </div>
 
           {/* Charts */}
