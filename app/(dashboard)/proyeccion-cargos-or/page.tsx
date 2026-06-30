@@ -42,12 +42,16 @@ interface Respuesta {
   meses: FilaMes[]
 }
 
-// ─── Formateadores ───────────────────────────────────────────────────────────
+// ─── Paleta ───────────────────────────────────────────────────────────────
 
-const ACCENT = "#07c5a8"
-const AZUL_PROY = "#eff6ff"   // fondo columnas proyectadas
+const AZUL_PROY = "#eff6ff"     // fondo columnas proyectadas (normal)
+const AZUL_PROY_SOMBRA = "#dbeafe" // fondo columnas proyectadas en filas sombreadas
 const AZUL_BORDE = "#bfdbfe"
-const GRIS_REAL = "#f9fafb"   // fondo columnas reales
+const GRIS_REAL = "#f9fafb"     // fondo encabezado de meses reales
+const GRIS_SOMBRA = "#f3f4f6"   // fondo de filas sombreadas (subtotales)
+const TEAL_TOTAL = "#0f766e"    // fondo de la fila Total Cargos OR
+
+// ─── Formateadores ───────────────────────────────────────────────────────────
 
 const fmtKwh = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 })
 const fmtCop = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 })
@@ -76,6 +80,19 @@ function etiquetaMes(periodo: string): string {
   return `${NOMBRE_MES[mes] ?? mes} ${anio}`
 }
 
+// Suma los tres niveles de un PorNT; null si el bloque es null.
+function sumaNT(p: PorNT<number> | null | undefined): number | null {
+  if (!p) return null
+  return p.nt1 + p.nt2 + p.nt3
+}
+// Total SDL (activa + reactiva en COP); null si ambos bloques son null.
+function totalSdl(m: FilaMes): number | null {
+  const a = sumaNT(m.salida?.sdlActivaNT)
+  const r = sumaNT(m.salida?.sdlReactivaNT)
+  if (a === null && r === null) return null
+  return (a ?? 0) + (r ?? 0)
+}
+
 // ─── Definición de filas (rubros) de la matriz ────────────────────────────────
 
 type Tipo = "kwh" | "cop" | "precio"
@@ -83,8 +100,11 @@ type Tipo = "kwh" | "cop" | "precio"
 interface FilaDef {
   label: string
   tipo: Tipo
-  destacar?: boolean
-  // Valor de la celda para un mes dado (null = sin dato / pendiente)
+  pctValor?: number   // valor para la columna "%" (solo demanda)
+  sangria?: boolean   // sub-fila indentada (NT)
+  negrilla?: boolean  // label + valores en negrilla
+  sombra?: boolean    // fondo sombreado (subtotales SDL / STR)
+  total?: boolean     // fila Total Cargos OR (resaltada)
   valor: (m: FilaMes) => number | null
 }
 
@@ -98,15 +118,15 @@ function construirSecciones(p: Porcentajes): Seccion[] {
     {
       titulo: "Demanda (kWh)",
       filas: [
-        { label: "SDL Energy (total)", tipo: "kwh", destacar: true, valor: (m) => m.sdlEnergy },
-        { label: `Activa NT1 (${pct(p.activaNT.nt1)})`, tipo: "kwh", valor: (m) => m.activaNT?.nt1 ?? null },
-        { label: `Activa NT2 (${pct(p.activaNT.nt2)})`, tipo: "kwh", valor: (m) => m.activaNT?.nt2 ?? null },
-        { label: `Activa NT3 (${pct(p.activaNT.nt3)})`, tipo: "kwh", valor: (m) => m.activaNT?.nt3 ?? null },
-        { label: `Reactiva total (${pct(p.reactivaPct)})`, tipo: "kwh", valor: (m) => m.reactivaTotal },
-        { label: `Reactiva NT1 (${pct(p.reactivaNT.nt1)})`, tipo: "kwh", valor: (m) => m.reactivaNT?.nt1 ?? null },
-        { label: `Reactiva NT2 (${pct(p.reactivaNT.nt2)})`, tipo: "kwh", valor: (m) => m.reactivaNT?.nt2 ?? null },
-        { label: `Reactiva NT3 (${pct(p.reactivaNT.nt3)})`, tipo: "kwh", valor: (m) => m.reactivaNT?.nt3 ?? null },
-        { label: `STR Energy (+${pct(p.strPct)})`, tipo: "kwh", valor: (m) => m.strEnergy },
+        { label: "SDL Energy (kWh)", tipo: "kwh", negrilla: true, pctValor: 1, valor: (m) => m.sdlEnergy },
+        { label: "Active NT1", tipo: "kwh", sangria: true, pctValor: p.activaNT.nt1, valor: (m) => m.activaNT?.nt1 ?? null },
+        { label: "Active NT2", tipo: "kwh", sangria: true, pctValor: p.activaNT.nt2, valor: (m) => m.activaNT?.nt2 ?? null },
+        { label: "Active NT3", tipo: "kwh", sangria: true, pctValor: p.activaNT.nt3, valor: (m) => m.activaNT?.nt3 ?? null },
+        { label: "Reactive Energy (kWh)", tipo: "kwh", negrilla: true, pctValor: p.reactivaPct, valor: (m) => m.reactivaTotal },
+        { label: "NT1", tipo: "kwh", sangria: true, pctValor: p.reactivaNT.nt1, valor: (m) => m.reactivaNT?.nt1 ?? null },
+        { label: "NT2", tipo: "kwh", sangria: true, pctValor: p.reactivaNT.nt2, valor: (m) => m.reactivaNT?.nt2 ?? null },
+        { label: "NT3", tipo: "kwh", sangria: true, pctValor: p.reactivaNT.nt3, valor: (m) => m.reactivaNT?.nt3 ?? null },
+        { label: "STR Energy (kWh)", tipo: "kwh", negrilla: true, pctValor: p.strPct, valor: (m) => m.strEnergy },
       ],
     },
     {
@@ -119,20 +139,22 @@ function construirSecciones(p: Porcentajes): Seccion[] {
         { label: "Precio reactiva NT2", tipo: "precio", valor: (m) => m.precioReactivaNT.nt2 },
         { label: "Precio reactiva NT3", tipo: "precio", valor: (m) => m.precioReactivaNT.nt3 },
         { label: "Precio STR", tipo: "precio", valor: (m) => m.precioStr },
-        { label: "Total a pagar STR", tipo: "cop", valor: (m) => m.strTotalCop },
       ],
     },
     {
-      titulo: "Cargos OR (COP)",
+      titulo: "Salida flujo Cargos OR (COP)",
       filas: [
-        { label: "SDL activa NT1", tipo: "cop", valor: (m) => m.salida?.sdlActivaNT?.nt1 ?? null },
-        { label: "SDL activa NT2", tipo: "cop", valor: (m) => m.salida?.sdlActivaNT?.nt2 ?? null },
-        { label: "SDL activa NT3", tipo: "cop", valor: (m) => m.salida?.sdlActivaNT?.nt3 ?? null },
-        { label: "SDL reactiva NT1", tipo: "cop", valor: (m) => m.salida?.sdlReactivaNT?.nt1 ?? null },
-        { label: "SDL reactiva NT2", tipo: "cop", valor: (m) => m.salida?.sdlReactivaNT?.nt2 ?? null },
-        { label: "SDL reactiva NT3", tipo: "cop", valor: (m) => m.salida?.sdlReactivaNT?.nt3 ?? null },
-        { label: "STR", tipo: "cop", valor: (m) => m.salida?.str ?? null },
-        { label: "Total Cargos OR", tipo: "cop", destacar: true, valor: (m) => m.salida?.total ?? null },
+        { label: "SDL", tipo: "cop", negrilla: true, sombra: true, valor: totalSdl },
+        { label: "Active Energy", tipo: "cop", negrilla: true, valor: (m) => sumaNT(m.salida?.sdlActivaNT) },
+        { label: "NT1", tipo: "cop", sangria: true, valor: (m) => m.salida?.sdlActivaNT?.nt1 ?? null },
+        { label: "NT2", tipo: "cop", sangria: true, valor: (m) => m.salida?.sdlActivaNT?.nt2 ?? null },
+        { label: "NT3", tipo: "cop", sangria: true, valor: (m) => m.salida?.sdlActivaNT?.nt3 ?? null },
+        { label: "Reactive Energy", tipo: "cop", negrilla: true, valor: (m) => sumaNT(m.salida?.sdlReactivaNT) },
+        { label: "NT1", tipo: "cop", sangria: true, valor: (m) => m.salida?.sdlReactivaNT?.nt1 ?? null },
+        { label: "NT2", tipo: "cop", sangria: true, valor: (m) => m.salida?.sdlReactivaNT?.nt2 ?? null },
+        { label: "NT3", tipo: "cop", sangria: true, valor: (m) => m.salida?.sdlReactivaNT?.nt3 ?? null },
+        { label: "STR", tipo: "cop", negrilla: true, sombra: true, valor: (m) => m.salida?.str ?? null },
+        { label: "Total Cargos OR (COP)", tipo: "cop", total: true, valor: (m) => m.salida?.total ?? null },
       ],
     },
   ]
@@ -142,6 +164,13 @@ function formatear(v: number | null, tipo: Tipo): string {
   if (tipo === "kwh") return kwh(v)
   if (tipo === "precio") return precio(v)
   return cop(v)
+}
+
+// Fondo de una celda de mes según fila/columna.
+function fondoCelda(fila: FilaDef, m: FilaMes): string {
+  if (fila.total) return TEAL_TOTAL
+  if (m.esProyectado) return fila.sombra ? AZUL_PROY_SOMBRA : AZUL_PROY
+  return fila.sombra ? GRIS_SOMBRA : "transparent"
 }
 
 // ─── Componente ────────────────────────────────────────────────────────────
@@ -178,7 +207,7 @@ export default function ProyeccionCargosORPage() {
     position: "sticky", left: 0, zIndex: 2, background: "#fff",
     textAlign: "left", padding: "8px 12px", borderRight: "1px solid #e5e7eb",
     fontSize: "0.8rem", fontWeight: 500, color: "#374151", whiteSpace: "nowrap",
-    minWidth: 220,
+    minWidth: 200,
   }
 
   return (
@@ -261,6 +290,13 @@ export default function ProyeccionCargosORPage() {
                 <th style={{ ...thRubro, zIndex: 3, fontWeight: 600, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.04em", color: "#9ca3af" }}>
                   Mes facturación
                 </th>
+                <th style={{
+                  padding: "8px 10px", textAlign: "right", fontSize: "0.72rem",
+                  fontWeight: 600, color: "#9ca3af", background: "#fff",
+                  borderRight: "1px solid #e5e7eb", minWidth: 64,
+                }}>
+                  %
+                </th>
                 {meses.map((m) => (
                   <th key={m.periodoConsumo} style={{
                     padding: "8px 14px", textAlign: "right", whiteSpace: "nowrap",
@@ -297,7 +333,7 @@ function SeccionFilas({ seccion, meses, thRubro }: {
   return (
     <>
       <tr>
-        <td colSpan={meses.length + 1} style={{
+        <td colSpan={meses.length + 2} style={{
           position: "sticky", left: 0,
           background: "#f3f4f6", padding: "6px 12px",
           fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase",
@@ -306,32 +342,48 @@ function SeccionFilas({ seccion, meses, thRubro }: {
           {seccion.titulo}
         </td>
       </tr>
-      {seccion.filas.map((fila) => (
-        <tr key={fila.label} style={{ borderTop: "1px solid #f3f4f6" }}>
-          <td style={{
-            ...thRubro,
-            fontWeight: fila.destacar ? 700 : 500,
-            color: fila.destacar ? "#111827" : "#374151",
-          }}>
-            {fila.label}
-          </td>
-          {meses.map((m) => {
-            const v = fila.valor(m)
-            return (
-              <td key={m.periodoConsumo} style={{
-                padding: "7px 14px", textAlign: "right", whiteSpace: "nowrap",
-                fontSize: "0.82rem",
-                fontWeight: fila.destacar ? 700 : 400,
-                color: v === null ? "#cbd5e1" : (fila.destacar ? "#0f766e" : "#374151"),
-                background: m.esProyectado ? AZUL_PROY : "transparent",
-                borderLeft: m.esProyectado ? `1px solid ${AZUL_BORDE}` : "1px solid #f6f6f6",
-              }}>
-                {formatear(v, fila.tipo)}
-              </td>
-            )
-          })}
-        </tr>
-      ))}
+      {seccion.filas.map((fila, i) => {
+        const labelBg = fila.total ? TEAL_TOTAL : fila.sombra ? GRIS_SOMBRA : "#fff"
+        const labelColor = fila.total ? "#fff" : fila.negrilla ? "#111827" : "#374151"
+        const pctBg = fila.total ? TEAL_TOTAL : fila.sombra ? GRIS_SOMBRA : "#fff"
+        return (
+          <tr key={`${fila.label}-${i}`} style={{ borderTop: "1px solid #f3f4f6" }}>
+            <td style={{
+              ...thRubro,
+              background: labelBg,
+              paddingLeft: fila.sangria ? 28 : 12,
+              fontWeight: fila.negrilla || fila.total ? 700 : 400,
+              color: labelColor,
+            }}>
+              {fila.label}
+            </td>
+            <td style={{
+              padding: "7px 10px", textAlign: "right", whiteSpace: "nowrap",
+              fontSize: "0.78rem", color: fila.total ? "#fff" : "#9ca3af",
+              background: pctBg, borderRight: "1px solid #e5e7eb",
+              fontWeight: fila.negrilla ? 600 : 400,
+            }}>
+              {fila.pctValor !== undefined ? pct(fila.pctValor) : ""}
+            </td>
+            {meses.map((m) => {
+              const v = fila.valor(m)
+              const esTotal = fila.total
+              return (
+                <td key={m.periodoConsumo} style={{
+                  padding: "7px 14px", textAlign: "right", whiteSpace: "nowrap",
+                  fontSize: "0.82rem",
+                  fontWeight: fila.negrilla || esTotal ? 700 : 400,
+                  color: esTotal ? "#fff" : v === null ? "#cbd5e1" : "#374151",
+                  background: fondoCelda(fila, m),
+                  borderLeft: m.esProyectado ? `1px solid ${AZUL_BORDE}` : "1px solid #f6f6f6",
+                }}>
+                  {formatear(v, fila.tipo)}
+                </td>
+              )
+            })}
+          </tr>
+        )
+      })}
     </>
   )
 }
