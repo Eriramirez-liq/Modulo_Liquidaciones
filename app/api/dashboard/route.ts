@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     cargoStrCop: 0,
     cargoSdlCop: 0, cargoSdlActivaCop: 0, cargoSdlReactivaCop: 0,
     compensacionesCop: null as number | null,
-    congruenciaPct: 0, congruentes: 0, fronterasFacturadas: 0,
+    congruenciaPct: 0, congruentes: 0, fronterasFacturadas: 0, fronterasFacturadasKwh: 0,
     topFronteras: [] as Array<{ codigoFrontera: string; provisionCop: number; perdidaCop: number; totalCop: number }>,
   }
 
@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
     // Congruencia — clasificación por frontera en las 3 fuentes (clave string)
     db.registroFacturacion.findMany({
       where: { periodo_id: periodoStr },
-      select: { codigo_frontera: true, nivel_tension: true, propiedad_activos: true },
+      select: { codigo_frontera: true, nivel_tension: true, propiedad_activos: true, energia_kwh: true },
     }),
     db.registroSDL.findMany({
       where: { periodo_id: periodoStr, es_duplicado: false },
@@ -170,6 +170,17 @@ export async function GET(request: NextRequest) {
     ? Math.round((congruentes / fronterasFacturadas) * 100)
     : 0
 
+  // kWh activa facturada del período (dedupe por código completo para no doblar
+  // filas repetidas; las "_N" sí suman porque son códigos distintos).
+  const fullVistas = new Set<string>()
+  let fronterasFacturadasKwh = 0
+  for (const f of facturacion) {
+    const full = norm(f.codigo_frontera)
+    if (!full || fullVistas.has(full)) continue
+    fullVistas.add(full)
+    fronterasFacturadasKwh += Number(f.energia_kwh ?? 0)
+  }
+
   // ── Top 10 fronteras por impacto (provisión + pérdida) ───────────────────
   const impactoPorFrontera = new Map<string, { provisionCop: number; perdidaCop: number }>()
   for (const p of provPorFrontera) {
@@ -209,7 +220,7 @@ export async function GET(request: NextRequest) {
     cargoStrCop,
     cargoSdlCop, cargoSdlActivaCop, cargoSdlReactivaCop,
     compensacionesCop: null, // placeholder — lógica pendiente
-    congruenciaPct, congruentes, fronterasFacturadas,
+    congruenciaPct, congruentes, fronterasFacturadas, fronterasFacturadasKwh,
     topFronteras,
   })
 }

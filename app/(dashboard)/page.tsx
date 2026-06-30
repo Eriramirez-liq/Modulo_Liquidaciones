@@ -15,7 +15,7 @@ type DashData = {
   cargoStrCop: number
   cargoSdlCop: number; cargoSdlActivaCop: number; cargoSdlReactivaCop: number
   compensacionesCop: number | null
-  congruenciaPct: number; congruentes: number; fronterasFacturadas: number
+  congruenciaPct: number; congruentes: number; fronterasFacturadas: number; fronterasFacturadasKwh: number
   topFronteras: { codigoFrontera: string; provisionCop: number; perdidaCop: number; totalCop: number }[]
 }
 
@@ -154,7 +154,7 @@ export default function InicioPage() {
               sub={`${d?.congruentes ?? 0}/${d?.fronterasFacturadas ?? 0} fronteras (NT + propiedad)`}
               href={periodoId ? `/congruencia?periodoId=${periodoId}` : undefined} />
             <KPI label="FRONTERAS FACTURADAS" main={d?.fronterasFacturadas ?? 0} color="#0369a1"
-              sub="Fronteras únicas en facturación" />
+              sub={`${(d?.fronterasFacturadasKwh ?? 0).toLocaleString("es-CO", { maximumFractionDigits: 0 })} kWh`} />
           </div>
 
           {/* Charts */}
