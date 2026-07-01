@@ -161,16 +161,9 @@ export default function InicioPage() {
               sub={`${kwh(d?.fronterasFacturadasKwh ?? 0)} · ${d?.fronterasFacturadas ?? 0} fronteras`} />
           </div>
 
-          {/* Charts */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <ChartCard title="DISTRIBUCIÓN DE FRONTERAS">
-              <div style={{ textAlign: "center", color: "#9ca3af" }}>
-                <div style={{ fontSize: "2.5rem", fontWeight: 700, color: "#d1d5db" }}>
-                  {d?.totalFronteras ?? 0}
-                </div>
-                <div style={{ fontSize: "0.7rem", letterSpacing: "0.08em" }}>FRONTERAS</div>
-              </div>
-            </ChartCard>
+          {/* Indicadores de gestión + charts */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <IndicadoresGestion d={d} />
             <ChartCard title="TOP 10 FRONTERAS — IMPACTO (PÉRDIDA + PROVISIÓN)">
               <TopFronteras items={d?.topFronteras ?? []} cop={cop} />
             </ChartCard>
@@ -278,6 +271,133 @@ function TopFronteras({ items, cop }: {
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+// ─── Indicadores de gestión ──────────────────────────────────────────────────
+
+// Formato compacto para captions (mil M / M / k).
+function compacto(v: number): string {
+  const abs = Math.abs(v)
+  if (abs >= 1e9) return (v / 1e9).toLocaleString("es-CO", { maximumFractionDigits: 1 }) + " mil M"
+  if (abs >= 1e6) return (v / 1e6).toLocaleString("es-CO", { maximumFractionDigits: 1 }) + " M"
+  if (abs >= 1e3) return (v / 1e3).toLocaleString("es-CO", { maximumFractionDigits: 0 }) + " k"
+  return v.toLocaleString("es-CO", { maximumFractionDigits: 0 })
+}
+
+function IndicadoresGestion({ d }: { d: DashData | null }) {
+  const facturadoCop  = d?.facturacionTotalCop    ?? 0
+  const perdidaCop    = d?.valorContingencias     ?? 0
+  const kwhFac        = d?.fronterasFacturadasKwh  ?? 0
+  const kwhPerdida    = d?.perdidasKwh             ?? 0
+  const kwhProvision  = d?.provisionesKwh          ?? 0
+
+  // Cada indicador: valor = fracción (0..1); meta en % (umbral máximo aceptable).
+  const indicadores = [
+    {
+      label: "% Pérdida",
+      valor: facturadoCop > 0 ? perdidaCop / facturadoCop : null,
+      metaPct: 0.1,
+      calculo: `$${compacto(perdidaCop)} pérdida / $${compacto(facturadoCop)} facturado`,
+    },
+    {
+      label: "% Dif. kWh absoluto",
+      valor: kwhFac > 0 ? (kwhPerdida + kwhProvision) / kwhFac : null,
+      metaPct: 0.35,
+      calculo: `${compacto(kwhPerdida + kwhProvision)} / ${compacto(kwhFac)} kWh`,
+    },
+    {
+      label: "% Reportado de más a XM",
+      valor: kwhFac > 0 ? kwhPerdida / kwhFac : null,
+      metaPct: 0.15,
+      calculo: `${compacto(kwhPerdida)} pérdida / ${compacto(kwhFac)} kWh`,
+    },
+    {
+      label: "% Reportado de menos a XM",
+      valor: kwhFac > 0 ? kwhProvision / kwhFac : null,
+      metaPct: 0.2,
+      calculo: `${compacto(kwhProvision)} provisión / ${compacto(kwhFac)} kWh`,
+    },
+  ]
+
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 16 }}>
+      <div style={{
+        fontSize: "0.65rem", fontWeight: 600, color: "#9ca3af",
+        textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 16,
+      }}>
+        INDICADORES DE GESTIÓN
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+        {indicadores.map(i => (
+          <Indicador key={i.label} {...i} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Indicador({ label, valor, metaPct, calculo }: {
+  label: string; valor: number | null; metaPct: number; calculo: string
+}) {
+  const pct = valor === null ? null : valor * 100
+  const cumple = pct === null ? null : pct <= metaPct
+
+  const VERDE = "#15803d", ROJO = "#b91c1c", GRIS = "#9ca3af"
+  const color = cumple === null ? GRIS : cumple ? VERDE : ROJO
+  const fondo = cumple === null ? "#f9fafb" : cumple ? "#f0fdf4" : "#fef2f2"
+
+  // Barra con marca de meta al 65% del track (deja "aire" para mostrar exceso).
+  const MARCA = 65
+  const fill = pct === null ? 0 : Math.min((pct / metaPct) * MARCA, 100)
+
+  const fmtPct = (v: number) => v.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 3 }) + "%"
+
+  return (
+    <div style={{
+      border: `1px solid ${cumple === null ? "#e5e7eb" : color + "33"}`,
+      borderRadius: 10, padding: "14px 16px", background: fondo,
+      display: "flex", flexDirection: "column", gap: 8,
+    }}>
+      {/* Título + estado */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: "0.78rem", fontWeight: 600, color: "#374151" }}>{label}</span>
+        {cumple !== null && (
+          <span style={{
+            fontSize: "0.62rem", fontWeight: 700, color: "#fff", background: color,
+            padding: "2px 7px", borderRadius: 999, whiteSpace: "nowrap",
+          }}>
+            {cumple ? "EN META" : "FUERA DE META"}
+          </span>
+        )}
+      </div>
+
+      {/* Valor */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{ fontSize: "1.75rem", fontWeight: 800, color, lineHeight: 1 }}>
+          {pct === null ? "—" : fmtPct(pct)}
+        </span>
+        <span style={{ fontSize: "0.72rem", color: "#9ca3af", fontWeight: 500 }}>
+          meta &lt; {metaPct.toLocaleString("es-CO", { maximumFractionDigits: 2 })}%
+        </span>
+      </div>
+
+      {/* Barra con marca de meta */}
+      <div style={{ position: "relative", height: 8, background: "#e5e7eb", borderRadius: 999, marginTop: 2 }}>
+        <div style={{
+          position: "absolute", left: 0, top: 0, bottom: 0, width: `${fill}%`,
+          background: color, borderRadius: 999, transition: "width 0.3s",
+        }} />
+        {/* Marca de meta */}
+        <div style={{
+          position: "absolute", left: `${MARCA}%`, top: -2, bottom: -2, width: 2,
+          background: "#6b7280",
+        }} title={`Meta: ${metaPct}%`} />
+      </div>
+
+      {/* Cálculo */}
+      <span style={{ fontSize: "0.68rem", color: "#9ca3af" }}>{calculo}</span>
     </div>
   )
 }
