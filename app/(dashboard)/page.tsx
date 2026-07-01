@@ -246,10 +246,10 @@ export default function InicioPage() {
               href={periodoId ? `/preliquidaciones-sdl?periodoId=${periodoId}` : undefined} />
             <KPI label="PÉRDIDAS" main={cop(d?.valorContingencias ?? 0)} color="#f59e0b"
               sub={`${kwh(d?.perdidasKwh ?? 0)} · ${d?.contingenciasAbiertas ?? 0} frontera(s)`}
-              href={periodoId ? `/gestiones?tab=contingencias&periodoId=${periodoId}` : undefined} />
+              href={periodoId ? `/gestiones?concepto=SDL&periodoId=${periodoId}` : undefined} />
             <KPI label="PROVISIONES" main={cop(d?.valorProvisiones ?? 0)} color="#3b82f6"
               sub={`${kwh(d?.provisionesKwh ?? 0)} · ${d?.provisiones ?? 0} frontera(s)`}
-              href={periodoId ? `/gestiones?tab=provisiones&periodoId=${periodoId}` : undefined} />
+              href={periodoId ? `/gestiones?concepto=SDL&periodoId=${periodoId}` : undefined} />
           </div>
 
           {/* Indicadores de gestión + charts */}

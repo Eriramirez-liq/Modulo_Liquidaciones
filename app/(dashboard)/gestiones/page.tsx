@@ -5,72 +5,52 @@ import { useSearchParams } from "next/navigation"
 type Periodo  = { id: string; anio: number; mes: number; estado: string }
 type Operador = { id: string; codigo: string; nombre: string }
 
-type Provision = {
-  id: string; codigo_frontera: string; tipo: string
-  energia_kwh: string; valor_provisionado_cop: string; estado: string
-  createdAt: string
-  periodo: { anio: number; mes: number }
-  operador_red: { codigo: string; nombre: string } | null
-}
-type Contingencia = {
-  id: string; codigo_frontera: string
-  energia_kwh: string
-  costo_estimado_cop:  string | null
-  costo_calculado_cop: string | null
-  estado: string
-  createdAt: string
-  periodo: { anio: number; mes: number }
-  operador_red: { codigo: string; nombre: string } | null
-}
-type Disputa = {
-  id: string; codigo_frontera: string
-  energia_exceso_kwh: string; valor_disputa_cop: string; estado: string
-  createdAt: string
-  periodo: { anio: number; mes: number }
-  operador_red: { codigo: string; nombre: string }
-}
-type ResultadoFila = {
-  id: string; codigo_frontera: string
+type Concepto = "SDL" | "TC1" | "COT"
+
+type Diff = { campo: string; fac: string | null; or: string | null }
+type Gestion = { accion: string; datosAjustados: string[]; observacion: string | null; gestionadoAt: string }
+type FilaGestion = {
+  concepto: Concepto
+  periodoId: string
+  codigoFrontera: string
+  operadorNombre: string | null
+  orId: string | null
   caso: string
-  e_fac: string | null; e_xm: string | null; e_sdl: string | null
-  delta_l1: string | null; delta_l2: string | null
-  requiere_alerta_manual: boolean
-  observaciones: string | null
-  createdAt: string
-  periodo: { anio: number; mes: number }
-  or_obj: { codigo: string; nombre: string } | null
+  eFac: string | null; eXm: string | null; eSdl: string | null
+  diffs: Diff[]
+  gestion: Gestion | null
 }
 
-type Tab = "provisiones" | "contingencias" | "disputas" | "alertas-manuales" | "incompletas"
+// ─── Catálogos ───────────────────────────────────────────────────────────────
 
-const ESTADO_PROV: Record<string, [string, string]> = {
-  PENDIENTE:       ["#fff7ed", "#b45309"],
-  CRUZADO_PARCIAL: ["#eff6ff", "#1d4ed8"],
-  CRUZADO_TOTAL:   ["#f0fdf4", "#15803d"],
-}
-const ESTADO_CONT: Record<string, [string, string]> = {
-  PENDIENTE: ["#fff7ed", "#b45309"],
-  COBRADO:   ["#eff6ff", "#1d4ed8"],
-  CERRADO:   ["#f0fdf4", "#15803d"],
-}
-const ESTADO_DISP: Record<string, [string, string]> = {
-  ABIERTA:           ["#fef2f2", "#b91c1c"],
-  EN_GESTION:        ["#fff7ed", "#b45309"],
-  RESUELTA:          ["#f0fdf4", "#15803d"],
-  CERRADA_SIN_AJUSTE:["#f9fafb", "#6b7280"],
+const CAMPO_LABEL: Record<string, string> = {
+  activa: "Activa", inductiva: "Inductiva", capacitiva: "Capacitiva",
+  factor_m: "Factor M", nivel_tension: "Nivel tensión", propiedad: "Propiedad",
+  incompleta: "Incompleta",
 }
 
-function cop(v: string | number | null) {
+// Datos ajustables al aplicar un ajuste (multi-selección)
+const DATOS_AJUSTABLES: { key: string; label: string }[] = [
+  { key: "activa", label: "Activa" },
+  { key: "inductiva", label: "Inductiva" },
+  { key: "capacitiva", label: "Capacitiva" },
+  { key: "factor_m", label: "Factor M" },
+  { key: "nivel_tension", label: "Nivel de tensión" },
+  { key: "propiedad", label: "Propiedad de activos" },
+]
+
+const ACCIONES: { key: string; label: string; color: string }[] = [
+  { key: "CAMBIO_SOLICITADO_OR", label: "Cambio solicitado al OR", color: "#1d4ed8" },
+  { key: "AJUSTE_NO_PROCEDE",    label: "Ajuste no procede",       color: "#6b7280" },
+  { key: "ERROR_BIA",            label: "Error BIA",               color: "#b45309" },
+  { key: "AJUSTE_APLICADO",      label: "Ajuste aplicado",         color: "#15803d" },
+]
+function accionLabel(k: string) { return ACCIONES.find(a => a.key === k)?.label ?? k }
+function accionColor(k: string) { return ACCIONES.find(a => a.key === k)?.color ?? "#6b7280" }
+
+function num(v: string | null) {
   if (v == null) return "—"
-  return `$ ${Number(v).toLocaleString("es-CO", { maximumFractionDigits: 0 })}`
-}
-function kwh(v: string | number | null) {
-  if (v == null) return "—"
-  return `${Number(v).toLocaleString("es-CO", { maximumFractionDigits: 2 })}`
-}
-function dias(created: string) {
-  const d = Math.floor((Date.now() - new Date(created).getTime()) / 86400000)
-  return d === 0 ? "Hoy" : `${d}d`
+  return Number(v).toLocaleString("es-CO", { maximumFractionDigits: 2 })
 }
 
 export default function GestionesPage() {
@@ -83,19 +63,19 @@ export default function GestionesPage() {
 
 function GestionesContent() {
   const searchParams = useSearchParams()
-  const tabUrl       = searchParams.get("tab")       as Tab | null
   const periodoIdUrl = searchParams.get("periodoId") ?? ""
   const orIdUrl      = searchParams.get("orId")      ?? ""
+  const conceptoUrl  = (searchParams.get("concepto") as Concepto | null) ?? "SDL"
 
   const [periodos, setPeriodos]     = useState<Periodo[]>([])
   const [operadores, setOperadores] = useState<Operador[]>([])
   const [periodoId, setPeriodoId]   = useState(periodoIdUrl)
   const [orId, setOrId]             = useState(orIdUrl)
-  const [tab, setTab]               = useState<Tab>(tabUrl ?? "provisiones")
-  const [estadoFiltro, setEstadoFiltro] = useState("")
-  const [rows, setRows]             = useState<unknown[]>([])
+  const [concepto, setConcepto]     = useState<Concepto>(conceptoUrl)
+  const [rows, setRows]             = useState<FilaGestion[]>([])
   const [loading, setLoading]       = useState(false)
   const [filtrado, setFiltrado]     = useState(false)
+  const [modal, setModal]           = useState<FilaGestion | null>(null)
 
   useEffect(() => {
     Promise.all([
@@ -105,28 +85,37 @@ function GestionesContent() {
   }, [])
 
   const filtrar = useCallback(async () => {
+    if (concepto === "COT") { setRows([]); setFiltrado(true); return }
     setLoading(true)
     setFiltrado(true)
-    const params = new URLSearchParams({ tipo: tab })
+    const params = new URLSearchParams({ concepto })
     if (periodoId) params.set("periodoId", periodoId)
     if (orId) params.set("orId", orId)
     const res = await fetch(`/api/gestiones?${params}`)
-    setRows(await res.json())
+    setRows(res.ok ? await res.json() : [])
     setLoading(false)
-  }, [tab, periodoId, orId])
+  }, [concepto, periodoId, orId])
 
+  // Re-filtrar al cambiar de concepto (si ya se filtró alguna vez)
   useEffect(() => {
     if (filtrado) filtrar()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [concepto])
 
-  // Auto-aplicar filtros si vienen del URL (click en KPI del dashboard)
+  // Auto-filtrar si viene período del URL
   useEffect(() => {
-    if (tabUrl && periodoIdUrl) {
-      filtrar()
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabUrl, periodoIdUrl])
+    if (periodoIdUrl) filtrar()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodoIdUrl])
+
+  function onGuardado(fila: FilaGestion, gestion: Gestion) {
+    setRows(prev => prev.map(r =>
+      r.codigoFrontera === fila.codigoFrontera && r.concepto === fila.concepto
+        ? { ...r, gestion }
+        : r,
+    ))
+    setModal(null)
+  }
 
   const selectStyle: React.CSSProperties = {
     border: "1px solid #d1d5db", borderRadius: 8, padding: "7px 12px",
@@ -139,30 +128,21 @@ function GestionesContent() {
   }
   const tdStyle: React.CSSProperties = {
     padding: "10px 14px", fontSize: "0.875rem", color: "#374151",
-    borderBottom: "1px solid #f3f4f6",
-  }
-
-  function StatusBadge({ estado, map }: { estado: string; map: Record<string, [string, string]> }) {
-    const [bg, col] = map[estado] ?? ["#f3f4f6", "#6b7280"]
-    return (
-      <span style={{ background: bg, color: col, padding: "2px 8px", borderRadius: 999, fontSize: "0.75rem", fontWeight: 600 }}>
-        {estado.replace(/_/g, " ")}
-      </span>
-    )
+    borderBottom: "1px solid #f3f4f6", verticalAlign: "top",
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div>
         <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#111827", margin: "0 0 4px" }}>
-          Gestión M3
+          Gestiones
         </h1>
         <p style={{ fontSize: "0.875rem", color: "#6b7280", margin: 0 }}>
-          Provisiones, pérdidas y disputas generadas por el motor de conciliación.
+          Fronteras con diferencias en conciliación. Filtrá por concepto y registrá el accionable.
         </p>
       </div>
 
-      {/* Filters */}
+      {/* Filtros */}
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "16px 20px" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -197,199 +177,111 @@ function GestionesContent() {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Concepto (tabs) */}
       <div style={{ display: "flex", borderBottom: "1px solid #e5e7eb", flexWrap: "wrap" }}>
-        {([
-          ["provisiones",      "Provisiones"],
-          ["contingencias",    "Pérdidas"],
-          ["disputas",         "Disputas"],
-          ["alertas-manuales", "Alertas manuales"],
-          ["incompletas",      "Incompletas / Errores"],
-        ] as const).map(([k, l]) => (
+        {(["SDL", "TC1", "COT"] as Concepto[]).map(k => (
           <button
             key={k}
-            onClick={() => setTab(k)}
+            onClick={() => setConcepto(k)}
             style={{
-              padding: "10px 16px", fontSize: "0.875rem",
-              fontWeight: tab === k ? 600 : 400,
-              color: tab === k ? "#07c5a8" : "#9ca3af",
+              padding: "10px 18px", fontSize: "0.875rem",
+              fontWeight: concepto === k ? 700 : 400,
+              color: concepto === k ? "#07c5a8" : "#9ca3af",
               background: "none", border: "none",
-              borderBottom: tab === k ? "2px solid #07c5a8" : "2px solid transparent",
+              borderBottom: concepto === k ? "2px solid #07c5a8" : "2px solid transparent",
               cursor: "pointer", marginBottom: -1,
             }}
           >
-            {l}
+            {k}
           </button>
         ))}
       </div>
 
-      {/* Sub-filter (solo para tabs con estado) + Table */}
+      {/* Tabla */}
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
-        {(tab === "provisiones" || tab === "contingencias" || tab === "disputas") && (
-          <div style={{ padding: "12px 16px", borderBottom: "1px solid #f3f4f6" }}>
-            <select
-              value={estadoFiltro}
-              onChange={e => setEstadoFiltro(e.target.value)}
-              style={{ ...selectStyle, fontSize: "0.8rem", padding: "5px 10px" }}
-            >
-              <option value="">Todos los estados</option>
-              {tab === "provisiones" && <>
-                <option>PENDIENTE</option>
-                <option>CRUZADO_PARCIAL</option>
-                <option>CRUZADO_TOTAL</option>
-              </>}
-              {tab === "contingencias" && <>
-                <option>PENDIENTE</option><option>COBRADO</option><option>CERRADO</option>
-              </>}
-              {tab === "disputas" && <>
-                <option>ABIERTA</option><option>EN_GESTION</option>
-                <option>RESUELTA</option><option>CERRADA_SIN_AJUSTE</option>
-              </>}
-            </select>
+        {concepto === "COT" ? (
+          <div style={{ padding: "32px", textAlign: "center", color: "#9ca3af", fontSize: "0.9rem" }}>
+            Concepto COT — módulo en construcción. La lógica de diferencias se definirá más adelante.
           </div>
-        )}
-
-        {(tab === "alertas-manuales" || tab === "incompletas") ? (
-          // Tabla para ResultadoConciliacion (alertas manuales o incompletas/errores)
+        ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead style={{ background: "#f9fafb" }}>
                 <tr>
                   <th style={thStyle}>Frontera</th>
                   <th style={thStyle}>Operador</th>
-                  <th style={thStyle}>Período</th>
                   <th style={thStyle}>Caso</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>E_fac (kWh)</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>E_xm (kWh)</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>E_sdl (kWh)</th>
-                  <th style={thStyle}>Motivo / Observaciones</th>
+                  <th style={thStyle}>Diferencias (BIA → OR)</th>
+                  <th style={thStyle}>Accionable</th>
+                  <th style={{ ...thStyle, textAlign: "center" }}>—</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>Cargando...</td></tr>
+                  <tr><td colSpan={6} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>Cargando...</td></tr>
                 ) : !filtrado ? (
-                  <tr><td colSpan={8} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>Selecciona un período y pulsa Filtrar.</td></tr>
+                  <tr><td colSpan={6} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>Pulsá Filtrar para ver las fronteras con diferencias.</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={8} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>
-                    {tab === "alertas-manuales"
-                      ? "No hay fronteras con alerta manual para este período."
-                      : "No hay fronteras incompletas o con error para este período."}
-                  </td></tr>
+                  <tr><td colSpan={6} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>No hay fronteras con diferencias {concepto} para los filtros seleccionados.</td></tr>
                 ) : (
-                  (rows as ResultadoFila[]).map(r => {
-                    const casoBg = r.caso === "INCOMPLETA" ? "#fffbeb"
-                                 : r.caso === "ERROR"      ? "#fef2f2"
-                                 : "#fef3f2"
-                    const casoCol = r.caso === "INCOMPLETA" ? "#92400e"
-                                  : r.caso === "ERROR"      ? "#991b1b"
-                                  : "#b91c1c"
-                    return (
-                      <tr key={r.id}>
-                        <td style={{ ...tdStyle, fontWeight: 500, fontFamily: "monospace" }}>{r.codigo_frontera}</td>
-                        <td style={tdStyle}>{r.or_obj?.nombre ?? "—"}</td>
-                        <td style={tdStyle}>{r.periodo.anio}-{String(r.periodo.mes).padStart(2,"0")}</td>
-                        <td style={tdStyle}>
-                          <span style={{ background: casoBg, color: casoCol, padding: "2px 8px",
-                            borderRadius: 999, fontSize: "0.75rem", fontWeight: 600 }}>
-                            {r.caso}
-                          </span>
-                        </td>
-                        <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.e_fac)}</td>
-                        <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.e_xm)}</td>
-                        <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.e_sdl)}</td>
-                        <td style={{ ...tdStyle, fontSize: "0.78rem", color: "#6b7280", maxWidth: 400 }}>
-                          {r.observaciones ?? "—"}
-                        </td>
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          // Tabla original para Provisiones / Pérdidas / Disputas
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead style={{ background: "#f9fafb" }}>
-                <tr>
-                  <th style={thStyle}>Frontera</th>
-                  <th style={thStyle}>Operador de Red</th>
-                  <th style={thStyle}>Período</th>
-                  <th style={thStyle}>Tipo</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Energía (kWh)</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>
-                    {tab === "provisiones" ? "Provisionado (COP)"
-                     : tab === "disputas"  ? "Valor (COP)"
-                     : "Costo estimado (COP)"}
-                  </th>
-                  <th style={thStyle}>Estado</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Días</th>
-                  <th style={thStyle}>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={9} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>Cargando...</td></tr>
-                ) : !filtrado ? (
-                  <tr><td colSpan={9} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>Selecciona un período y pulsa Filtrar.</td></tr>
-                ) : rows.length === 0 ? (
-                  <tr><td colSpan={9} style={{ ...tdStyle, textAlign: "center", color: "#9ca3af", padding: "32px" }}>No hay registros para los filtros seleccionados.</td></tr>
-                ) : tab === "provisiones" ? (
-                  (rows as Provision[])
-                    .filter(r => !estadoFiltro || r.estado === estadoFiltro)
-                    .map(r => (
-                    <tr key={r.id}>
-                      <td style={{ ...tdStyle, fontWeight: 500 }}>{r.codigo_frontera}</td>
-                      <td style={tdStyle}>{r.operador_red?.nombre ?? "—"}</td>
-                      <td style={tdStyle}>{r.periodo.anio}-{String(r.periodo.mes).padStart(2,"0")}</td>
-                      <td style={tdStyle}>{r.tipo}</td>
-                      <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.energia_kwh)}</td>
-                      <td style={{ ...tdStyle, textAlign: "right" }}>{cop(r.valor_provisionado_cop)}</td>
-                      <td style={tdStyle}><StatusBadge estado={r.estado} map={ESTADO_PROV} /></td>
-                      <td style={{ ...tdStyle, textAlign: "right", color: "#9ca3af" }}>{dias(r.createdAt)}</td>
-                      <td style={tdStyle}><span style={{ color: "#07c5a8", cursor: "pointer", fontSize: "0.8rem" }}>Ver</span></td>
-                    </tr>
-                  ))
-                ) : tab === "contingencias" ? (
-                  (rows as Contingencia[])
-                    .filter(r => !estadoFiltro || r.estado === estadoFiltro)
-                    .map(r => (
-                    <tr key={r.id}>
-                      <td style={{ ...tdStyle, fontWeight: 500 }}>{r.codigo_frontera}</td>
-                      <td style={tdStyle}>{r.operador_red?.nombre ?? "—"}</td>
-                      <td style={tdStyle}>{r.periodo.anio}-{String(r.periodo.mes).padStart(2,"0")}</td>
-                      <td style={tdStyle}>Pérdida</td>
-                      <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.energia_kwh)}</td>
-                      <td style={{ ...tdStyle, textAlign: "right" }}>
-                        {/* Si ya cobrado, mostrar calculado; sino estimado */}
-                        {r.costo_calculado_cop != null
-                          ? cop(r.costo_calculado_cop)
-                          : r.costo_estimado_cop != null
-                            ? <span style={{ color: "#6b7280" }}>{cop(r.costo_estimado_cop)} <span style={{ fontSize: "0.7rem" }}>(estimado)</span></span>
-                            : "—"
-                        }
+                  rows.map(r => (
+                    <tr key={`${r.concepto}-${r.codigoFrontera}`}>
+                      <td style={{ ...tdStyle, fontWeight: 600, fontFamily: "monospace" }}>{r.codigoFrontera}</td>
+                      <td style={tdStyle}>{r.operadorNombre ?? "—"}</td>
+                      <td style={tdStyle}>
+                        <span style={{
+                          background: r.caso === "INCOMPLETA" || r.caso === "ERROR" ? "#fffbeb" : "#eff6ff",
+                          color: r.caso === "INCOMPLETA" || r.caso === "ERROR" ? "#92400e" : "#1d4ed8",
+                          padding: "2px 8px", borderRadius: 999, fontSize: "0.72rem", fontWeight: 600,
+                        }}>{r.caso}</span>
                       </td>
-                      <td style={tdStyle}><StatusBadge estado={r.estado} map={ESTADO_CONT} /></td>
-                      <td style={{ ...tdStyle, textAlign: "right", color: "#9ca3af" }}>{dias(r.createdAt)}</td>
-                      <td style={tdStyle}><span style={{ color: "#07c5a8", cursor: "pointer", fontSize: "0.8rem" }}>Ver</span></td>
-                    </tr>
-                  ))
-                ) : (
-                  (rows as Disputa[])
-                    .filter(r => !estadoFiltro || r.estado === estadoFiltro)
-                    .map(r => (
-                    <tr key={r.id}>
-                      <td style={{ ...tdStyle, fontWeight: 500 }}>{r.codigo_frontera}</td>
-                      <td style={tdStyle}>{r.operador_red?.nombre ?? "—"}</td>
-                      <td style={tdStyle}>{r.periodo.anio}-{String(r.periodo.mes).padStart(2,"0")}</td>
-                      <td style={tdStyle}>Disputa</td>
-                      <td style={{ ...tdStyle, textAlign: "right" }}>{kwh(r.energia_exceso_kwh)}</td>
-                      <td style={{ ...tdStyle, textAlign: "right" }}>{cop(r.valor_disputa_cop)}</td>
-                      <td style={tdStyle}><StatusBadge estado={r.estado} map={ESTADO_DISP} /></td>
-                      <td style={{ ...tdStyle, textAlign: "right", color: "#9ca3af" }}>{dias(r.createdAt)}</td>
-                      <td style={tdStyle}><span style={{ color: "#07c5a8", cursor: "pointer", fontSize: "0.8rem" }}>Ver</span></td>
+                      <td style={tdStyle}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                          {r.diffs.length === 0 ? <span style={{ color: "#9ca3af" }}>—</span> : r.diffs.map((df, i) => (
+                            <span key={i} style={{
+                              background: "#fef2f2", color: "#b91c1c", padding: "2px 8px",
+                              borderRadius: 6, fontSize: "0.72rem", fontWeight: 500, whiteSpace: "nowrap",
+                            }}>
+                              {CAMPO_LABEL[df.campo] ?? df.campo}
+                              {df.campo !== "incompleta" && (
+                                <span style={{ color: "#7f1d1d", fontWeight: 400 }}>
+                                  {" "}{num(df.fac)} → {num(df.or)}
+                                </span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td style={tdStyle}>
+                        {r.gestion ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                            <span style={{
+                              color: "#fff", background: accionColor(r.gestion.accion),
+                              padding: "2px 8px", borderRadius: 999, fontSize: "0.72rem", fontWeight: 600,
+                              width: "fit-content",
+                            }}>{accionLabel(r.gestion.accion)}</span>
+                            {r.gestion.accion === "AJUSTE_APLICADO" && r.gestion.datosAjustados.length > 0 && (
+                              <span style={{ fontSize: "0.7rem", color: "#6b7280" }}>
+                                Ajustado: {r.gestion.datosAjustados.map(d => CAMPO_LABEL[d] ?? d).join(", ")}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color: "#9ca3af", fontSize: "0.8rem" }}>Sin gestionar</span>
+                        )}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: "center" }}>
+                        <button
+                          onClick={() => setModal(r)}
+                          style={{
+                            background: "none", border: "1px solid #07c5a8", borderRadius: 6,
+                            padding: "4px 10px", fontSize: "0.78rem", color: "#07c5a8",
+                            fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+                          }}
+                        >
+                          {r.gestion ? "Editar" : "Gestionar"}
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -397,6 +289,159 @@ function GestionesContent() {
             </table>
           </div>
         )}
+      </div>
+
+      {modal && (
+        <ModalAccionable
+          fila={modal}
+          onClose={() => setModal(null)}
+          onGuardado={onGuardado}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Modal de accionable ──────────────────────────────────────────────────────
+
+function ModalAccionable({ fila, onClose, onGuardado }: {
+  fila: FilaGestion
+  onClose: () => void
+  onGuardado: (fila: FilaGestion, gestion: Gestion) => void
+}) {
+  const [accion, setAccion]     = useState(fila.gestion?.accion ?? "")
+  const [datos, setDatos]       = useState<string[]>(fila.gestion?.datosAjustados ?? [])
+  const [obs, setObs]           = useState(fila.gestion?.observacion ?? "")
+  const [saving, setSaving]     = useState(false)
+  const [error, setError]       = useState<string | null>(null)
+
+  const esAjuste = accion === "AJUSTE_APLICADO"
+
+  function toggleDato(k: string) {
+    setDatos(prev => prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k])
+  }
+
+  async function guardar() {
+    if (!accion) { setError("Seleccioná un accionable."); return }
+    if (esAjuste && datos.length === 0) { setError("Confirmá al menos un dato ajustado."); return }
+    setSaving(true); setError(null)
+    try {
+      const res = await fetch("/api/gestiones/accionable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          periodoId: fila.periodoId,
+          concepto: fila.concepto,
+          codigoFrontera: fila.codigoFrontera,
+          orId: fila.orId,
+          accion,
+          datosAjustados: esAjuste ? datos : [],
+          observacion: obs.trim() || undefined,
+        }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) { setError((body as { error?: string }).error ?? `Error ${res.status}`); return }
+      onGuardado(fila, body as Gestion)
+    } catch {
+      setError("Error de red. Reintentá.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
+        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: "#fff", borderRadius: 12, padding: 24, width: "100%", maxWidth: 480,
+          display: "flex", flexDirection: "column", gap: 16, maxHeight: "90vh", overflowY: "auto",
+        }}
+      >
+        <div>
+          <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#111827", margin: "0 0 2px" }}>
+            Accionable — {fila.codigoFrontera}
+          </h2>
+          <p style={{ fontSize: "0.8rem", color: "#6b7280", margin: 0 }}>
+            {fila.concepto} · {fila.operadorNombre ?? "sin OR"}
+          </p>
+        </div>
+
+        {/* Diferencias (contexto) */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+          {fila.diffs.map((df, i) => (
+            <span key={i} style={{
+              background: "#fef2f2", color: "#b91c1c", padding: "2px 8px",
+              borderRadius: 6, fontSize: "0.72rem", fontWeight: 500,
+            }}>
+              {CAMPO_LABEL[df.campo] ?? df.campo}
+              {df.campo !== "incompleta" && ` ${num(df.fac)} → ${num(df.or)}`}
+            </span>
+          ))}
+        </div>
+
+        {/* Accionable */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "#374151" }}>Accionable</label>
+          {ACCIONES.map(a => (
+            <label key={a.key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85rem", color: "#374151", cursor: "pointer" }}>
+              <input type="radio" name="accion" checked={accion === a.key} onChange={() => setAccion(a.key)} />
+              {a.label}
+            </label>
+          ))}
+        </div>
+
+        {/* Datos ajustados (solo ajuste aplicado) */}
+        {esAjuste && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: 12 }}>
+            <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "#15803d" }}>
+              ¿Qué dato se ajustó? (uno o varios)
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              {DATOS_AJUSTABLES.map(d => (
+                <label key={d.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.82rem", color: "#374151", cursor: "pointer" }}>
+                  <input type="checkbox" checked={datos.includes(d.key)} onChange={() => toggleDato(d.key)} />
+                  {d.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Observación */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "#374151" }}>Observación (opcional)</label>
+          <textarea
+            value={obs}
+            onChange={e => setObs(e.target.value)}
+            rows={2}
+            style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "7px 10px", fontSize: "0.85rem", color: "#111827", resize: "vertical" }}
+          />
+        </div>
+
+        {error && <span style={{ fontSize: "0.8rem", color: "#b91c1c" }}>{error}</span>}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button
+            onClick={onClose}
+            style={{ background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, padding: "8px 16px", fontSize: "0.85rem", color: "#374151", cursor: "pointer" }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={guardar}
+            disabled={saving}
+            style={{ background: "#07c5a8", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: "0.85rem", fontWeight: 600, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1 }}
+          >
+            {saving ? "Guardando…" : "Guardar accionable"}
+          </button>
+        </div>
       </div>
     </div>
   )
