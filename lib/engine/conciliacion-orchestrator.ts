@@ -7,6 +7,7 @@ import {
   type TarifaBIA,
 } from "./conciliacion-sdl"
 import { claveBase } from "./congruencia"
+import { obtenerGBolsaNacional } from "@/lib/integrations/precio-bolsa"
 
 /**
  * Orquesta la ejecución de la conciliación SDL para un período.
@@ -60,6 +61,9 @@ export interface ResumenConciliacion {
   // Detalle de fronteras que requieren atencion
   detalleIncompletas:    DetalleFrontera[]
   detalleAlertaManual:   DetalleFrontera[]
+  // G de bolsa nacional (Metabase card 1237) usada en las Pérdidas. null si no
+  // se pudo obtener (se cae al g_bolsa por-frontera de facturación).
+  gBolsaNacional:        number | null
 }
 
 export async function ejecutarConciliacion(
@@ -103,6 +107,20 @@ export async function ejecutarConciliacion(
       where: { periodo_id: periodoStr, ...(orFilter.sdl ?? {}) },
     }),
   ])
+
+  // 3b. G de bolsa nacional del mes de CONSUMO (anio, mes). Metabase card 1237.
+  //     Se usa como g_bolsa en las fórmulas de Pérdida para TODAS las fronteras
+  //     del período (las demás tarifas t/d/pr/r vienen de facturación).
+  //     Si Metabase falla, se cae al g_bolsa por-frontera de facturación.
+  let gBolsaNacional: number | null = null
+  try {
+    const gb = await obtenerGBolsaNacional(anio, mes)
+    gBolsaNacional = gb.valor
+  } catch (e) {
+    console.warn(
+      `[conciliacion ${periodoStr}] No se pudo obtener G de bolsa de Metabase: ${(e as Error).message}`,
+    )
+  }
 
   // Normalizar codigo_frontera para matcheo case-insensitive (trim + uppercase).
   // Facturacion puede traer codigos en mixed case ("Frt24040", "FRT32213") y los
@@ -228,7 +246,9 @@ export async function ejecutarConciliacion(
 
     const tarifa: TarifaBIA = {
       g_bia:       f.g_bia        != null ? Number(f.g_bia)        : null,
-      g_bolsa_bia: f.g_bolsa_bia  != null ? Number(f.g_bolsa_bia)  : null,
+      // G de bolsa: prioriza el precio nacional de Metabase (card 1237); si no
+      // se obtuvo, cae al valor por-frontera de facturación.
+      g_bolsa_bia: gBolsaNacional ?? (f.g_bolsa_bia != null ? Number(f.g_bolsa_bia) : null),
       t_bia:       f.t_bia        != null ? Number(f.t_bia)        : null,
       d_bia:       f.d_bia        != null ? Number(f.d_bia)        : null,
       pr_bia:      f.pr_bia       != null ? Number(f.pr_bia)       : null,
@@ -621,5 +641,6 @@ export async function ejecutarConciliacion(
     fronterasNoEnFacturacion: { xm: xmHuerfanas, sdl: sdlHuerfanas },
     detalleIncompletas,
     detalleAlertaManual,
+    gBolsaNacional,
   }
 }

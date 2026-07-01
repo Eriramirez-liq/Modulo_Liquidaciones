@@ -55,6 +55,66 @@ function getBaseUrl(): string {
   return (process.env.METABASE_BASE_URL ?? DEFAULT_BASE_URL).replace(/\/$/, "")
 }
 
+/** Definición de un parámetro de una card (para queries parametrizadas). */
+export interface MetabaseParametro {
+  id?: string
+  type?: string
+  target?: unknown
+  slug?: string
+  name?: string
+  [k: string]: unknown
+}
+
+/**
+ * Lee la metadata de una card (GET /api/card/{id}) y retorna su lista de
+ * parámetros. Sirve para queries parametrizadas: se reutiliza el objeto de
+ * cada parámetro (id/type/target) y solo se le inyecta el `value`, evitando
+ * adivinar el `target` del template-tag.
+ */
+export async function obtenerParametrosCard(
+  cardId: number,
+  timeoutMs = 15_000,
+): Promise<MetabaseParametro[]> {
+  const apiKey  = getApiKey()
+  const baseUrl = getBaseUrl()
+  const url = `${baseUrl}/api/card/${cardId}`
+
+  const controller = new AbortController()
+  const t = setTimeout(() => controller.abort(), timeoutMs)
+  let res: Response
+  try {
+    res = await fetch(url, {
+      method: "GET",
+      headers: { "X-API-KEY": apiKey },
+      signal: controller.signal,
+    })
+  } catch (e) {
+    clearTimeout(t)
+    if ((e as Error).name === "AbortError") {
+      throw new MetabaseError(`Timeout al leer la card ${cardId} (>${timeoutMs / 1000}s).`)
+    }
+    throw new MetabaseError(`Error de red al leer la card ${cardId}: ${(e as Error).message}`)
+  }
+  clearTimeout(t)
+
+  if (!res.ok) {
+    let body = ""
+    try { body = await res.text() } catch { /* ignore */ }
+    throw new MetabaseError(
+      `Metabase respondio ${res.status} al leer la card ${cardId}`,
+      res.status,
+      body.slice(0, 500),
+    )
+  }
+
+  let data: unknown
+  try { data = await res.json() } catch (e) {
+    throw new MetabaseError(`Metadata de card ${cardId} no es JSON valido: ${(e as Error).message}`)
+  }
+  const params = (data as { parameters?: unknown }).parameters
+  return Array.isArray(params) ? (params as MetabaseParametro[]) : []
+}
+
 /**
  * Ejecuta una pregunta guardada en Metabase y retorna las filas.
  *
