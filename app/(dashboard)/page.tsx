@@ -34,7 +34,7 @@ function labelMesEnCurso(p: Periodo): string {
 export default function InicioPage() {
   const [periodos, setPeriodos]   = useState<Periodo[]>([])
   const [periodoId, setPeriodoId] = useState("")
-  const [tab, setTab]             = useState<"principal" | "historico" | "por_or">("principal")
+  const [tab, setTab]             = useState<"principal" | "historico">("principal")
   const [data, setData]           = useState<DashData | null>(null)
   const [loading, setLoading]     = useState(false)
 
@@ -117,7 +117,7 @@ export default function InicioPage() {
 
       {/* Tabs */}
       <div style={{ display: "flex", borderBottom: "1px solid #e5e7eb" }}>
-        {([["principal", "Panel Principal"], ["historico", "Histórico 12 M"], ["por_or", "Por Operador de Red"]] as const).map(([k, l]) => (
+        {([["principal", "Panel Principal"], ["historico", "Histórico 12 M"]] as const).map(([k, l]) => (
           <button
             key={k}
             onClick={() => setTab(k)}
@@ -139,6 +139,8 @@ export default function InicioPage() {
         <>
           {/* KPIs del mes en curso */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+            <KPI label="FACTURACIÓN BIA" main={cop(d?.facturacionTotalCop ?? 0)} color="#0369a1"
+              sub={`${kwh(d?.fronterasFacturadasKwh ?? 0)} · ${d?.fronterasFacturadas ?? 0} fronteras`} />
             <KPI label="CARGO STR" main={cop(d?.cargoStrCop ?? 0)} color="#0369a1"
               sub="Total a pagar del mes"
               href={periodoId ? `/cargos-str-por-or?periodoId=${periodoId}` : undefined} />
@@ -151,19 +153,11 @@ export default function InicioPage() {
             <KPI label="PROVISIONES" main={cop(d?.valorProvisiones ?? 0)} color="#3b82f6"
               sub={`${kwh(d?.provisionesKwh ?? 0)} · ${d?.provisiones ?? 0} frontera(s)`}
               href={periodoId ? `/gestiones?tab=provisiones&periodoId=${periodoId}` : undefined} />
-            <KPI label="COMPENSACIONES EN EL MES"
-              main={d?.compensacionesCop != null ? cop(d.compensacionesCop) : "—"} color="#7c3aed"
-              sub="Lógica pendiente" />
-            <KPI label="CONGRUENCIA" main={`${d?.congruenciaPct ?? 0}%`} color="#15803d"
-              sub={`${d?.congruentes ?? 0}/${d?.fronterasFacturadas ?? 0} fronteras (NT + propiedad)`}
-              href={periodoId ? `/congruencia?periodoId=${periodoId}` : undefined} />
-            <KPI label="FACTURACIÓN" main={cop(d?.facturacionTotalCop ?? 0)} color="#0369a1"
-              sub={`${kwh(d?.fronterasFacturadasKwh ?? 0)} · ${d?.fronterasFacturadas ?? 0} fronteras`} />
           </div>
 
           {/* Indicadores de gestión + charts */}
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <IndicadoresGestion d={d} />
+            <IndicadoresGestion d={d} periodoId={periodoId} />
             <ChartCard title="TOP 10 FRONTERAS — IMPACTO (PÉRDIDA + PROVISIÓN)">
               <TopFronteras items={d?.topFronteras ?? []} cop={cop} />
             </ChartCard>
@@ -177,15 +171,6 @@ export default function InicioPage() {
           padding: "32px", textAlign: "center", color: "#9ca3af", fontSize: "0.875rem",
         }}>
           Histórico de 12 meses disponible cuando existan períodos cerrados.
-        </div>
-      )}
-
-      {tab === "por_or" && (
-        <div style={{
-          background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12,
-          padding: "32px", textAlign: "center", color: "#9ca3af", fontSize: "0.875rem",
-        }}>
-          Desglose por operador de red disponible después de ejecutar la conciliación.
         </div>
       )}
     </div>
@@ -286,37 +271,56 @@ function compacto(v: number): string {
   return v.toLocaleString("es-CO", { maximumFractionDigits: 0 })
 }
 
-function IndicadoresGestion({ d }: { d: DashData | null }) {
+type IndicadorProps = {
+  label: string; valor: number | null; metaPct: number
+  tipo: "menor" | "mayor"; calculo: string; href?: string
+}
+
+function IndicadoresGestion({ d, periodoId }: { d: DashData | null; periodoId: string }) {
   const facturadoCop  = d?.facturacionTotalCop    ?? 0
   const perdidaCop    = d?.valorContingencias     ?? 0
   const kwhFac        = d?.fronterasFacturadasKwh  ?? 0
   const kwhPerdida    = d?.perdidasKwh             ?? 0
   const kwhProvision  = d?.provisionesKwh          ?? 0
+  const fronterasFac  = d?.fronterasFacturadas     ?? 0
 
-  // Cada indicador: valor = fracción (0..1); meta en % (umbral máximo aceptable).
-  const indicadores = [
+  // valor = fracción (0..1); metaPct = umbral en %. tipo "menor" = umbral máximo
+  // (verde si valor <= meta); tipo "mayor" = piso mínimo (verde si valor >= meta).
+  const indicadores: IndicadorProps[] = [
+    {
+      label: "% Congruencia",
+      valor: fronterasFac > 0 ? (d?.congruenciaPct ?? 0) / 100 : null,
+      metaPct: 95,
+      tipo: "mayor",
+      calculo: `${d?.congruentes ?? 0}/${fronterasFac} fronteras (NT + propiedad)`,
+      href: periodoId ? `/congruencia?periodoId=${periodoId}` : undefined,
+    },
     {
       label: "% Pérdida",
       valor: facturadoCop > 0 ? perdidaCop / facturadoCop : null,
       metaPct: 0.1,
+      tipo: "menor",
       calculo: `$${compacto(perdidaCop)} pérdida / $${compacto(facturadoCop)} facturado`,
     },
     {
       label: "% Dif. kWh absoluto",
       valor: kwhFac > 0 ? (kwhPerdida + kwhProvision) / kwhFac : null,
       metaPct: 0.35,
+      tipo: "menor",
       calculo: `${compacto(kwhPerdida + kwhProvision)} / ${compacto(kwhFac)} kWh`,
     },
     {
       label: "% Reportado de más a XM",
       valor: kwhFac > 0 ? kwhPerdida / kwhFac : null,
       metaPct: 0.15,
+      tipo: "menor",
       calculo: `${compacto(kwhPerdida)} pérdida / ${compacto(kwhFac)} kWh`,
     },
     {
       label: "% Reportado de menos a XM",
       valor: kwhFac > 0 ? kwhProvision / kwhFac : null,
       metaPct: 0.2,
+      tipo: "menor",
       calculo: `${compacto(kwhProvision)} provisión / ${compacto(kwhFac)} kWh`,
     },
   ]
@@ -338,28 +342,36 @@ function IndicadoresGestion({ d }: { d: DashData | null }) {
   )
 }
 
-function Indicador({ label, valor, metaPct, calculo }: {
-  label: string; valor: number | null; metaPct: number; calculo: string
-}) {
+function Indicador({ label, valor, metaPct, tipo, calculo, href }: IndicadorProps) {
   const pct = valor === null ? null : valor * 100
-  const cumple = pct === null ? null : pct <= metaPct
+  const cumple = pct === null ? null : (tipo === "menor" ? pct <= metaPct : pct >= metaPct)
 
   const VERDE = "#15803d", ROJO = "#b91c1c", GRIS = "#9ca3af"
   const color = cumple === null ? GRIS : cumple ? VERDE : ROJO
   const fondo = cumple === null ? "#f9fafb" : cumple ? "#f0fdf4" : "#fef2f2"
 
-  // Barra con marca de meta al 65% del track (deja "aire" para mostrar exceso).
-  const MARCA = 65
-  const fill = pct === null ? 0 : Math.min((pct / metaPct) * MARCA, 100)
+  // Posición de la marca de meta y llenado de la barra:
+  // - "menor": la meta se ubica al 65% del track (deja aire para mostrar exceso);
+  //   el llenado escala respecto a la meta.
+  // - "mayor": escala 0-100% directa; la marca va en el valor de la meta (ej. 95%).
+  const marca = tipo === "menor" ? 65 : metaPct
+  const fill =
+    pct === null ? 0
+    : tipo === "menor" ? Math.min((pct / metaPct) * 65, 100)
+    : Math.min(pct, 100)
 
   const fmtPct = (v: number) => v.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 3 }) + "%"
+  const metaTxt = `meta ${tipo === "menor" ? "<" : ">"} ${metaPct.toLocaleString("es-CO", { maximumFractionDigits: 2 })}%`
 
-  return (
-    <div style={{
-      border: `1px solid ${cumple === null ? "#e5e7eb" : color + "33"}`,
-      borderRadius: 10, padding: "14px 16px", background: fondo,
-      display: "flex", flexDirection: "column", gap: 8,
-    }}>
+  const cardStyle: React.CSSProperties = {
+    border: `1px solid ${cumple === null ? "#e5e7eb" : color + "33"}`,
+    borderRadius: 10, padding: "14px 16px", background: fondo,
+    display: "flex", flexDirection: "column", gap: 8,
+    textDecoration: "none",
+  }
+
+  const contenido = (
+    <>
       {/* Título + estado */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <span style={{ fontSize: "0.78rem", fontWeight: 600, color: "#374151" }}>{label}</span>
@@ -378,9 +390,7 @@ function Indicador({ label, valor, metaPct, calculo }: {
         <span style={{ fontSize: "1.75rem", fontWeight: 800, color, lineHeight: 1 }}>
           {pct === null ? "—" : fmtPct(pct)}
         </span>
-        <span style={{ fontSize: "0.72rem", color: "#9ca3af", fontWeight: 500 }}>
-          meta &lt; {metaPct.toLocaleString("es-CO", { maximumFractionDigits: 2 })}%
-        </span>
+        <span style={{ fontSize: "0.72rem", color: "#9ca3af", fontWeight: 500 }}>{metaTxt}</span>
       </div>
 
       {/* Barra con marca de meta */}
@@ -389,17 +399,25 @@ function Indicador({ label, valor, metaPct, calculo }: {
           position: "absolute", left: 0, top: 0, bottom: 0, width: `${fill}%`,
           background: color, borderRadius: 999, transition: "width 0.3s",
         }} />
-        {/* Marca de meta */}
         <div style={{
-          position: "absolute", left: `${MARCA}%`, top: -2, bottom: -2, width: 2,
+          position: "absolute", left: `${marca}%`, top: -2, bottom: -2, width: 2,
           background: "#6b7280",
         }} title={`Meta: ${metaPct}%`} />
       </div>
 
       {/* Cálculo */}
       <span style={{ fontSize: "0.68rem", color: "#9ca3af" }}>{calculo}</span>
-    </div>
+    </>
   )
+
+  if (href) {
+    return (
+      <Link href={href} style={{ ...cardStyle, cursor: "pointer" }}>
+        {contenido}
+      </Link>
+    )
+  }
+  return <div style={cardStyle}>{contenido}</div>
 }
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
