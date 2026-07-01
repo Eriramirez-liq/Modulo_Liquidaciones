@@ -457,7 +457,7 @@ function Indicador({ label, valor, metaPct, tipo, calculo, href }: IndicadorProp
     : tipo === "menor" ? Math.min((pct / metaPct) * 65, 100)
     : Math.min(pct, 100)
 
-  const fmtPct = (v: number) => v.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 3 }) + "%"
+  const fmtPct = (v: number) => v.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%"
   const metaTxt = `meta ${tipo === "menor" ? "<" : ">"} ${metaPct.toLocaleString("es-CO", { maximumFractionDigits: 2 })}%`
 
   const cardStyle: React.CSSProperties = {
