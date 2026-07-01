@@ -51,11 +51,20 @@ function construirParametros(
   metadata: MetabaseParametro[],
   valores: ValoresPorSlug,
 ): Array<Record<string, unknown>> {
-  const porMetadata = metadata
-    .filter((p) => typeof p.slug === "string" && p.slug in valores)
-    .map((p) => ({ ...p, value: valores[p.slug as string] }))
+  const encontrados = metadata.filter(
+    (p) => typeof p.slug === "string" && p.slug in valores,
+  )
 
-  if (porMetadata.length > 0) return porMetadata
+  if (encontrados.length > 0) {
+    // Usar el `id` real del parámetro (Metabase resuelve solo el target). Se
+    // OMITEN `name` y `slug`: en esta card, mandar `name` hace que Metabase
+    // busque un template-tag llamado como el name ("Date type") y falle 500.
+    return encontrados.map((p) => {
+      const value = valores[p.slug as string]
+      if (p.id != null) return { id: p.id, type: p.type, target: p.target, value }
+      return { type: p.type ?? "category", target: p.target, value }
+    })
+  }
 
   // Fallback: construir por template-tag si la metadata no trajo los parámetros.
   return [
