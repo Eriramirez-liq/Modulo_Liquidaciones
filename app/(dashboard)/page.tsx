@@ -37,6 +37,9 @@ export default function InicioPage() {
   const [tab, setTab]             = useState<"principal" | "historico">("principal")
   const [data, setData]           = useState<DashData | null>(null)
   const [loading, setLoading]     = useState(false)
+  // G de bolsa (precio bolsa nacional) del mes de consumo del período seleccionado.
+  const [gBolsa, setGBolsa]       = useState<{ valor: number | null } | null>(null)
+  const [gBolsaLoading, setGBolsaLoading] = useState(false)
 
   useEffect(() => {
     fetch("/api/periodos")
@@ -46,6 +49,20 @@ export default function InicioPage() {
         if (p.length > 0 && p[0]) setPeriodoId(p[0].id)
       })
   }, [])
+
+  // Traer la G de bolsa del mes de consumo (anio/mes del PeriodoConciliacion).
+  useEffect(() => {
+    const p = periodos.find(x => x.id === periodoId)
+    if (!p) { setGBolsa(null); return }
+    let cancel = false
+    setGBolsaLoading(true)
+    fetch(`/api/precio-bolsa?anio=${p.anio}&mes=${p.mes}`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
+      .then((res: { valor: number | null }) => { if (!cancel) setGBolsa({ valor: res.valor ?? null }) })
+      .catch(() => { if (!cancel) setGBolsa(null) })
+      .finally(() => { if (!cancel) setGBolsaLoading(false) })
+    return () => { cancel = true }
+  }, [periodoId, periodos])
 
   const fetchData = useCallback(async () => {
     if (!periodoId) return
@@ -80,6 +97,21 @@ export default function InicioPage() {
           <p style={{ fontSize: "0.875rem", color: "#6b7280", margin: 0 }}>
             Monitoreo global del proceso de conciliación por período.
           </p>
+          <div style={{
+            marginTop: 8, display: "inline-flex", alignItems: "center", gap: 8,
+            background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 999,
+            padding: "4px 12px", fontSize: "0.78rem", color: "#0369a1",
+          }}>
+            <span style={{ fontWeight: 700 }}>G de bolsa</span>
+            <span style={{ fontWeight: 600 }}>
+              {gBolsaLoading
+                ? "consultando…"
+                : gBolsa?.valor != null
+                  ? `$ ${gBolsa.valor.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / kWh`
+                  : "no disponible"}
+            </span>
+            <span style={{ color: "#7dd3fc" }}>· precio bolsa nacional (consumo)</span>
+          </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
           <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>Mes en curso (facturación)</span>
