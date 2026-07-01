@@ -60,18 +60,28 @@ function construirParametros(
     // OMITEN `name` y `slug`: en esta card, mandar `name` hace que Metabase
     // busque un template-tag llamado como el name ("Date type") y falle 500.
     return encontrados.map((p) => {
-      const value = valores[p.slug as string]
-      if (p.id != null) return { id: p.id, type: p.type, target: p.target, value }
-      return { type: p.type ?? "category", target: p.target, value }
+      if (p.id != null) return { id: p.id, type: p.type, target: p.target, value: valorParaSlug(p.slug as string, valores) }
+      return { type: p.type ?? "string/=", target: p.target, value: valorParaSlug(p.slug as string, valores) }
     })
   }
 
   // Fallback: construir por template-tag si la metadata no trajo los parámetros.
   return [
-    { type: "category",   target: ["variable", ["template-tag", "date_type"]], value: valores.date_type },
-    { type: "category",   target: ["variable", ["template-tag", "version"]],   value: valores.version },
+    { type: "string/=",   target: ["variable", ["template-tag", "date_type"]], value: [valores.date_type] },
+    { type: "string/=",   target: ["variable", ["template-tag", "version"]],   value: [valores.version] },
     { type: "date/range", target: ["variable", ["template-tag", "date"]],      value: valores.date },
   ]
+}
+
+/**
+ * Da el valor con la forma que espera Metabase según el operador:
+ *  - filtros de texto (string/=, category) → ARRAY (ej. ["month"])
+ *  - filtros de fecha (date/range) → string escalar con "~" (ej. "2026-05-01~2026-05-31")
+ * El único parámetro de fecha de esta card es `date`.
+ */
+function valorParaSlug(slug: string, valores: ValoresPorSlug): string | string[] {
+  const raw = valores[slug] ?? ""
+  return slug === "date" ? raw : [raw]
 }
 
 export interface GBolsaResultado {
