@@ -108,6 +108,13 @@ function GestionesContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodoIdUrl])
 
+  function exportar() {
+    const params = new URLSearchParams({ concepto })
+    if (periodoId) params.set("periodoId", periodoId)
+    if (orId) params.set("orId", orId)
+    window.location.href = `/api/gestiones/exportar?${params}`
+  }
+
   function onGuardado(fila: FilaGestion, gestion: Gestion) {
     setRows(prev => prev.map(r =>
       r.codigoFrontera === fila.codigoFrontera && r.concepto === fila.concepto
@@ -196,6 +203,31 @@ function GestionesContent() {
           </button>
         ))}
       </div>
+
+      {/* Barra: contador + exportar */}
+      {concepto !== "COT" && filtrado && !loading && rows.length > 0 && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: "0.8rem" }}>
+            <span style={{ background: "#fff7ed", color: "#b45309", padding: "4px 10px", borderRadius: 999, fontWeight: 700 }}>
+              {rows.filter(r => !r.gestion).length} sin gestionar
+            </span>
+            <span style={{ background: "#f0fdf4", color: "#15803d", padding: "4px 10px", borderRadius: 999, fontWeight: 700 }}>
+              {rows.filter(r => r.gestion).length} gestionadas
+            </span>
+            <span style={{ color: "#9ca3af" }}>de {rows.length} con diferencias</span>
+          </div>
+          <button
+            onClick={exportar}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: "#fff", border: "1px solid #07c5a8", borderRadius: 8,
+              padding: "7px 14px", fontSize: "0.82rem", fontWeight: 600, color: "#07c5a8", cursor: "pointer",
+            }}
+          >
+            ↓ Exportar a Excel
+          </button>
+        </div>
+      )}
 
       {/* Tabla */}
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
