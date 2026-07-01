@@ -20,7 +20,9 @@ import { esPeriodoPermitido } from "@/lib/utils/periodos"
  */
 
 export const runtime     = "nodejs"
-export const maxDuration = 60
+// Correr el período completo (sin OR) + la consulta de G de bolsa a Metabase
+// puede tomar más que el default; damos margen.
+export const maxDuration = 120
 
 export async function POST(request: NextRequest) {
   const session = await auth()

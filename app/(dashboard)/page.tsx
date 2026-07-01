@@ -40,6 +40,9 @@ export default function InicioPage() {
   // G de bolsa (precio bolsa nacional) del mes de consumo del período seleccionado.
   const [gBolsa, setGBolsa]       = useState<{ valor: number | null } | null>(null)
   const [gBolsaLoading, setGBolsaLoading] = useState(false)
+  // Recalcular pérdidas (re-ejecuta la conciliación SDL del período).
+  const [recalc, setRecalc]       = useState(false)
+  const [recalcMsg, setRecalcMsg] = useState<{ tipo: "ok" | "error"; texto: string } | null>(null)
 
   useEffect(() => {
     fetch("/api/periodos")
@@ -76,6 +79,44 @@ export default function InicioPage() {
   }, [periodoId])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // Re-ejecuta la conciliación SDL del período seleccionado (recalcula pérdidas,
+  // provisiones y disputas con la G de bolsa actual) y refresca el dashboard.
+  async function recalcularPerdidas() {
+    const p = periodos.find(x => x.id === periodoId)
+    if (!p) return
+    const ok = window.confirm(
+      "Esto vuelve a ejecutar la conciliación SDL del período (recalcula pérdidas, " +
+      "provisiones y disputas con la G de bolsa actual). Puede tardar. ¿Continuar?",
+    )
+    if (!ok) return
+    setRecalc(true)
+    setRecalcMsg(null)
+    try {
+      const res = await fetch("/api/conciliaciones/ejecutar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ anio: p.anio, mes: p.mes, tipo: "SDL" }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setRecalcMsg({ tipo: "error", texto: (body as { error?: string }).error ?? `Error ${res.status}` })
+        return
+      }
+      const r = (body as { resumen?: { contingencias?: { valor_estimado_total?: number }; gBolsaNacional?: number | null } }).resumen
+      const valor = r?.contingencias?.valor_estimado_total ?? 0
+      const gb = r?.gBolsaNacional
+      const gbTxt = gb != null
+        ? ` · G de bolsa $ ${gb.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/kWh`
+        : ""
+      setRecalcMsg({ tipo: "ok", texto: `Pérdidas recalculadas: ${cop(valor)}${gbTxt}` })
+      await fetchData()
+    } catch {
+      setRecalcMsg({ tipo: "error", texto: "Error de red. Reintentá." })
+    } finally {
+      setRecalc(false)
+    }
+  }
 
   const d = data
 
@@ -143,7 +184,31 @@ export default function InicioPage() {
               <RefreshCw size={14} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} />
               Refrescar
             </button>
+            <button
+              onClick={recalcularPerdidas}
+              disabled={recalc || !periodoId}
+              title="Re-ejecuta la conciliación SDL del período y valoriza las pérdidas con la G de bolsa actual"
+              style={{
+                border: "1px solid #07c5a8", borderRadius: 8, padding: "6px 12px",
+                background: recalc ? "#e6faf6" : "#07c5a8",
+                cursor: recalc ? "not-allowed" : "pointer",
+                display: "flex", alignItems: "center", gap: 6,
+                fontSize: "0.875rem", fontWeight: 600,
+                color: recalc ? "#0f766e" : "#fff", opacity: (recalc || !periodoId) ? 0.7 : 1,
+              }}
+            >
+              <RefreshCw size={14} style={{ animation: recalc ? "spin 1s linear infinite" : "none" }} />
+              {recalc ? "Recalculando…" : "Recalcular pérdidas"}
+            </button>
           </div>
+          {recalcMsg && (
+            <span style={{
+              fontSize: "0.75rem", marginTop: 2, textAlign: "right",
+              color: recalcMsg.tipo === "ok" ? "#15803d" : "#b91c1c",
+            }}>
+              {recalcMsg.texto}
+            </span>
+          )}
         </div>
       </div>
 
