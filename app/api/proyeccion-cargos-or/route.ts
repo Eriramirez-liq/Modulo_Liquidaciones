@@ -14,6 +14,7 @@ import {
   type PreciosMes,
   type SalidaMes,
 } from "@/lib/engine/proyeccion-cargos-or"
+import { obtenerDemandaProyectada } from "@/lib/integrations/proyeccion-demanda"
 
 /**
  * GET /api/proyeccion-cargos-or?mesesProyeccion=N
@@ -33,6 +34,8 @@ import {
  *    PeriodoConciliacion(anio, mes) y sumamos valor_cop de ese periodo.
  */
 export const runtime = "nodejs"
+// Puede consultar Metabase (demanda proyectada) además de las queries de BD.
+export const maxDuration = 60
 
 /** Tope de meses a proyectar para evitar abusos de query. */
 const MAX_MESES_PROYECCION = 24
@@ -263,25 +266,43 @@ export async function GET(request: NextRequest) {
     },
     precioStr: promedio(ventana.map((m) => m.precioStr)),
   }
-  const filasProyectadas: FilaMes[] = mesesSiguientes(ultimoMesReal, mesesProyeccion).map(
-    (mes) => ({
+  const mesesProy = mesesSiguientes(ultimoMesReal, mesesProyeccion)
+
+  // Demanda proyectada por mes de consumo (Metabase card 77419). Si falla o no
+  // hay dato para un mes, ese mes queda con demanda pendiente.
+  let demandaProy = new Map<string, number>()
+  if (mesesProy.length > 0) {
+    try {
+      demandaProy = await obtenerDemandaProyectada()
+    } catch (e) {
+      console.warn(`[proyeccion-cargos-or] No se pudo obtener demanda proyectada: ${(e as Error).message}`)
+    }
+  }
+
+  const filasProyectadas: FilaMes[] = mesesProy.map((mes) => {
+    const sdlEnergy = demandaProy.get(mes) ?? null
+    // Con demanda conocida, se valoriza con los precios proyectados (avg 6 reales).
+    const calc = sdlEnergy !== null ? calcularMes(sdlEnergy, precioProyectado) : null
+    return {
       periodoConsumo: mes,
       periodoFacturacion: mesFacturacionDe(mes),
       esProyectado: true,
-      demandaPendiente: true,
-      // Demanda pendiente: vendra de una query Metabase aun no disponible.
-      sdlEnergy: null,
-      activaNT: null,
-      reactivaTotal: null,
-      reactivaNT: null,
-      strEnergy: null,
+      demandaPendiente: sdlEnergy === null,
+      sdlEnergy,
+      activaNT: calc?.activaNT ?? null,
+      reactivaTotal: calc?.reactivaTotal ?? null,
+      reactivaNT: calc?.reactivaNT ?? null,
+      strEnergy: calc?.strEnergy ?? null,
       precioActivaNT: precioProyectado.precioActivaNT,
       precioReactivaNT: precioProyectado.precioReactivaNT,
       precioStr: precioProyectado.precioStr,
-      strTotalCop: null,
-      salida: null,
-    })
-  )
+      // Total a pagar STR proyectado = STR energy × precio STR proyectado.
+      strTotalCop: calc && precioProyectado.precioStr !== null
+        ? calc.strEnergy * precioProyectado.precioStr
+        : null,
+      salida: calc?.salida ?? null,
+    }
+  })
 
   // --- 6) Respuesta: reales (asc) primero, luego proyectados (asc) ---
   return NextResponse.json({
