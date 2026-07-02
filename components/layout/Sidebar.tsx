@@ -58,7 +58,7 @@ export function Sidebar({ userRol, userName }: Props) {
         </div>
         <div style={{ lineHeight: "1.2" }}>
           <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#111827" }}>BIA Energy</div>
-          <div style={{ fontSize: "0.72rem", color: "#6b7280" }}>Conciliación SDL</div>
+          <div style={{ fontSize: "0.72rem", color: "#6b7280" }}>Módulo de Liquidaciones</div>
         </div>
       </div>
 
